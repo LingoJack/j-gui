@@ -1,0 +1,44 @@
+feature: 2026-05-08-backend-agent-session-storage
+created: 2026-05-08
+
+steps:
+  - slug: new-agent-session-module
+    description: 新建 agent_session.rs——AgentTimelineItem/ToolCallSnapshot/InterruptSnapshot 结构体 + create/list/get/delete/append 方法（纯 std::fs，JSONL 格式）
+    status: done
+
+  - slug: wire-session-into-agent-engine
+    description: AgentEngine 加 session_id + transcript_path 字段，start() 加参数，stdout reader 内每次 channel.send 后同步 append AgentTimelineItem
+    status: done
+
+  - slug: add-agent-session-commands
+    description: 4 条新 Tauri 命令（create/list/get/delete）+ lib.rs mod + 注册 + start_agent 签名加 session_id
+    status: done
+
+  - slug: update-typescript-ipc
+    description: TypeScript 侧 AgentTimelineItem 类型 + startAgent 签名 + 4 条新函数 + AgentView.tsx 调用适配
+    status: done
+
+checks:
+  - slug: auto-create-session
+    description: start_agent 不传 session_id → 自动创建新 session → 消息落盘
+    status: done
+
+  - slug: resume-session
+    description: start_agent 传已有 session_id → get_agent_session 返回历史消息列表
+    status: done
+
+  - slug: streaming-persists
+    description: Agent 运行中每个事件（assistantContent/toolUse/interrupt/error）同步写入 transcript
+    status: done
+
+  - slug: list-spaces-separate
+    description: list_sessions 仅返回 chat 会话，list_agent_sessions 仅返回 agent 会话
+    status: done
+
+  - slug: delete-cleanup
+    description: delete_agent_session 删除目录及 transcript + meta
+    status: done
+
+  - slug: all-tests-green
+    description: cargo test + cargo clippy -D warnings + bunx tsc --noEmit + bun run test 全部通过
+    status: done

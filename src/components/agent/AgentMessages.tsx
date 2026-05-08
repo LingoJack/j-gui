@@ -2,6 +2,7 @@ import { useAtomValue } from "jotai";
 import { agentMessagesAtom, agentStreamingAtom } from "@/atoms/sessions";
 import MessageBubble from "@/components/chat/MessageBubble";
 import ToolCallDisplay from "./ToolCallDisplay";
+import TaskProgressCard from "./TaskProgressCard";
 
 export default function AgentMessages() {
   const messages = useAtomValue(agentMessagesAtom);
@@ -17,6 +18,7 @@ export default function AgentMessages() {
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <TaskProgressCard messages={messages} />
       {messages.map((msg) => (
         <div key={msg.id}>
           {msg.toolCall ? (

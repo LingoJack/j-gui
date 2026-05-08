@@ -5,9 +5,10 @@ interface Props {
   onSend: (content: string) => void;
   disabled?: boolean;
   sendDisabled?: boolean;
+  placeholder?: string;
 }
 
-export default function ChatInput({ onSend, disabled, sendDisabled }: Props) {
+export default function ChatInput({ onSend, disabled, sendDisabled, placeholder }: Props) {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -34,7 +35,7 @@ export default function ChatInput({ onSend, disabled, sendDisabled }: Props) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
+          placeholder={placeholder ?? "输入消息... (Enter 发送, Shift+Enter 换行)"}
           rows={1}
           disabled={disabled}
           className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"

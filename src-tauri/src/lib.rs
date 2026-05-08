@@ -1,4 +1,5 @@
 mod agent_engine;
+mod agent_session;
 mod chat_engine;
 mod commands;
 
@@ -17,6 +18,11 @@ pub fn run() {
             commands::agent::start_agent,
             commands::agent::send_agent_message,
             commands::agent::stop_agent,
+            commands::agent::respond_agent_interrupt,
+            commands::agent::create_agent_session,
+            commands::agent::list_agent_sessions,
+            commands::agent::get_agent_session,
+            commands::agent::delete_agent_session,
             commands::alias::list_aliases,
             commands::alias::set_alias,
             commands::alias::remove_alias,

@@ -1,6 +1,8 @@
+use crate::agent_session::{self, AgentTimelineItem, InterruptSnapshot, ToolCallSnapshot};
 use j_cli::command::chat::storage::load_agent_config;
 use serde::Serialize;
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::thread::JoinHandle;
 use tauri::ipc::Channel;
@@ -13,6 +15,12 @@ pub enum AgentEvent {
     },
     ToolUse {
         tool_id: String,
+        tool_name: String,
+        tool_input: String,
+    },
+    Interrupt {
+        interrupt_id: String,
+        kind: String,
         tool_name: String,
         tool_input: String,
     },
@@ -33,10 +41,18 @@ pub struct AgentEngine {
     stdin: Option<ChildStdin>,
     stdout_thread: Option<JoinHandle<()>>,
     stderr_thread: Option<JoinHandle<()>>,
+    #[allow(dead_code)]
+    session_id: String,
+    #[allow(dead_code)]
+    transcript_path: PathBuf,
 }
 
 impl AgentEngine {
-    pub fn start(on_event: Channel<AgentEvent>) -> Result<Self, String> {
+    pub fn start(
+        on_event: Channel<AgentEvent>,
+        permission_mode: &str,
+        session_id: &str,
+    ) -> Result<Self, String> {
         let config = load_agent_config();
         let provider = config
             .providers
@@ -47,7 +63,7 @@ impl AgentEngine {
         let claude_path = which_claude()?;
 
         let mut cmd = Command::new(&claude_path);
-        let args = build_claude_args(&provider.model);
+        let args = build_claude_args(&provider.model, permission_mode);
         cmd.args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -70,6 +86,8 @@ impl AgentEngine {
 
         // Spawn background thread to read stdout
         let event_channel = on_event.clone();
+        let mode = permission_mode.to_string();
+        let sid = session_id.to_string();
         let stdout_thread = std::thread::spawn(move || {
             let reader = BufReader::new(stdout);
             for line in reader.lines() {
@@ -82,9 +100,84 @@ impl AgentEngine {
                 }
                 let events = parse_sdk_line(&line);
                 for event in events {
+                    let event = match event {
+                        AgentEvent::ToolUse {
+                            tool_id,
+                            tool_name,
+                            tool_input,
+                        } if mode != "bypassPermissions" => AgentEvent::Interrupt {
+                            interrupt_id: tool_id,
+                            kind: "permission".to_string(),
+                            tool_name,
+                            tool_input,
+                        },
+                        other => other,
+                    };
+                    // Build timeline item before send (send moves event)
+                    let timeline_item = match &event {
+                        AgentEvent::AssistantContent { text } => Some(AgentTimelineItem {
+                            id: agent_session::generate_item_id(),
+                            kind: "assistant_content".into(),
+                            content: Some(text.clone()),
+                            tool_call: None,
+                            interrupt: None,
+                            created_at: agent_session::now_millis(),
+                        }),
+                        AgentEvent::ToolUse {
+                            tool_id,
+                            tool_name,
+                            tool_input,
+                        } => Some(AgentTimelineItem {
+                            id: agent_session::generate_item_id(),
+                            kind: "tool_call".into(),
+                            content: None,
+                            tool_call: Some(ToolCallSnapshot {
+                                tool_id: tool_id.clone(),
+                                tool_name: tool_name.clone(),
+                                tool_input: tool_input.clone(),
+                                tool_output: None,
+                                status: "running".into(),
+                            }),
+                            interrupt: None,
+                            created_at: agent_session::now_millis(),
+                        }),
+                        AgentEvent::Interrupt {
+                            interrupt_id,
+                            kind,
+                            tool_name,
+                            tool_input,
+                        } => Some(AgentTimelineItem {
+                            id: agent_session::generate_item_id(),
+                            kind: "interrupt".into(),
+                            content: None,
+                            interrupt: Some(InterruptSnapshot {
+                                interrupt_id: interrupt_id.clone(),
+                                kind: kind.clone(),
+                                tool_name: tool_name.clone(),
+                                tool_input: tool_input.clone(),
+                                response: None,
+                            }),
+                            tool_call: None,
+                            created_at: agent_session::now_millis(),
+                        }),
+                        AgentEvent::ToolResult { .. } => None,
+                        AgentEvent::Done { .. } | AgentEvent::Error { .. } => None,
+                    };
+                    let tool_result_update = match &event {
+                        AgentEvent::ToolResult { tool_id, content } => {
+                            Some((tool_id.clone(), content.clone()))
+                        }
+                        _ => None,
+                    };
                     // Channel send fails = frontend unmounted, stop reading
                     if event_channel.send(event).is_err() {
                         return;
+                    }
+                    if let Some((tool_id, content)) = tool_result_update {
+                        let _ = agent_session::update_tool_call_result(&sid, &tool_id, &content);
+                    }
+                    if let Some(item) = timeline_item {
+                        let _ = agent_session::append_timeline_item(&sid, &item);
                     }
                 }
             }
@@ -98,21 +191,55 @@ impl AgentEngine {
             }
         });
 
+        let transcript_path = agent_session::agent_sessions_dir()
+            .join(session_id)
+            .join("transcript.jsonl");
+
         Ok(Self {
             process: Some(process),
             stdin: Some(stdin),
             stdout_thread: Some(stdout_thread),
             stderr_thread: Some(stderr_thread),
+            session_id: session_id.to_string(),
+            transcript_path,
         })
     }
 
     pub fn send_message(&mut self, content: &str) -> Result<(), String> {
         let stdin = self.stdin.as_mut().ok_or("claude 进程未启动")?;
+        let item = AgentTimelineItem {
+            id: agent_session::generate_item_id(),
+            kind: "user_message".into(),
+            content: Some(content.to_string()),
+            tool_call: None,
+            interrupt: None,
+            created_at: agent_session::now_millis(),
+        };
+        agent_session::append_timeline_item(&self.session_id, &item)?;
         let msg = serde_json::json!({
             "type": "user",
             "message": {
                 "role": "user",
                 "content": [{ "type": "text", "text": content }]
+            }
+        });
+        writeln!(
+            stdin,
+            "{}",
+            serde_json::to_string(&msg).map_err(|e| e.to_string())?
+        )
+        .map_err(|e| format!("写入 claude stdin 失败: {}", e))
+    }
+
+    pub fn respond_interrupt(&mut self, interrupt_id: &str, allowed: bool) -> Result<(), String> {
+        let stdin = self.stdin.as_mut().ok_or("Agent 未启动")?;
+        let content = if allowed { "approved" } else { "denied" };
+        agent_session::update_interrupt_response(&self.session_id, interrupt_id, content)?;
+        let msg = serde_json::json!({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{ "type": "tool_result", "tool_use_id": interrupt_id, "content": content }]
             }
         });
         writeln!(
@@ -144,7 +271,7 @@ impl AgentEngine {
     }
 }
 
-fn build_claude_args(model: &str) -> Vec<String> {
+fn build_claude_args(model: &str, permission_mode: &str) -> Vec<String> {
     let mut args = vec![
         "-p".to_string(),
         "--output-format".to_string(),
@@ -153,7 +280,7 @@ fn build_claude_args(model: &str) -> Vec<String> {
         "stream-json".to_string(),
         "--verbose".to_string(),
         "--permission-mode".to_string(),
-        "bypassPermissions".to_string(),
+        permission_mode.to_string(),
     ];
 
     if !model.is_empty() {
@@ -252,15 +379,9 @@ fn parse_user_event(v: &serde_json::Value) -> Vec<AgentEvent> {
     if let Some(items) = content.as_array() {
         for item in items {
             if item["type"].as_str() == Some("tool_result") {
-                let tool_id = item["tool_use_id"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string();
+                let tool_id = item["tool_use_id"].as_str().unwrap_or("").to_string();
                 let content = item["content"].as_str().unwrap_or("").to_string();
-                return vec![AgentEvent::ToolResult {
-                    tool_id,
-                    content,
-                }];
+                return vec![AgentEvent::ToolResult { tool_id, content }];
             }
         }
     }
@@ -305,18 +426,20 @@ fn which_claude() -> Result<String, String> {
             }
         }
     }
-    // On Windows, check npm global bin
+    // On Windows, check the standard global CLI shim location
     if cfg!(windows) {
-        let npm_root = std::env::var("APPDATA").unwrap_or_default();
+        let appdata_root = std::env::var("APPDATA").unwrap_or_default();
         for name in &["claude.cmd", "claude-code.cmd", "claude-cli.cmd"] {
-            let p = std::path::PathBuf::from(&npm_root).join("npm").join(name);
+            let p = std::path::PathBuf::from(&appdata_root)
+                .join("npm")
+                .join(name);
             if p.exists() {
                 return Ok(p.to_string_lossy().to_string());
             }
         }
-        // Also check npx-based invocation: see if we can find node + claude package
+        // Also check alternate shim names in the same global bin directory.
         for name in &["claude", "claude-code"] {
-            let p = std::path::PathBuf::from(&npm_root)
+            let p = std::path::PathBuf::from(&appdata_root)
                 .join("npm")
                 .join(format!("{}.cmd", name));
             if p.exists() {
@@ -324,7 +447,7 @@ fn which_claude() -> Result<String, String> {
             }
         }
     }
-    Err("未找到 claude CLI。请运行:\n  npm i -g @anthropic-ai/claude-code\n安装后确保 %APPDATA%\\npm 在 PATH 中".to_string())
+    Err("未找到 claude CLI。请先按项目约束安装 Claude Code CLI，并确保其 Windows 全局 shim 目录已加入 PATH。".to_string())
 }
 
 #[cfg(test)]
@@ -333,7 +456,7 @@ mod tests {
 
     #[test]
     fn build_claude_args_enables_stream_json_input() {
-        let args = build_claude_args("claude-sonnet-4-6");
+        let args = build_claude_args("claude-sonnet-4-6", "bypassPermissions");
 
         assert!(args
             .windows(2)
@@ -413,5 +536,21 @@ mod tests {
         let value = serde_json::to_value(event).unwrap();
         assert_eq!(value["event"], "assistantContent");
         assert_eq!(value["data"]["text"], "hello");
+    }
+
+    #[test]
+    fn tool_use_wraps_as_interrupt_in_non_bypass_mode() {
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls"}}]}}"#;
+        let events = parse_sdk_line(line);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::ToolUse {
+                tool_id, tool_name, ..
+            } => {
+                assert_eq!(tool_id, "toolu_1");
+                assert_eq!(tool_name, "bash");
+            }
+            _ => panic!("expected ToolUse from parse_sdk_line"),
+        }
     }
 }

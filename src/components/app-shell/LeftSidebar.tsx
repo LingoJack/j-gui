@@ -1,15 +1,24 @@
 import { useEffect, useCallback } from "react";
-import { useAtom, useSetAtom } from "jotai";
-import { appModeAtom, type AppMode } from "@/atoms/app-mode";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { sidebarOpenAtom } from "@/atoms/sidebar";
 import {
   sessionsAtom,
   currentSessionIdAtom,
   chatMessagesAtom,
+  agentMessagesAtom,
+  timelineToMessages,
 } from "@/atoms/sessions";
-import { listSessions, createSession, getSessionMessages } from "@/lib/tauri";
-import type { MessageInfo } from "@/lib/tauri";
-import type { SessionInfo } from "@/lib/tauri";
+import { tabsAtom, activeTabIdAtom, activeTabAtom, type Tab } from "@/atoms/tabs";
+import {
+  listSessions,
+  createSession,
+  getSessionMessages,
+  listAgentSessions,
+  createAgentSession,
+  getAgentSession,
+  deleteAgentSession,
+} from "@/lib/tauri";
+import type { MessageInfo, SessionInfo } from "@/lib/tauri";
 import {
   MessageSquare,
   Bot,
@@ -22,7 +31,9 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "@/atoms/toast";
 
-const modes: { key: AppMode; label: string; icon: typeof MessageSquare }[] = [
+type TabType = "chat" | "agent";
+
+const modes: { key: TabType; label: string; icon: typeof MessageSquare }[] = [
   { key: "chat", label: "Chat", icon: MessageSquare },
   { key: "agent", label: "Agent", icon: Bot },
 ];
@@ -54,20 +65,29 @@ interface Props {
 }
 
 export default function LeftSidebar({ onOpenSettings }: Props) {
-  const [mode, setMode] = useAtom(appModeAtom);
   const [open, setOpen] = useAtom(sidebarOpenAtom);
   const [sessions, setSessions] = useAtom(sessionsAtom);
   const [currentId, setCurrentId] = useAtom(currentSessionIdAtom);
   const setMessages = useSetAtom(chatMessagesAtom);
+  const [tabs, setTabs] = useAtom(tabsAtom);
+  const [activeTabId, setActiveTabId] = useAtom(activeTabIdAtom);
+  const activeTab = useAtomValue(activeTabAtom);
+
+  const setAgentMessages = useSetAtom(agentMessagesAtom);
+  const activeTabType: TabType | null = activeTab?.type ?? null;
 
   const load = useCallback(async () => {
     try {
-      const list = await listSessions();
+      if (!activeTab) {
+        setSessions([]);
+        return;
+      }
+      const list = activeTab.type === "agent" ? await listAgentSessions() : await listSessions();
       setSessions(list.sort((a, b) => b.updatedAt - a.updatedAt));
     } catch {
       // sessions will show empty
     }
-  }, [setSessions]);
+  }, [activeTab, setSessions]);
 
   useEffect(() => {
     load();
@@ -76,49 +96,107 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
   }, [load]);
 
   const handleNewSession = async () => {
+    if (!activeTab) return;
     try {
-      setMode("chat");
-      const id = await createSession();
+      const id = activeTab.type === "agent" ? await createAgentSession() : await createSession();
       setCurrentId(id);
-      setMessages([]);
+      if (activeTab.type === "agent") {
+        setAgentMessages([]);
+      } else {
+        setMessages([]);
+      }
       await load();
+
+      setTabs(
+        tabs.map((tab) =>
+          tab.id === activeTab.id ? { ...tab, sessionId: id } : tab,
+        ),
+      );
     } catch {
       toast("创建会话失败", "error");
     }
   };
 
   const handleSwitchSession = async (id: string) => {
-    setMode("chat");
+    if (!activeTab) return;
     if (id === currentId) return;
     setCurrentId(id);
-    try {
-      const msgs: MessageInfo[] = await getSessionMessages(id);
-      setMessages(
-        msgs.map((m) => ({
-          id: crypto.randomUUID(),
-          role: m.role as "user" | "assistant",
-          content: m.content,
-          isStreaming: false,
-        })),
-      );
-    } catch {
-      setMessages([]);
-      toast("加载会话消息失败", "error");
+    if (activeTab.type === "agent") {
+      try {
+        const timeline = await getAgentSession(id);
+        setAgentMessages(timelineToMessages(timeline));
+      } catch {
+        setAgentMessages([]);
+        toast("加载会话消息失败", "error");
+      }
+    } else {
+      try {
+        const msgs: MessageInfo[] = await getSessionMessages(id);
+        setMessages(
+          msgs.map((m) => ({
+            id: crypto.randomUUID(),
+            role: m.role as "user" | "assistant",
+            content: m.content,
+            isStreaming: false,
+          })),
+        );
+      } catch {
+        setMessages([]);
+        toast("加载会话消息失败", "error");
+      }
     }
+
+    setTabs(
+      tabs.map((tab) =>
+        tab.id === activeTab.id ? { ...tab, sessionId: id } : tab,
+      ),
+    );
   };
 
   const handleDeleteSession = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    if (!activeTab) return;
     try {
-      const { deleteSession } = await import("@/lib/tauri");
-      await deleteSession(id);
+      if (activeTab.type === "agent") {
+        await deleteAgentSession(id);
+      } else {
+        const { deleteSession } = await import("@/lib/tauri");
+        await deleteSession(id);
+      }
       if (id === currentId) {
         setCurrentId(null);
-        setMessages([]);
+        if (activeTab.type === "agent") {
+          setAgentMessages([]);
+        } else {
+          setMessages([]);
+        }
+        setTabs(
+          tabs.map((tab) =>
+            tab.id === activeTab.id ? { ...tab, sessionId: null } : tab,
+          ),
+        );
       }
       await load();
     } catch {
       toast("删除会话失败", "error");
+    }
+  };
+
+  const handleModeSwitch = (key: TabType) => {
+    const existing = tabs.find((t) => t.type === key);
+    if (existing) {
+      if (activeTabId !== existing.id) {
+        setActiveTabId(existing.id);
+      }
+    } else {
+      const newTab: Tab = {
+        id: crypto.randomUUID(),
+        type: key,
+        title: key === "chat" ? "Chat" : "Agent",
+        sessionId: null,
+      };
+      setTabs([...tabs, newTab]);
+      setActiveTabId(newTab.id);
     }
   };
 
@@ -147,10 +225,10 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
               {modes.map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
-                  onClick={() => setMode(key)}
+                  onClick={() => handleModeSwitch(key)}
                   className={cn(
                     "flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-sm font-medium transition-colors",
-                    mode === key
+                    activeTabType === key
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground",
                   )}
@@ -193,7 +271,7 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
                         : "hover:bg-accent text-muted-foreground hover:text-foreground",
                     )}
                   >
-                    <MessageSquare size={14} className="shrink-0" />
+                    {activeTab?.type === "agent" ? <Bot size={14} className="shrink-0" /> : <MessageSquare size={14} className="shrink-0" />}
                     <span className="truncate flex-1">
                       {s.title || s.id.slice(0, 8)}
                     </span>

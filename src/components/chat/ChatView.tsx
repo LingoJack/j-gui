@@ -9,6 +9,7 @@ import {
   type Message,
 } from "@/atoms/sessions";
 import { agentConfigAtom } from "@/atoms/config";
+import { activeTabAtom, tabsAtom } from "@/atoms/tabs";
 import {
   sendMessage,
   createSession,
@@ -40,6 +41,8 @@ export default function ChatView() {
   const setMessages = useSetAtom(chatMessagesAtom);
   const [streaming, setStreaming] = useAtom(chatStreamingAtom);
   const [config, setConfig] = useAtom(agentConfigAtom);
+  const activeTab = useAtomValue(activeTabAtom);
+  const setTabs = useSetAtom(tabsAtom);
   const [theme, setThemeState] = useAtom(themeAtom);
   const [version, setVersion] = useState("");
   const [sysPrompt, setSysPrompt] = useState<string>("");
@@ -75,6 +78,13 @@ export default function ChatView() {
       if (!sid) {
         sid = await createSession();
         setSessionId(sid);
+        if (activeTab) {
+          setTabs((prev) =>
+            prev.map((tab) =>
+              tab.id === activeTab.id ? { ...tab, sessionId: sid } : tab,
+            ),
+          );
+        }
       }
 
       const userMsg: Message = {
@@ -159,7 +169,7 @@ export default function ChatView() {
         streamingRef.current = false;
       }
     },
-    [sessionId, setSessionId, setMessages, setStreaming],
+    [activeTab, sessionId, setMessages, setSessionId, setStreaming, setTabs],
   );
 
   const handleClearContext = useCallback(async () => {
@@ -290,6 +300,13 @@ export default function ChatView() {
               channelRef.current = null;
               setMessages([]);
               setSessionId(null);
+              if (activeTab) {
+                setTabs((prev) =>
+                  prev.map((tab) =>
+                    tab.id === activeTab.id ? { ...tab, sessionId: null } : tab,
+                  ),
+                );
+              }
               setStreaming(false);
               streamingRef.current = false;
             }}

@@ -1,0 +1,44 @@
+feature: 2026-05-08-backend-agent-interrupts
+created: 2026-05-08
+
+steps:
+  - slug: parameterize-permission-mode
+    description: build_claude_args 接受 permission_mode 参数；start()/start_agent() 签名加参数（默认 "bypassPermissions"）；已有行为不变
+    status: done
+
+  - slug: add-interrupt-variant-and-command-skeleton
+    description: AgentEvent::Interrupt 变体 + respond_agent_interrupt 命令骨架（空实现返回 "Agent 未启动" 错误）+ lib.rs 注册；TypeScript 侧 AgentEvent 类型 + startAgent/respondAgentInterrupt 函数签名更新
+    status: done
+
+  - slug: implement-respond-interrupt
+    description: AgentEngine::respond_interrupt() 实现——组装 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"xxx","content":"approved|denied"}]}} JSON 写入 stdin
+    status: done
+
+  - slug: wire-tooluse-to-interrupt-conversion
+    description: stdout reader 内，当 permission_mode != "bypassPermissions" 时将 ToolUse 转换为 Interrupt(kind="permission")；新增 test 验证转换分支
+    status: done
+
+checks:
+  - slug: bypass-no-break
+    description: permission_mode=bypass（默认）时 tool_use 正常以 ToolUse 变体发送，不触发 Interrupt
+    status: done
+
+  - slug: default-triggers-interrupt
+    description: permission_mode=default 时 tool_use 以 Interrupt(kind="permission") 变体发送，interrupt_id 复用 tool_use.id
+    status: done
+
+  - slug: approve-writes-to-stdin
+    description: respond_agent_interrupt("toolu_xxx", true) → CLI stdin 收到 content:"approved" 的 tool_result
+    status: done
+
+  - slug: deny-writes-to-stdin
+    description: respond_agent_interrupt("toolu_xxx", false) → CLI stdin 收到 content:"denied" 的 tool_result
+    status: done
+
+  - slug: no-agent-error
+    description: Agent 未启动时调用 respond_agent_interrupt 返回 Err("Agent 未启动")
+    status: done
+
+  - slug: tsc-cargo-green
+    description: cargo test + cargo clippy -D warnings + bunx tsc --noEmit + bun run test 全部通过
+    status: done

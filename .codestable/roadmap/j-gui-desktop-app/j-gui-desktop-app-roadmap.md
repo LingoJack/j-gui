@@ -25,9 +25,11 @@ related_architecture:
 
 ### 本 roadmap 覆盖
 - Tauri v2 项目脚手架搭建
-- Rust 后端：Config/Alias/Chat/System 四组 Tauri 命令 + Chat Engine 封装
-- React 前端：三栏布局、Chat 视图（流式 Markdown 渲染）、Agent 视图（工具调用可视化）
-- 配置管理、主题切换（暗/亮）、别名管理
+- Rust 后端：Config/Alias/Chat/Agent/System 命令 + Chat/Agent Engine 封装
+- React 前端：三栏布局、Chat 视图（流式 Markdown + 富文本增强输入 + Thinking 块 + 消息精细操作）、Agent 视图（工具调用 + 任务进度聚合 + 中断审批 UI + Context 指示器）
+- 配置管理、主题切换、别名管理、Agent 配置治理（MCP/Skills/Hooks，其中 MCP 仅限 Agent runtime）
+- Agent 会话存储/导航、Agent 中断协议
+- 搜索增强（标题搜索体验补强 + 结果回填 + 高亮 + IME）、设置重构（多 tab + UI 原语库）、侧栏折叠动画、右侧面板文件树
 - 构建打包（Tauri bundle）
 
 ### 明确不做
@@ -36,77 +38,88 @@ related_architecture:
 - 插件系统（不支持第三方扩展）
 - 云端同步（纯本地，不跨设备）
 - 语音/图片输入
+- 会话内容全文搜索（首版只做标题搜索与结果回填）
+- 聊天附件/文件直接拖入输入框
 - j-cli 自身的安装/升级管理
+- Proma 的 Workspace 管理、BotHub/多人协作、飞书/IM 集成、Tutorial 引导、Proxy 设置、MemOS 记忆
 
 ## 3. 模块拆分（概设）
 
 ```
 j-gui
 ├── Tauri Backend (src-tauri/)         Rust 后端
-│   ├── commands/config.rs             Config 命令（读/写 YamlConfig, AgentConfig）
+│   ├── commands/config.rs             Config 命令（读/写 YamlConfig, AgentConfig, SystemPrompt）
 │   ├── commands/alias.rs              Alias 命令（增删查）
 │   ├── commands/chat.rs               Chat 命令（会话 CRUD + 流式消息）
+│   ├── commands/agent.rs              Agent 命令（start/send/stop + 中断回传）
 │   ├── commands/system.rs             System 命令（版本、主题）
-│   └── chat_engine.rs                 Agent 引擎封装（j_cli 的中介层）
+│   ├── chat_engine.rs                 Chat Engine（j_cli 的中介层、流式取消）
+│   └── agent_engine.rs                Agent Engine（Claude CLI 子进程管理、SDK 协议解析）
 ├── Frontend Shell (app-shell/)       三栏布局引擎
 │   ├── AppShell.tsx                   主布局容器（左/中/右三栏）
-│   ├── LeftSidebar.tsx                左侧栏（模式切换 + 会话列表）
-│   └── RightSidePanel.tsx             右侧面板（Agent 文件浏览器）
+│   ├── LeftSidebar.tsx                左侧栏（折叠/展开 + 模式切换 + 会话列表 + Archive）
+│   ├── MainArea.tsx                   主区域（标签页框架 + TabBar + TabContent）
+│   ├── RightSidePanel.tsx             右侧面板（递归文件树 + 面包屑）
+│   └── SearchDialog.tsx              会话搜索（标题搜索 + 结果回填 + 快捷键/IME）
 ├── Chat UI (chat/)                   聊天界面
-│   ├── ChatView.tsx                   聊天主视图
-│   ├── ChatMessages.tsx               流式消息列表
-│   ├── ChatInput.tsx                  消息输入框
-│   └── MessageBubble.tsx              单条消息气泡（Markdown 渲染）
+│   ├── ChatView.tsx                   聊天主视图 + ChatHeader
+│   ├── ChatMessages.tsx               流式消息列表 + ScrollMinimap
+│   ├── ChatInput.tsx                  富文本增强输入 + 工具栏 + 草稿持久化
+│   ├── MessageBubble.tsx              单条消息气泡（Markdown + 操作栏）
+│   ├── ReasoningBlock.tsx             Thinking/推理可折叠块
+│   └── ContextDivider.tsx             上下文清空分割线
 ├── Agent UI (agent/)                 Agent 界面
-│   ├── AgentView.tsx                  Agent 主视图（含工具调用流）
+│   ├── AgentView.tsx                  Agent 主视图（流式 + 审批中断 + 任务进度）
+│   ├── AgentMessages.tsx              Agent 消息列表（turn 分组）
 │   ├── ToolCallDisplay.tsx            工具调用结果渲染
-│   └── PermissionBanner.tsx           权限/审批横幅
+│   ├── TaskProgressCard.tsx           任务进度聚合卡 + BackgroundTasksPanel
+│   ├── ContextUsageBadge.tsx          Context 用量环形指示器 + PermissionModeSelector
+│   ├── PermissionBanner.tsx           工具权限审批横幅
+│   ├── AskUserBanner.tsx              AskUser 问答交互
+│   └── ExitPlanModeBanner.tsx         计划模式审批
 ├── Settings UI (settings/)           设置
-│   └── SettingsDialog.tsx             标签式设置对话框
+│   ├── SettingsDialog.tsx             浮动 Dialog + 左侧导航 + 右侧内容
+│   ├── tabs/                          Settings tabs（Prompts / Appearance / Tools / Skills / Hooks / MCP）
+│   └── primitives/                    Settings UI 原语组件库
 ├── State (atoms/)                    Jotai 状态
 │   ├── app-mode.ts                    当前模式（chat/agent）
-│   ├── sessions.ts                    会话列表 + 当前会话
+│   ├── sessions.ts                    会话列表 + Chat/Agent 消息 atoms
 │   ├── config.ts                      App 配置
-│   ├── streaming.ts                   流式状态
-│   └── theme.ts                       主题
+│   ├── theme.ts                       主题
+│   └── sidebar.ts                     侧栏 + 右面板状态
 └── IPC Layer (lib/)                  前端通信封装
-    └── tauri.ts                       Tauri invoke + event listen 封装
+    └── tauri.ts                       Tauri invoke + Channel + Event 封装
 ```
 
 ### Tauri Backend · 后端
-- **职责**：暴露 Tauri 命令，封装 j-cli 能力，推送流式事件。不处理 UI 逻辑。
-- **承载的子 feature**：backend-config-commands, backend-alias-commands, backend-chat-engine, backend-chat-commands, backend-system-commands
-- **触碰的现有代码 / 模块**：全新，`src-tauri/` 下扩展
+- **职责**：暴露 Tauri 命令，封装 j-cli 能力，管理 Agent 子进程生命周期，推送流式事件，并把 Agent 治理配置（Skills/Hooks/MCP）整理成可消费的 GUI 契约。不处理 UI 逻辑。
+- **作用域提醒**：`MCP` 配置只进入 Agent runtime，不挂到当前 Chat 命令链路；Chat 侧不因为有 Settings MCP tab 就追加 MCP 契约。
+- **承载的子 feature**：#1-#6（scaffold/config/alias/chat-engine/chat-commands/system-commands）、#31-#32（agent-interrupts/agent-session-storage）、#44-#45（agent-governance-commands/mcp-config-commands）
 
 ### Frontend Shell · 三栏布局
-- **职责**：管理窗口布局（左侧栏折叠/展开、右侧面板显示/隐藏、主区域标签页）。不处理消息内容渲染。
-- **承载的子 feature**：frontend-app-shell, frontend-left-sidebar, frontend-main-area
-- **触碰的现有代码 / 模块**：全新，替换脚手架 `App.tsx`
+- **职责**：管理窗口布局（左侧栏折叠动画/图标模式、右侧面板显隐、主区域标签页）、会话搜索（标题搜索、结果回填、键盘/IME 体验）。不处理消息内容渲染。
+- **承载的子 feature**：#7-#9（app-shell/sidebar/main-area）、#25 search、#40 sidebar-collapsible、#41 search-enhanced、#43 right-panel-tree
 
 ### Chat UI · 聊天界面
-- **职责**：消息列表渲染（流式 + Markdown + 代码高亮）、消息输入和发送。不处理 Agent 特有的工具调用渲染。
-- **承载的子 feature**：frontend-chat-view, frontend-markdown
-- **触碰的现有代码 / 模块**：全新
+- **职责**：消息列表渲染（流式 + Markdown + 代码高亮）、富文本增强输入、草稿持久化、Thinking 推理块、消息精细操作（Fork/Rewind/Copy）。不处理 Agent 特有的工具调用渲染。
+- **承载的子 feature**：#10-#11（chat-view/markdown）、#37-#39（input-enhanced/reasoning-block/message-polish）
 
 ### Agent UI · Agent 界面
-- **职责**：Agent 模式的工具调用可视化、权限审批、右侧文件浏览。复用 Chat UI 的消息渲染基础。
-- **承载的子 feature**：frontend-agent-view, frontend-tool-call, frontend-permission, frontend-right-panel
-- **触碰的现有代码 / 模块**：全新
+- **职责**：Agent 模式的工具调用可视化、任务进度聚合、中断审批交互、Context 用量指示、权限模式选择、Agent 输入增强。复用 Chat UI 的消息渲染基础。
+- **承载的子 feature**：#12-#13（agent-view/tool-call）、#34-#36（interrupt-ui/task-progress/context-tools）
 
 ### Settings UI · 设置
-- **职责**：标签式设置对话框（通用/模型/别名），通过 Tauri 命令读写配置。不处理配置的持久化逻辑（由后端负责）。
-- **承载的子 feature**：settings-dialog, theme-integration
-- **触碰的现有代码 / 模块**：全新
+- **职责**：多 tab 设置对话框（导航+内容布局），Settings UI 原语组件库，以及 Agent 治理页（Skills/Hooks/MCP）。不处理配置的持久化逻辑（由后端负责）。
+- **作用域提醒**：MCP tab 的配置对象属于 Agent runtime，不对当前 Chat 模式声明“也支持 MCP”。
+- **承载的子 feature**：#18 settings-dialog、#42 settings-refined、#46-#48（skills-ui/hooks-ui/mcp-ui）
 
 ### State · 状态管理
-- **职责**：Jotai atoms 定义，每个 atom 订阅对应 Tauri 事件。不包含 UI 组件。
+- **职责**：Jotai atoms 定义。不包含 UI 组件。
 - **承载的子 feature**：随各 UI feature 同步产出（不是独立 feature）
-- **触碰的现有代码 / 模块**：全新
 
 ### IPC Layer · 通信封装
-- **职责**：封装 `@tauri-apps/api/core` 的 `invoke()` + `Channel` 和 `@tauri-apps/api/event` 的 `listen()`，提供类型安全的调用接口。不包含业务逻辑。
+- **职责**：封装 `@tauri-apps/api` 的 `invoke()` + `Channel` + `listen()`，类型安全。不包含业务逻辑。
 - **承载的子 feature**：随 scaffold 产出基础封装，后续 feature 扩展
-- **触碰的现有代码 / 模块**：全新
 
 ## 4. 模块间接口契约 / 共享协议
 
@@ -118,431 +131,372 @@ j-gui
 ```rust
 // === Config ===
 #[tauri::command]
-fn get_config() -> Result<YamlConfig, String>;
+fn get_config() -> Result<YamlConfigInfo, String>;
 #[tauri::command]
-fn set_config(key: String, value: serde_json::Value) -> Result<(), String>;
+fn set_config(section: String, key: String, value: String) -> Result<(), String>;
 #[tauri::command]
-fn get_agent_config() -> Result<AgentConfig, String>;
+fn get_agent_config() -> Result<AgentConfigInfo, String>;
 #[tauri::command]
-fn set_agent_config(config: AgentConfig) -> Result<(), String>;
+fn set_agent_config(config: AgentConfigInfo) -> Result<(), String>;
+#[tauri::command]
+fn set_active_provider(index: usize) -> Result<(), String>;
+#[tauri::command]
+fn get_system_prompt() -> Result<Option<String>, String>;
+#[tauri::command]
+fn set_system_prompt(prompt: String) -> Result<(), String>;
 
 // === Alias ===
 #[tauri::command]
 fn list_aliases() -> Result<Vec<AliasEntry>, String>;
 #[tauri::command]
-fn set_alias(name: String, value: String) -> Result<(), String>;
+fn set_alias(section: String, name: String, value: String) -> Result<(), String>;
 #[tauri::command]
-fn remove_alias(name: String) -> Result<(), String>;
+fn remove_alias(section: String, name: String) -> Result<(), String>;
 
 // === Chat ===
 #[tauri::command]
 async fn send_message(
     session_id: String,
     content: String,
-    on_event: Channel<ChatEvent>,  // 流式结果通过 Channel 推送
+    on_event: Channel<ChatEvent>,
 ) -> Result<(), String>;
-
 #[tauri::command]
 fn list_sessions() -> Result<Vec<SessionInfo>, String>;
 #[tauri::command]
-fn create_session() -> Result<String, String>;  // 返回新 session_id
-#[tauri::command]
-fn switch_session(session_id: String) -> Result<(), String>;
+fn create_session() -> Result<String, String>;
 #[tauri::command]
 fn delete_session(session_id: String) -> Result<(), String>;
+#[tauri::command]
+fn get_session_messages(session_id: String) -> Result<Vec<MessageInfo>, String>;
+#[tauri::command]
+fn delete_message(session_id: String, pair_index: usize) -> Result<(), String>;
+#[tauri::command]
+fn clear_session(session_id: String) -> Result<(), String>;
+
+// === Agent ===
+#[tauri::command]
+fn start_agent(
+    session_id: String,
+    permission_mode: String,
+    on_event: Channel<AgentEvent>,
+) -> Result<(), String>;
+#[tauri::command]
+fn send_agent_message(content: String) -> Result<(), String>;
+#[tauri::command]
+fn stop_agent() -> Result<(), String>;
+// ↓ 计划新增（#31 backend-agent-interrupts）
+#[tauri::command]
+fn respond_agent_interrupt(
+    interrupt_id: String,
+    response: InterruptResponse
+) -> Result<(), String>;
+// InterruptResponse 按 interrupt kind 分型：
+//   PermissionResponse { decision: "approve" | "approve_always" | "deny" }
+//   AskUserResponse { answers: [{ question_id, selected_options, custom_text? }] }
+//   PlanResponse { decision: "approve_and_run" | "approve_with_manual_permissions" | "reject" | "feedback", feedback?: String }
+// ↓ 计划新增（#32 backend-agent-session-storage）
+#[tauri::command]
+fn create_agent_session() -> Result<String, String>;
+#[tauri::command]
+fn list_agent_sessions() -> Result<Vec<SessionInfo>, String>;
+#[tauri::command]
+fn get_agent_session(session_id: String) -> Result<Vec<AgentTimelineItem>, String>;
+#[tauri::command]
+fn delete_agent_session(session_id: String) -> Result<(), String>;
 
 // === System ===
 #[tauri::command]
 fn get_version() -> Result<String, String>;
 #[tauri::command]
-fn set_theme(app: tauri::AppHandle, theme: String) -> Result<(), String>;  // "dark" | "light"
+fn set_theme(app: tauri::AppHandle, theme: String) -> Result<(), String>;
 // → 主题变更通过全局 Event "theme-changed" 通知前端
 ```
 
 **约束**：
 - 所有命令错误返回 `String`（人类可读的错误描述）
-- `send_message` 是 async——Rust 端不阻塞 Tauri 主线程
-- `send_message` 返回时 Channel 自动关闭，无需单独 `cancel_stream` 命令——取消通过 drop Channel 或内部 cancellation token 实现
+- `send_message` 和 `start_agent` 是 async——Rust 端不阻塞 Tauri 主线程
+- `send_message` 返回时 Channel 自动关闭，取消通过 drop Channel 实现
+- Agent 命令通过 `AgentState(Arc<Mutex<Option<AgentEngine>>>)` 管理子进程生命周期，并在引擎状态里绑定当前 `session_id`
+- `respond_agent_interrupt` 的 `InterruptResponse` 必须保留按中断种类分型的表达能力，不能把 permission / ask_user / plan 三类回传压扁成同一个窄枚举
 
 ### 4.2 Tauri Channels — 流式推送（Backend → Frontend）
 
 **方向**：Rust 后端 → React 前端
-**形式**：Tauri `Channel<T>` — 官方推荐的流式数据机制
-
-> 依据：Tauri v2 文档明确 "The event system is not suitable for low-latency or high-throughput scenarios; for streaming data, the channels section offers an optimized implementation."
+**形式**：Tauri `Channel<T>`
 
 ```
-// Rust 端 —— ChatEvent 枚举（serde tag = "event", content = "data"）
+// Chat 流式事件
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 enum ChatEvent {
     Chunk { index: u32, content: String },
-    ToolCall { tool_name: String, tool_input: String },
-    ToolResult { tool_name: String, tool_output: String, success: bool },
     Done { total_tokens: u32 },
+    Error { message: String },
 }
-```
 
-```
-// TypeScript 端 —— 对应联合类型
-type ChatEvent =
-  | { event: 'chunk'; data: { index: number; content: string } }
-  | { event: 'toolCall'; data: { toolName: string; toolInput: string } }
-  | { event: 'toolResult'; data: { toolName: string; toolOutput: string; success: boolean } }
-  | { event: 'done'; data: { totalTokens: number } };
+// Agent 流式事件
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase", tag = "event", content = "data")]
+enum AgentEvent {
+    AssistantContent { text: String },
+    ToolUse { tool_id: String, tool_name: String, tool_input: String },
+    ToolResult { tool_id: String, content: String },
+    Done { total_tokens: u32 },
+    Error { message: String },
+}
+// ↓ 计划新增（#31 backend-agent-interrupts）
+// + Interrupt { interrupt_id: String, kind: String, ... }
+//   kind ∈ { "permission", "ask_user", "plan" }
 ```
 
 **约束**：
-- 每个 `invoke('send_message')` 调用新建一个 `Channel<ChatEvent>` 实例传入
-- Channel 绑定到单次 command 调用，command 返回时自动关闭——无需按 `session_id` 路由
-- `Chunk` 事件的 `index` 从 0 严格递增，前端用以检测丢包
-- Agent 模式下，`Chunk` 和 `ToolCall`/`ToolResult` 可交错推送
-- `Done` 在所有 chunk 和 tool 事件之后推送，恰一次
-- 取消通过 component unmount 或手动 drop Channel 引用实现
+- Channel 绑定到单次 command 调用，command 返回时自动关闭
+- Agent `Interrupt` 事件需携带足够信息让前端渲染对应 Banner（工具名、输入预览、问题列表、计划选项）
+- Agent `ToolResult` 事件（由 parse_sdk_line 解析 "user" 类型消息产出）在 `bypassPermissions` 模式下不触发——仅在非 bypass 模式使用
 
-### 4.3 Tauri Events — 全局通知（非流式场景）
-
-**方向**：Rust 后端 → React 前端
-**形式**：`app_handle.emit()` + 前端 `listen()`
-
-适用于低频率、非流式全局通知：
+### 4.3 Tauri Events — 全局通知
 
 ```
 event: theme-changed
-payload: "dark" | "light"
-// 主题切换时推送一次
+payload: "dark" | "light" | "{j_cli_theme_name}"
 ```
 
-**约束**：
-- Events 仅用于跨组件的全局通知（主题、配置变更广播等），**不用于 Chat 流式**
-- Payload 始终为 JSON，无编译期类型检查
-- 前端 `listen()` 返回 `unlisten` 函数，组件卸载时必须调用清理
+**约束**：Events 仅用于跨组件的全局通知（主题变更广播），不用于 Chat/Agent 流式。
 
 ### 4.4 前端状态（Jotai Atoms → Components）
-
-**方向**：Jotai atoms → React 组件
-**形式**：原子化状态订阅
 
 ```typescript
 // src/atoms/app-mode.ts
 appModeAtom: Atom<'chat' | 'agent'>
 
 // src/atoms/sessions.ts
-sessionsAtom: Atom<Session[]>
+sessionsAtom: Atom<SessionInfo[]>
 currentSessionIdAtom: Atom<string | null>
-currentSessionAtom: Atom<Session | null>  // derived
+chatMessagesAtom: Atom<Message[]>      // Chat 模式消息
+chatStreamingAtom: Atom<boolean>
+agentMessagesAtom: Atom<Message[]>     // Agent 模式消息
+agentStreamingAtom: Atom<boolean>
 
 // src/atoms/config.ts
-configAtom: Atom<AppConfig>
-
-// src/atoms/streaming.ts
-streamingAtom: Atom<{ active: boolean, sessionId: string | null }>
+agentConfigAtom: Atom<AgentConfigInfo>
 
 // src/atoms/theme.ts
-themeAtom: Atom<'dark' | 'light'>
-sidebarOpenAtom: Atom<boolean>
+themeAtom: Atom<string>
+
+// src/atoms/sidebar.ts
+sidebarOpenAtom: Atom<boolean>         // 左侧栏展开/折叠（新增）
+sidebarCollapsedAtom: Atom<boolean>    // 图标模式（#40 新增）
 rightPanelOpenAtom: Atom<boolean>
+
+// src/atoms/settings.ts（#42 新增）
+settingsTabAtom: Atom<string>          // 上次打开的设置 tab
 ```
 
 **约束**：
-- Chat 流式通过 `Channel.onmessage` 回调更新 atoms（不通过 Events）
-- 全局通知（如 `theme-changed`）通过 `listen()` 订阅，在 atom 的 `onMount` 中注册
-- 流式更新通过 atom setter 批量合并，每 16ms 最多触发一次 React 重渲染
 - atoms 目录不引入任何 UI 依赖（React 组件 / CSS）
+- 新增 atoms 从各自 feature 的 design 阶段产出，不在 roadmap 层硬性规定
 
 ### 4.4 共享数据结构
 
 ```rust
-// Rust 端（src-tauri/src/）
-
+// Rust 端
 struct SessionInfo {
     id: String,
-    title: String,
-    created_at: String,     // ISO8601
-    updated_at: String,     // ISO8601
-    message_count: u32,
-    mode: String,           // "chat" | "agent"
+    title: Option<String>,
+    message_count: usize,
+    updated_at: u64,  // unix timestamp millis
 }
+// Chat 与 Agent 各自通过独立命令返回本空间的 SessionInfo；该结构本身不携带 mode 字段
 
 struct AliasEntry {
+    section: String,  // "path" | "inner_url" | "outer_url" | "script"
     name: String,
     value: String,
 }
 
-// YamlConfig 和 AgentConfig 由 j_cli 定义，j-gui 直接复用
-// use j_cli::config::YamlConfig;
-// use j_cli::agent::AgentConfig;
-```
-
-```typescript
-// TypeScript 端（src/）
-
-interface SessionInfo {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  messageCount: number;
-  mode: 'chat' | 'agent';
+struct AgentTimelineItem {  // #32 新增
+    id: String,
+    kind: String,      // "user_message" | "assistant_message" | "tool_call" | "interrupt" | "error"
+    content: Option<String>,
+    tool_call: Option<ToolCallInfo>,
+    interrupt: Option<InterruptSnapshot>,
+    created_at: u64,
 }
 
-interface AliasEntry {
-  name: string;
-  value: string;
+enum InterruptResponse {  // #31 新增
+    Permission { decision: PermissionDecision },
+    AskUser { answers: Vec<AskUserAnswer> },
+    Plan { decision: PlanDecision, feedback: Option<String> },
 }
 
-// Message 类型按需在各 feature 中定义
-```
+enum PermissionDecision {
+    Approve,
+    ApproveAlways,
+    Deny,
+}
 
-**约束**：
-- Rust 端使用 `serde` 的 `Serialize`/`Deserialize`，字段名 `snake_case`
-- TypeScript 端字段名 `camelCase`，Tauri 自动转换
-- 数据目录统一使用 `j_cli::constants` 定义的 `~/.jdata/` 路径
+struct AskUserAnswer {
+    question_id: String,
+    selected_options: Vec<String>,
+    custom_text: Option<String>,
+}
+
+enum PlanDecision {
+    ApproveAndRun,
+    ApproveWithManualPermissions,
+    Reject,
+    Feedback,
+}
+```
 
 ## 5. 子 feature 清单
 
-1. **scaffold** — 项目脚手架：Tauri v2 + React + Vite + TypeScript 初始化，Tailwind v4 + Jotai + shadcn/ui 安装，`j_cli` path dependency 配置，验证 `cargo tauri dev` 启动成功
-   - 所属模块：Tauri Backend + Frontend Shell（全局基础）
-   - 依赖：无
-   - 状态：planned
-   - 对应 feature：未启动
+### 已闭环（done — 29 条）
 
-2. **backend-config-commands** — Config 命令：`get_config`, `set_config`, `get_agent_config`, `set_agent_config`，读写 j-cli 的 YAML/JSON 配置
-   - 所属模块：Tauri Backend (commands/config.rs)
-   - 依赖：scaffold
-   - 状态：planned
-   - 对应 feature：未启动
+1. **scaffold** — 项目脚手架 ✅
+2. **backend-config-commands** — Config 命令 ✅
+3. **backend-alias-commands** — Alias 命令 ✅
+4. **backend-chat-engine** — Chat Engine ✅
+5. **backend-chat-commands** — Chat 命令 ✅
+6. **backend-system-commands** — System 命令 ✅
+7. **frontend-app-shell** — 三栏布局 ✅
+8. **frontend-left-sidebar** — 左侧栏 ✅
+10. **frontend-chat-view** — Chat 视图 ⭐ 最小闭环 ✅
+11. **frontend-markdown** — Markdown 渲染 ✅
+12. **backend-agent-engine** — Agent Engine ✅
+13. **frontend-agent-view** — Agent 视图 ✅
+14. **frontend-tool-call** — 工具调用显示 ✅
+17. **theme-integration** — 主题集成 ✅
+18. **settings-dialog** — 设置对话框 ✅
+20. **error-handling** — 统一错误处理 ✅
+21. **frontend-session-list** — 会话列表对接 ✅
+22. **frontend-message-actions** — 消息操作 ✅
+23. **frontend-context-bar** — 上下文状态栏 ✅
+24. **backend-system-prompt** — 系统提示词 ✅
+26. **frontend-toast** — Toast 通知 ✅
+27. **frontend-welcome** — 欢迎页 ✅
+29. **frontend-appearance** — 外观设置 ✅
+30. **backend-streaming-cancel** — 流式取消 ✅
 
-3. **backend-alias-commands** — Alias 命令：`list_aliases`, `set_alias`, `remove_alias`
-   - 所属模块：Tauri Backend (commands/alias.rs)
-   - 依赖：scaffold
-   - 状态：planned
-   - 对应 feature：未启动
+### 进行中（in-progress — 4 条）
 
-4. **backend-chat-engine** — Chat Engine：封装 j-cli 的 `agent_handle`, `session_mgr`, `tool_executor` 为 `ChatEngine` 结构体，提供 `new`, `send_message`, `cancel`, `list_sessions`, `create_session`, `switch_session`, `delete_session` 方法
-   - 所属模块：Tauri Backend (chat_engine.rs)
-   - 依赖：scaffold
-   - 状态：planned
-   - 对应 feature：未启动
+9. **frontend-main-area** — 主区域标签页：当前只有固定 default tab 壳，多标签打开/关闭/切换未实现
+16. **frontend-right-panel** — 右侧面板：顶层目录读取完成，缺打开入口/递归树/文件动作
+25. **frontend-search** — 会话搜索：键盘导航完成，结果只设 sessionId 不回填消息
+28. **frontend-tabs-enhanced** — 标签页增强：ErrorBoundary 完成，缺切换/确认/预览
 
-5. **backend-chat-commands** — Chat 命令：`send_message`（流式事件推送）、`cancel_stream`、`list_sessions`, `create_session`, `switch_session`, `delete_session`，依赖 `ChatEngine`
-   - 所属模块：Tauri Backend (commands/chat.rs)
-   - 依赖：backend-chat-engine
-   - 状态：planned
-   - 对应 feature：未启动
+### 待实现 — Agent 闭环（planned — 3 条）
 
-6. **backend-system-commands** — System 命令：`get_version`, `set_theme`
-   - 所属模块：Tauri Backend (commands/system.rs)
-   - 依赖：scaffold
-   - 状态：planned
-   - 对应 feature：未启动
+31. **backend-agent-interrupts** — Agent 中断协议：解析 ask/plan/permission 事件 + respond_agent_interrupt 命令；回传协议需覆盖 always-allow / ask-user answers / plan 四种分支
+32. **backend-agent-session-storage** — Agent 会话存储：create/list/get/delete 命令；resume 语义首版限定为“重开 transcript 并继续 GUI 线程”，不承诺恢复底层 Claude 子进程状态
+33. **frontend-agent-session-navigation** — Agent 会话导航：LeftSidebar/Search 在 Agent 模式调用独立 Agent 会话命令列出+切换+回填
 
-7. **frontend-app-shell** — 三栏布局：AppShell（左/中/右三栏容器）、响应式折叠、右侧面板显隐控制
-   - 所属模块：Frontend Shell (app-shell/)
-   - 依赖：scaffold
-   - 状态：planned
-   - 对应 feature：未启动
+### 待实现 — Agent UI 组件（planned — 3 条）
 
-8. **frontend-left-sidebar** — 左侧栏：ModeSwitch（Chat/Agent 滑动切换）、SessionList（按日期分组、置顶/右键菜单）、Settings 入口、版本号
-   - 所属模块：Frontend Shell (app-shell/LeftSidebar.tsx)
-   - 依赖：frontend-app-shell
-   - 状态：planned
-   - 对应 feature：未启动
+34. **frontend-agent-interrupt-ui** — 中断审批 UI：PermissionBanner + AskUserBanner + ExitPlanModeBanner（取代原 #15 frontend-permission）
+35. **frontend-agent-task-progress** — 任务进度聚合：TaskProgressCard + BackgroundTasksPanel
+36. **frontend-agent-context-tools** — Context 用量环 + 权限模式选择器 + @/# 引语法提示
 
-9. **frontend-main-area** — 主区域标签页：TabBar（标题/关闭/切换）、TabContent 容器，支持多标签并行
-   - 所属模块：Frontend Shell (app-shell/ 内的 MainArea)
-   - 依赖：frontend-app-shell
-   - 状态：planned
-   - 对应 feature：未启动
+### 待实现 — Chat UI 精细度（planned — 3 条）
 
-10. **frontend-chat-view** — Chat 视图：ChatHeader（标题/模型选择/清空上下文）、ChatMessages（流式消息列表）、ChatInput（文本输入/发送），绑定后端 Chat 命令和事件
-    - 所属模块：Chat UI (chat/)
-    - 依赖：frontend-main-area, backend-chat-commands
-    - 状态：planned
-    - 对应 feature：未启动
+37. **frontend-chat-input-enhanced** — 富文本输入：TipTap 编辑器 + 工具栏 + 草稿持久化（首版不做附件/拖放）
+38. **frontend-chat-reasoning-block** — Thinking 推理块：Reasoning 可折叠组件
+39. **frontend-chat-message-polish** — 消息精细操作：Fork/Rewind + ContextDivider + ScrollMinimap
 
-11. **frontend-markdown** — Markdown 渲染：react-markdown + rehype-highlight + remark-gfm + Shiki 代码高亮，在 MessageBubble 中使用
-    - 所属模块：Chat UI (chat/MessageBubble.tsx)
-    - 依赖：frontend-chat-view
-    - 状态：planned
-    - 对应 feature：未启动
+### 待实现 — Shell 增强（planned — 4 条）
 
-12. **frontend-agent-view** — Agent 视图：AgentHeader、消息流（含工具调用气泡）、AgentInput，复用 Chat 的消息渲染基础
-    - 所属模块：Agent UI (agent/)
-    - 依赖：frontend-chat-view
-    - 状态：planned
-    - 对应 feature：未启动
+40. **frontend-sidebar-collapsible** — 侧栏折叠动画 + 图标模式 + Pin/Archive
+41. **frontend-search-enhanced** — 标题搜索体验补强 + 高亮 + IME
+42. **frontend-settings-refined** — 设置重构：多 tab 导航 + UI 原语库 + 未保存保护
+43. **frontend-right-panel-tree** — 递归文件树 + 面包屑 + 入口按钮
 
-13. **frontend-tool-call** — 工具调用显示：Bash/Read/Write/Edit 等工具的执行输入/输出渲染，折叠/展开、状态图标
-    - 所属模块：Agent UI (agent/ToolCallDisplay.tsx)
-    - 依赖：frontend-agent-view
-    - 状态：planned
-    - 对应 feature：未启动
+### 待实现 — Settings / Agent 治理（planned — 5 条）
 
-14. **frontend-permission** — 权限审批：Agent 模式下 plan/ask/tool 三种审批横幅，确认/拒绝按钮，超时处理
-    - 所属模块：Agent UI (agent/PermissionBanner.tsx)
-    - 依赖：frontend-agent-view
-    - 状态：planned
-    - 对应 feature：未启动
+44. **backend-agent-governance-commands** — Skills/Hooks 治理命令：把 j-cli 的 `load_all_skills()` / `HookManager::list_hooks()` 与 `AgentConfig.disabled_skills` / `disabled_hooks` 暴露为稳定 IPC 契约；Skills UI 可参考 Proma 的实际组织方式，但语义仍以仓库真实能力为准
+45. **backend-mcp-config-commands** — MCP 配置命令：参考 Proma/Claude Agent SDK 实际做法定义 Agent 侧 MCP server 配置数据源、标准化结构与校验口径；明确不接入当前 Chat 命令链路
+46. **frontend-settings-skills-ui** — Skills UI：Settings 中新增 Skills tab，展示已加载 skill 的名称/描述/来源/覆盖关系，支持单项启停和批量启停
+47. **frontend-settings-hooks-ui** — Hooks UI：Settings 中新增 Hooks tab，展示 hook source/event/type/label 摘要，支持按唯一 id 启停和空态说明
+48. **frontend-settings-mcp-ui** — MCP 配置 UI：Settings 中新增 MCP tab，展示 Agent 侧 server 列表、transport/command/env 摘要、启停开关与基础编辑入口；不向当前 Chat 模式宣称 MCP 生效
 
-15. **frontend-right-panel** — 右侧面板：工作区文件浏览器（仅 Agent 模式显示），列出当前工作目录文件
-    - 所属模块：Frontend Shell (app-shell/RightSidePanel.tsx)
-    - 依赖：frontend-agent-view
-    - 状态：planned
-    - 对应 feature：未启动
+### 待实现 — 收尾（planned — 1 条）
 
-16. **theme-integration** — 主题集成：j-cli 主题 → CSS 变量映射，暗/亮切换，全局即时生效
-    - 所属模块：Settings UI + State
-    - 依赖：frontend-app-shell, backend-system-commands
-    - 状态：planned
-    - 对应 feature：未启动
+19. **build-packaging** — 构建打包
 
-17. **settings-dialog** — 设置对话框：标签式界面（通用/模型/别名），配置读写绑定后端 Config/Alias 命令
-    - 所属模块：Settings UI (settings/SettingsDialog.tsx)
-    - 依赖：backend-config-commands, backend-alias-commands, frontend-app-shell
-    - 状态：planned
-    - 对应 feature：未启动
+> 已 drop：原 #15 `frontend-permission` 被 #34 `frontend-agent-interrupt-ui` 取代（后者覆盖全部三种中断 Banner）
 
-18. **build-packaging** — 构建打包：Tauri build 配置（图标/安装包/更新检查 URL），验证 `cargo tauri build` 产出可安装包
-    - 所属模块：Tauri Backend（全局配置）
-    - 依赖：所有 backend + frontend feature
-    - 状态：planned
-    - 对应 feature：未启动
+## 6. 排期与依赖图
 
-19. **error-handling** — 统一错误处理：前端错误提示组件（Toast）、后端错误序列化规范、网络/超时重试策略
-    - 所属模块：跨模块
-    - 依赖：backend-chat-commands, frontend-chat-view
-    - 状态：planned
-    - 对应 feature：未启动
+```
+Phase A: 收尾 in-progress（先修现状偏差）
+  9  frontend-main-area        ⬜ → 多标签打开/关闭/切换
+  16 frontend-right-panel      ⬜ → 基本文件树完善
 
-20. **frontend-session-list** — 会话列表对接：LeftSidebar 的 SessionList 绑定 `list_sessions()` 命令，按日期分组，点击切换会话，右键置顶/删除
-    - 所属模块：Frontend Shell (app-shell/LeftSidebar.tsx)
-    - 依赖：frontend-left-sidebar, backend-chat-commands
-    - 状态：planned
-    - 对应 feature：未启动
-    - 备注：替换当前静态 placeholderSessions
+Phase B: Agent / 配置后端（解锁 Agent UI 与治理 UI）
+  31 backend-agent-interrupts   ──── 前置依赖
+  32 backend-agent-session-storage ── 前置依赖
+  44 backend-agent-governance-commands ── 依赖 2
+  45 backend-mcp-config-commands       ── 依赖 2
 
-21. **frontend-message-actions** — 消息操作：复制消息内容按钮（CopyButton）、删除消息、重新发送
-    - 所属模块：Chat UI (chat/)
-    - 依赖：frontend-chat-view
-    - 状态：planned
-    - 对应 feature：未启动
-    - 备注：Proma 参考——CopyButton.tsx, DeleteMessageDialog.tsx
+Phase C: Agent 前端（可并行）
+  33 frontend-agent-session-navigation ── 依赖 31+32
+  34 frontend-agent-interrupt-ui       ── 依赖 31
+  35 frontend-agent-task-progress      ── 依赖 13
+  36 frontend-agent-context-tools      ── 依赖 13
 
-22. **frontend-context-bar** — 上下文状态栏：ChatHeader 显示当前上下文 token 用量（ContextUsageBadge）、清空上下文按钮（ClearContextButton）、compact 触发
-    - 所属模块：Chat UI (chat/)
-    - 依赖：frontend-chat-view
-    - 状态：planned
-    - 对应 feature：未启动
-    - 备注：Proma 参考——ContextUsageBadge.tsx, ClearContextButton.tsx, ContextSettingsPopover.tsx
+Phase D: Chat UI 精细度（可并行）
+  37 frontend-chat-input-enhanced     ── 依赖 10
+  38 frontend-chat-reasoning-block    ── 依赖 11
+  39 frontend-chat-message-polish     ── 依赖 10
 
-23. **backend-system-prompt** — 系统提示词管理：`get_system_prompt` / `set_system_prompt` 命令，读写 j-cli 的 `system_prompt` 字段，前端 ChatHeader 下拉选择或编辑
-    - 所属模块：Tauri Backend (commands/config.rs) + Chat UI
-    - 依赖：backend-config-commands
-    - 状态：planned
-    - 对应 feature：未启动
-    - 备注：Proma 参考——SystemPromptSelector.tsx
+Phase E: Shell / Settings 增强（可并行）
+  25 frontend-search                  ⬜ 先完成回填消息
+  40 frontend-sidebar-collapsible     ── 依赖 8
+  41 frontend-search-enhanced         ── 依赖 25
+  42 frontend-settings-refined        ── 依赖 18
+  43 frontend-right-panel-tree        ── 依赖 16
+  46 frontend-settings-skills-ui      ── 依赖 42+44
+  47 frontend-settings-hooks-ui       ── 依赖 42+44
+  48 frontend-settings-mcp-ui         ── 依赖 42+45
 
-24. **frontend-search** — 会话搜索：SearchDialog（快捷键唤起），按标题模糊搜索会话，选中跳转
-    - 所属模块：Frontend Shell (app-shell/SearchDialog.tsx)
-    - 依赖：frontend-left-sidebar, backend-chat-commands
-    - 状态：planned
-    - 对应 feature：未启动
-    - 备注：Proma 参考——SearchDialog.tsx, search-atoms.ts
+Phase F: 收尾
+  28 frontend-tabs-enhanced           ⬜
+  19 build-packaging
+```
 
-25. **frontend-toast** — Toast 通知系统：统一错误提示（网络超时/API 错误/配置缺失），非阻塞式弹出，自动消失
-    - 所属模块：跨模块
-    - 依赖：scaffold
-    - 状态：planned
-    - 对应 feature：未启动
-    - 备注：与 #19 error-handling 互补——Toast 是 UI 层，error-handling 偏后端序列化
+**依赖图 DAG 校验**：无循环依赖——Phase A→B→C 串行，D/E 内部可并行，F 收尾。
 
-26. **frontend-welcome** — 欢迎页：首次启动（无配置时）显示引导页——配置 Provider 的快速入口 + 项目简介
-    - 所属模块：Frontend Shell
-    - 依赖：frontend-app-shell
-    - 状态：planned
-    - 对应 feature：未启动
+**最小闭环**：Phase A 完成后，用户至少有可用的多标签工作区。Phase B+C 完成后 Agent 从"纯流式预览"升级为"可恢复、可审批的 Agent 工作台"。Phase D 完成后 Chat 体验与 Proma 对齐。Phase E 补齐后，设置页从“基础 provider/theme 表单”升级为“可治理 Agent 能力边界的控制台”。
 
-27. **frontend-tabs-enhanced** — 标签页增强：TabSwitcher（快捷键切换）、关闭确认对话框、标签页预览缩略图、错误边界
-    - 所属模块：Frontend Shell (MainArea)
-    - 依赖：frontend-main-area
-    - 状态：planned
-    - 对应 feature：未启动
-    - 备注：Proma 参考——TabSwitcher.tsx, TabCloseConfirmDialog.tsx, TabErrorBoundary.tsx
+## 7. 接口契约要点（新 feature 的跨模块约束）
 
-28. **frontend-appearance** — 外观设置：主题切换（暗/亮）、字体大小调节、代码块主题选择
-    - 所属模块：Settings UI (settings/AppearanceSettings.tsx)
-    - 依赖：theme-integration, settings-dialog
-    - 状态：planned
-    - 对应 feature：未启动
+以下接口在 Phase B 实现前必须先定下来，各 feature-design 以此为硬约束：
 
-29. **backend-streaming-cancel** — 流式取消：前端 unmount 时通过 Channel drop 触发后端中止 LLM 调用，不浪费 token
-    - 所属模块：Tauri Backend (chat_engine.rs)
-    - 依赖：backend-chat-engine
-    - 状态：planned
-    - 对应 feature：未启动
-    - 备注：当前 Channel send 错误被 `let _ =` 吞掉，需改为检查并返回/中断
+| 接口 | 提供方 | 消费方 | 关键约束 |
+|------|--------|--------|---------|
+| `start_agent` | #31/#32 agent_engine | #33/#34/#36 agent-ui | 启动参数必须显式绑定 `session_id` 和 `permission_mode`，避免后续会话持久化与权限模式接入再改签名 |
+| `AgentEvent::Interrupt` | #31 agent_engine | #34 interrupt-ui | `kind` 字段值固定为 `permission`/`ask_user`/`plan`，携带渲染所需完整数据 |
+| `respond_agent_interrupt` | #31 commands/agent | #34 interrupt-ui | stdin 写入格式与 Claude CLI 协议对齐；且响应体必须区分 permission / ask_user / plan，不得压扁为仅 approve/deny/feedback 三值 |
+| `get_agent_session` | #32 commands/agent | #33 session-navigation | 返回 `Vec<AgentTimelineItem>`，保留 tool_call / interrupt 等 Agent 专属信息，不能退化成纯文本消息数组 |
+| `Channel<AgentEvent>` 新增变体 | #31 agent_engine | #34-#36 agent-ui | 新增变体不破坏已有 `assistantContent`/`toolUse`/`toolResult`/`done`/`error` 路径 |
 
-### 5.1 2026-05-08 Proma 差距校正
+## 8. 观察项
 
-> 本轮以代码现状为准校正 roadmap，详细证据见 `compound/2026-05-08-explore-proma-gap-analysis.md`。机器可读状态以 `j-gui-desktop-app-items.yaml` 为准。
-
-- `frontend-main-area` 从 `done` 回调为 `in-progress`：当前只有固定单 Tab 壳，没有多标签打开/关闭/切换。
-- `frontend-permission` 从 `done` 回调为 `planned`：还没有 ask/plan/tool interrupt 协议，也没有 approve/deny 回传命令。
-- `frontend-right-panel` 从 `done` 回调为 `in-progress`：文件树组件已存在，但没有打开入口、递归读取和文件动作。
-- `frontend-search` 从 `done` 回调为 `in-progress`：搜索选择结果只改 session id，不回填消息。
-- `frontend-tabs-enhanced` 从 `done` 回调为 `in-progress`：目前只完成 ErrorBoundary，TabSwitcher/关闭确认/预览都未落地。
-
-30. **backend-agent-interrupts** — Agent 中断协议：解析 Claude CLI 的 ask/plan/permission 类事件，增加 `respond_agent_interrupt` 命令，让前端能继续/允许/拒绝
-    - 所属模块：Tauri Backend (agent_engine.rs + commands/agent.rs)
-    - 依赖：backend-agent-engine
-    - 状态：planned
-    - 对应 feature：未启动
-    - 备注：这是 `frontend-permission` 真正可工作的前置条件
-
-31. **backend-agent-session-storage** — Agent 会话存储：为 agent transcript 建立持久化格式以及 `list/get/delete/resume` 命令，区分 chat/agent 两类会话空间
-    - 所属模块：Tauri Backend (agent_engine.rs + commands/agent.rs)
-    - 依赖：backend-agent-engine
-    - 状态：planned
-    - 对应 feature：未启动
-    - 备注：补齐 Agent 模式缺失的会话生命周期
-
-32. **frontend-agent-session-navigation** — Agent 会话导航：LeftSidebar / SearchDialog 按当前模式列出 Agent 会话，切换后回填 `agentMessages` 并恢复对应视图状态
-    - 所属模块：Frontend Shell + Agent UI
-    - 依赖：backend-agent-session-storage, frontend-agent-view, frontend-search
-    - 状态：planned
-    - 对应 feature：未启动
-    - 备注：补齐“切到 Agent 后对话找不回来”的产品闭环
-
-**最小闭环**：第 10 条 `frontend-chat-view` 做完后，用户可以在桌面窗口里输入消息、看到 AI 流式回复（纯文本 Chat 模式端到端跑通）。
-
-## 6. 排期思路
-
-按**后端契约 → 前端核心 → Agent 闭环 → 壳层补完 → 完善**五层递进：
-
-1. **scaffold** 打底——项目跑不起来后面全堵住
-2. **后端命令**（config/alias/chat-engine/chat/system）并行推进——Config/Alias/System 各自独立，Chat 依赖 ChatEngine
-3. **前端核心**（app-shell → sidebar/main-area → chat-view → markdown）串行推进——布局先行、内容后填
-4. **Agent MVP 收口**（agent-engine → interrupts → session-storage → session-navigation）先把 Agent 从“能流”补成“能恢复、能继续”
-5. **壳层补完**（main-area/search/right-panel/tabs-enhanced）把 Proma 式工作台体验补完整
-6. **收尾**（theme/settings/build/error）并行推进——彼此独立
-
-最小闭环选 `frontend-chat-view` 而非 `scaffold`——因为 scaffold 做完看不出任何产品价值，Chat 对话跑通才是第一个可演示里程碑。
-
-后端 ChatEngine + ChatCommands 和前端 ChatView 之间有严格的跨进程接口依赖（Tauri Events 协议），这是整个项目风险最高的接口——第 4.2 节的 event payload 字段定了就不要随便改。
-
-## 7. 观察项
-
-- `ARCHITECTURE.md` 随 feature acceptance 逐步回写模块详情
+- `.codestable/architecture/ARCHITECTURE.md` 随 feature acceptance 逐步回写模块详情
 - `requirements/` 下 `j-gui-ai-interaction` + `j-gui-personalization` 已升级为 `current`，`j-gui-session-management` 仍为 `draft`
 - 前端未引入 React Router——标签页切换通过 Jotai atoms 管理
-- **Proma 对齐现状**：当前更准确的定位是“Chat 优先桌面壳 + 可流式的 Agent 预览”，尚未达到可恢复的 Agent 工作台。详见 `compound/2026-05-08-explore-proma-gap-analysis.md`
-- **Agent 核心差距**：会话仍是内存态，审批/中断缺协议，侧边栏/搜索也还没有 mode-aware 的 Agent 会话导航
-- **Agent 模式策略已定**：首版使用 Claude Agent SDK（CLI 子进程），参考 Proma 的 `claude-agent-adapter.ts`。j-cli Agent Loop 通过 `AgentBackend` trait 预留接口，等 `j-agent` crate 就绪后补。详见 `compound/2026-05-08-decision-agent-sdk-strategy.md`
-- **j-cli Agent 耦合**：`MainAgentHandle::spawn()` 无法直接在 j-gui 中使用（`ChatApp` 53 个 pub 字段，`ToolRegistry` 依赖 TUI `ask_tx` 通道，`StreamMsg` 含 UI 状态）。Agent 模式需先在 j-cli 侧抽取 `j-agent` crate。详见 `compound/2026-05-08-explore-j-cli-agent-coupling.md`
-- Proma 参考：以下 Proma 模块暂不纳入首版——语音输入、飞书/钉钉集成、Bot Hub、MCP 配置 UI、Workspace 管理、Teams 协作、Tutorial 引导、Proxy 设置、快捷键自定义
+- **Proma 对齐现状**：当前更准确的定位是"Chat 优先桌面壳 + 可流式的 Agent 预览"，详见 `compound/2026-05-08-explore-proma-gap-analysis.md`
+- **Agent 核心差距**：会话仍是内存态，审批/中断缺协议，Agent UI 组件（权限审批/任务进度/Context 环）空白
+- **Agent 模式策略已定**：首版使用 Claude Agent SDK（CLI 子进程），j-cli Agent Loop 通过 `AgentBackend` trait 预留接口。详见 `compound/2026-05-08-decision-agent-sdk-strategy.md`
+- **Proma 经验吸收边界**：首版吸收 Proma 的状态拆分、协议分型、交互阈值经验，但不因此扩大产品范围到“内容全文搜索”或“聊天附件拖入”
+- **Agent 治理范围已纳入首版**：`MCP 配置 UI`、`Skills UI`、`Hooks UI` 进入 Settings 规划；其中 Skills/Hooks 优先复用 j-cli 现有语义并参考 Proma 的实际组织方式，MCP 参考 Proma/Claude Agent SDK 的 Agent 侧做法，但明确不扩到当前 Chat 路径
+- **Architecture docs 仍需扩展**：当前已有 `backend-chat-engine.md`、`frontend-chat-ui.md`、`frontend-settings-ui.md` 等子系统文档，但覆盖面还不完整，后续实现时继续通过 `cs-arch backfill` 补齐
+- Proma 参考：以下 Proma 模块暂不纳入首版——Workspace 管理、BotHub/多人协作、飞书/IM 集成、Tutorial 引导、Proxy 设置、快捷键自定义、语音输入、MemOS 记忆
 
 ## 变更日志
 
 - 2026-05-08：基于 Proma 源码审计新增 10 条子 feature（#20-#29），补充 Chat 交互细节、会话搜索、欢迎页、Toast、系统提示词等
-- 2026-05-08：基于当前代码与 Proma 再审视，回调 5 条被高估的状态（main-area / permission / right-panel / search / tabs-enhanced），并新增 3 条 Agent 闭环条目（#30-#32）
+- 2026-05-08：基于当前代码与 Proma 再审视，回调 5 条被高估的状态（main-area / permission / right-panel / search / tabs-enhanced），并新增 3 条 Agent 闭环条目（#31-#33）
+- 2026-05-08（本次）：基于 Proma UI 深度调研新增 10 条 UI 追平 feature（#34-#43），按 Agent 审批 UI / 任务进度 / Context 工具 / Chat 输入增强 / 推理块 / 消息精细操作 / 侧栏折叠 / 搜索增强 / 设置重构 / 文件树 拆分，drop 原 #15 frontend-permission（被 #34 取代），新增 `respond_agent_interrupt`/`list_agent_sessions`/`search_transcripts` 命令契约
+- 2026-05-08（本次补充）：根据 `explore-proma-gap-analysis` 收紧 Proma 经验吸收边界，移除首版 roadmap 中与 requirement 冲突的“内容全文搜索”“聊天附件拖入”，并把 `start_agent(session_id, permission_mode, ...)`、`get_agent_session -> AgentTimelineItem[]` 固化为 design 前硬约束
+- 2026-05-08（本次再补充）：根据最新范围确认，把 `MCP 配置 UI`、`Skills UI`、`Hooks UI` 正式纳入首版，并补齐后端治理契约条目（#44-#45）与对应设置页 UI 条目（#46-#48）
+- 2026-05-08（本次范围澄清）：把 `MCP` 明确限定在 Agent runtime，允许 `Skills/MCP` 参考 Proma 的实际做法，但不把当前 j-cli Chat 路径扩写成“支持 MCP”

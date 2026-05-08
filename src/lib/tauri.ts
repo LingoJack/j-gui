@@ -134,19 +134,82 @@ export type AgentEvent =
   | { event: "assistantContent"; data: { text: string } }
   | { event: "toolUse"; data: { toolId: string; toolName: string; toolInput: string } }
   | { event: "toolResult"; data: { toolId: string; content: string } }
+  | { event: "interrupt"; data: { interruptId: string; kind: string; toolName: string; toolInput: string } }
   | { event: "done"; data: { totalTokens: number } }
   | { event: "error"; data: { message: string } };
 
-export async function startAgent(onEvent: Channel<AgentEvent>): Promise<void> {
-  return invoke("start_agent", { onEvent });
+export async function startAgent(
+  onEvent: Channel<AgentEvent>,
+  permissionMode?: string,
+  sessionId?: string,
+): Promise<void> {
+  return invoke("start_agent", {
+    onEvent,
+    permissionMode: permissionMode ?? null,
+    sessionId: sessionId ?? null,
+  });
 }
 
 export async function sendAgentMessage(content: string): Promise<void> {
   return invoke("send_agent_message", { content });
 }
 
+export async function respondAgentInterrupt(interruptId: string, allowed: boolean): Promise<void> {
+  return invoke("respond_agent_interrupt", { interruptId, allowed });
+}
+
 export async function stopAgent(): Promise<void> {
   return invoke("stop_agent");
+}
+
+// ===== Agent Sessions =====
+
+export interface ToolCallSnapshot {
+  toolId: string;
+  toolName: string;
+  toolInput: string;
+  toolOutput?: string | null;
+  status: string;
+}
+
+export interface InterruptSnapshot {
+  interruptId: string;
+  kind: string;
+  toolName: string;
+  toolInput: string;
+  response?: string | null;
+}
+
+export interface AgentTimelineItem {
+  id: string;
+  kind: string;
+  content?: string | null;
+  toolCall?: ToolCallSnapshot | null;
+  interrupt?: InterruptSnapshot | null;
+  createdAt: number;
+}
+
+export interface AgentSessionInfo {
+  id: string;
+  title?: string | null;
+  messageCount: number;
+  updatedAt: number;
+}
+
+export async function createAgentSession(): Promise<string> {
+  return invoke("create_agent_session");
+}
+
+export async function listAgentSessions(): Promise<AgentSessionInfo[]> {
+  return invoke("list_agent_sessions");
+}
+
+export async function getAgentSession(sessionId: string): Promise<AgentTimelineItem[]> {
+  return invoke("get_agent_session", { sessionId });
+}
+
+export async function deleteAgentSession(sessionId: string): Promise<void> {
+  return invoke("delete_agent_session", { sessionId });
 }
 
 // ===== System =====

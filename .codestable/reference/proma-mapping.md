@@ -63,7 +63,7 @@ description: Proma (Electron) → j-gui (Tauri) 组件对照表，加速跨项�
 | `settings/ChannelForm.tsx` | SettingsDialog 内联编辑 | ✅ done | Provider 表单 |
 | `settings/GeneralSettings.tsx` | 通用 tab（占位） | 🟣 | |
 | `settings/AppearanceSettings.tsx` | roadmap #28 | ❌ | 主题/字体 |
-| `settings/AgentSettings.tsx` | — | n/a | Proma Skills/MCP 配置 |
+| `settings/AgentSettings.tsx` | roadmap #46 / #47 / #48 | ❌ | Proma 提供 Skills/MCP 设置参考；Hooks UI 为 j-gui 基于 j-cli TUI 的扩展 |
 | `settings/ToolSettings.tsx` | — | n/a | j-cli 侧管理工具 |
 | `settings/ShortcutSettings.tsx` | — | n/a | 首版不做 |
 | `settings/MemorySettings.tsx` | — | n/a | Proma MemOS 集成 |
@@ -91,7 +91,6 @@ description: Proma (Electron) → j-gui (Tauri) 组件对照表，加速跨项�
 |------------|------|
 | Workspace 管理 | j-gui 单工作区（~/.jdata/），无需多 workspace |
 | Bot Hub / 多人协作 | j-gui 是个人工具 |
-| MCP 配置 UI | j-cli 管理 MCP 配置 |
 | 飞书/钉钉/微信集成 | j-gui 无 IM 集成需求 |
 | 语音输入 | 首版范围外 |
 | Tutorial / Onboarding | 首版范围外 |

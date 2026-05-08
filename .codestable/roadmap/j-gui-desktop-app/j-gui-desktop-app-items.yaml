@@ -1,5 +1,6 @@
 roadmap: j-gui-desktop-app
 created: 2026-05-08
+last_reviewed: 2026-05-08
 
 items:
   - slug: scaffold
@@ -27,7 +28,7 @@ items:
     notes: 2026-05-08 完成——list/set/remove 三命令实现，覆盖 path/inner_url/outer_url/script 四区
 
   - slug: backend-chat-engine
-    description: Chat Engine——封装 j_cli 的 agent_handle/session_mgr/tool_executor 为 ChatEngine 结构体，提供 send_message(list_sessions/create_session/switch_session/delete_session 方法，send_message 通过 Channel<ChatEvent> 推送流式响应
+    description: Chat Engine——封装 j_cli 的 agent_handle/session_mgr/tool_executor 为 ChatEngine 结构体，提供 send_message/list_sessions/create_session/switch_session/delete_session 方法，send_message 通过 Channel<ChatEvent> 推送流式响应
     depends_on: [scaffold]
     status: done
     feature: null
@@ -64,15 +65,15 @@ items:
     status: done
     feature: 2026-05-08-three-column-layout
     minimal_loop: false
-    notes: 2026-05-08 完成——Chat 会话列表已接入 list_sessions；Agent 会话导航另见 #31/#32
+    notes: 2026-05-08 完成——Chat 会话列表已接入 list_sessions；Agent 会话导航另见 #32/#33
 
   - slug: frontend-main-area
     description: 主区域标签页——TabBar（标题/关闭/切换）、TabContent 容器，支持多标签并行打开
     depends_on: [frontend-app-shell]
-    status: in-progress
+    status: done
     feature: 2026-05-08-three-column-layout
     minimal_loop: false
-    notes: 当前只有固定 default tab；样式壳已完成，但多标签打开/关闭/切换仍未实现
+    notes: 多标签框架完成——tabsAtom/activeTabIdAtom + TabBar(Tab项+关闭+X新建) + 条件渲染 ChatView/AgentView + 流式关闭确认；hover预览/拖拽重排/关闭确认对话框另见 #28
 
   - slug: frontend-chat-view
     description: Chat 视图——ChatHeader（标题/模型选择/清空上下文）、ChatMessages（流式消息列表通过 Channel.onmessage 更新）、ChatInput（文本输入 invoke send_message 并传入 Channel）
@@ -96,7 +97,7 @@ items:
     status: done
     feature: null
     minimal_loop: false
-    notes: 2026-05-08 完成——AgentEngine 纯 Rust（零 SDK 依赖）；parse_sdk_line 解析 assistant/tool_use/result；which_claude 自动发现 CLI
+    notes: 2026-05-08 完成——AgentEngine 纯 Rust（零 SDK 依赖）；parse_sdk_line 解析 assistant/tool_use/user/result；which_claude 自动发现 CLI
 
   - slug: frontend-agent-view
     description: Agent 视图——AgentView（Channel<AgentEvent> 流式渲染）、AgentMessages（MessageBubble + ToolCallDisplay 条件渲染）、AgentInput
@@ -104,7 +105,7 @@ items:
     status: done
     feature: null
     minimal_loop: false
-    notes: 2026-05-08 完成——基础流式链路打通；会话持久化与导航另见 #31/#32
+    notes: 2026-05-08 完成——基础流式链路打通；会话持久化与导航另见 #32/#33
 
   - slug: frontend-tool-call
     description: 工具调用显示——ToolCallDisplay 折叠/展开 + 状态图标（Loader2/Check/X）+ JSON 输入/输出渲染
@@ -117,18 +118,18 @@ items:
   - slug: frontend-permission
     description: 权限审批——PermissionBanner（AlertTriangle + 允许/拒绝按钮 + 输入预览）
     depends_on: [frontend-agent-view]
-    status: planned
+    status: dropped
     feature: null
     minimal_loop: false
-    notes: 当前仅有 tool_use/result 展示，没有 ask/plan/tool interrupt 协议与 approve/deny 回传链路；依赖 #30
+    notes: 被 #34 frontend-agent-interrupt-ui 取代——后者覆盖 PermissionBanner + AskUserBanner + ExitPlanModeBanner 三种审批交互
 
   - slug: frontend-right-panel
     description: 右侧面板——工作区文件浏览器，Tauri fs plugin readDir 列出文件（过滤 .dotfiles/node_modules），刷新按钮
     depends_on: [frontend-agent-view]
-    status: in-progress
+    status: done
     feature: null
     minimal_loop: false
-    notes: 面板组件和顶层目录读取已完成，但还缺打开入口、递归树、文件预览/动作
+    notes: 递归文件树 + 面包屑导航 + AgentHeader PanelRight 入口按钮完成——lazy readDir 子目录 + 缩进层级 + 文件 size + .git/node_modules/target 过滤
 
   - slug: theme-integration
     description: 主题集成——暗/亮切换持久化到 agent_config.json 的 theme 字段，启动时自动加载，全局即时生效
@@ -197,10 +198,10 @@ items:
   - slug: frontend-search
     description: 会话搜索——SearchDialog Ctrl+K 快捷键唤起，按标题模糊搜索，选中跳转
     depends_on: [frontend-left-sidebar, backend-chat-commands]
-    status: in-progress
+    status: done
     feature: null
     minimal_loop: false
-    notes: 搜索框和键盘导航已完成，但选中结果仍只设置 currentSessionId，未回填消息；Agent 模式接入另见 #32
+    notes: 搜索选中后调用 getSessionMessages 回填消息到 chatMessagesAtom；标题搜索体验补强另见 #41
 
   - slug: frontend-toast
     description: Toast 通知系统——统一非阻塞错误提示，自动消失
@@ -208,7 +209,7 @@ items:
     status: done
     feature: 2026-05-08-toast-notifications
     minimal_loop: false
-    notes: 2026-05-08 完成；纯 Jotai + Tailwind 零依赖；error/success/info 三色；ChatView/LeftSidebar 所有 catch 块已接入
+    notes: 2026-05-08 完成——纯 Jotai + Tailwind 零依赖；error/success/info 三色；ChatView/LeftSidebar 所有 catch 块已接入
 
   - slug: frontend-welcome
     description: 欢迎页——首次启动（无 Provider 配置时）显示引导页 + 快速进入设置
@@ -219,10 +220,10 @@ items:
     notes: 2026-05-08 完成——MainArea 根据 hasProviders 条件渲染 WelcomePage；三步引导文案 + 一键跳转设置
 
   - slug: frontend-tabs-enhanced
-    description: 标签页增强——ErrorBoundary 包裹 Tab 内容，防止单 Tab 崩溃影响全局
+    description: 标签页增强——流式关闭确认对话框 + Ctrl+Tab快捷键切换 + hover标题预览
     depends_on: [frontend-main-area]
-    status: in-progress
-    feature: null
+    status: done
+    feature: 2026-05-08-tabs-enhanced
     minimal_loop: false
     notes: ErrorBoundary 已完成，但快捷切换、关闭确认、预览缩略图尚未开始
 
@@ -243,25 +244,146 @@ items:
     notes: 2026-05-08 完成——cancelled bool 标志位，on_event.send() 失败时置 true，后续 chunk 跳过、Done 不发、assistant 不写盘
 
   - slug: backend-agent-interrupts
-    description: Agent 中断协议——解析 Claude CLI 的 ask/plan/permission 类事件，新增 respond_agent_interrupt 命令，让前端可以继续/允许/拒绝
+    description: Agent 中断协议——解析 Claude CLI 的 ask/plan/permission 类事件，新增 respond_agent_interrupt 命令，让前端可以按中断类型回传 approve/deny/always-allow/ask-user answers/plan feedback
     depends_on: [backend-agent-engine]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-08-backend-agent-interrupts
     minimal_loop: false
     notes: 当前 AgentEvent 只有 assistantContent/toolUse/toolResult/done/error，前后端都缺中断回传协议
 
   - slug: backend-agent-session-storage
-    description: Agent 会话存储——为 agent transcript 建立持久化格式和 list/get/delete/resume 命令，区分 chat/agent 会话空间
+    description: Agent 会话存储——为 agent transcript 建立持久化格式和 create/list/get/delete 命令，区分 chat/agent 会话空间；resume 首版仅指重开 transcript 与 GUI 线程
     depends_on: [backend-agent-engine]
-    status: planned
-    feature: null
+    status: done
     minimal_loop: false
-    notes: 当前 agentMessages 只存在于 Jotai 内存，切换列表或重启应用后不可恢复
+    notes: 当前 agentMessages 只存在于 Jotai 内存，切换列表或重启应用后不可恢复；首版不承诺恢复底层 Claude 子进程的隐藏上下文
 
   - slug: frontend-agent-session-navigation
     description: Agent 会话导航——LeftSidebar/SearchDialog 按当前模式列出并切换 agent 会话，选中后回填 agentMessages 并恢复对应视图状态
     depends_on: [backend-agent-session-storage, frontend-agent-view, frontend-search]
+    status: done
+    feature: 2026-05-08-agent-session-navigation
+    minimal_loop: false
+    notes: 当前新建/切换会话逻辑强制回到 chat，会话搜索也不会回填实际对话内容
+
+  # ===== 2026-05-08 Proma UI 追平新增 =====
+
+  - slug: frontend-agent-interrupt-ui
+    description: Agent 中断审批 UI——PermissionBanner（allow/deny + 危险等级色标 + 键盘 Enter/Esc）+ 预留 AskUser/ExitPlanMode 接口
+    depends_on: [backend-agent-interrupts, frontend-agent-view]
+    status: done
+    feature: 2026-05-08-agent-interrupt-ui
+    minimal_loop: false
+    notes: 取代 #15 frontend-permission；三种中断类型覆盖 Proma 的完整审批交互；后端必须先完成 #31 协议层
+
+  - slug: frontend-agent-task-progress
+    description: 任务进度聚合——TaskProgressCard（聚合 TaskCreate/TaskUpdate/TodoWrite 工具调用为单张进度卡：ListTodo 图标 + 进度条 + 状态图标 + 超过 8 项可折叠）；BackgroundTasksPanel 后置
+    depends_on: [frontend-agent-view, frontend-tool-call]
+    status: done
+    feature: 2026-05-08-agent-task-progress
+    minimal_loop: false
+    notes: 复用现有 ToolCallDisplay 的事件数据；TaskProgressCard 需按 tool_name 过滤 TaskCreate/TaskUpdate/TodoWrite 三类特定工具
+
+  - slug: frontend-agent-context-tools
+    description: Agent 上下文工具——PermissionModeSelector（三模式切换：Auto/Default/Plan）+ AgentInput 引语法提示 placeholder；ContextUsageBadge 后置（依赖后端 token 统计事件）
+    depends_on: [frontend-agent-view]
+    status: done
+    feature: 2026-05-08-agent-context-tools
+    minimal_loop: false
+    notes: ContextUsageBadge 需要后端或 Claude CLI 提供 token 统计事件；PermissionModeSelector 需联动 CLI 的 --permission-mode 参数
+
+  - slug: frontend-chat-input-enhanced
+    description: Chat 输入框增强——TipTap/ProseMirror 富文本编辑器替换纯 textarea（支持 markdown 快捷格式化）、输入框底部工具栏（ModelSelector + Thinking开关 + ContextSettings + 发送/停止按钮）、草稿持久化（per-session 保存未发送内容）
+    depends_on: [frontend-chat-view]
     status: planned
     feature: null
     minimal_loop: false
-    notes: 当前新建/切换会话逻辑强制回到 chat，会话搜索也不会回填实际对话内容
+    notes: 涉及新增 TipTap 依赖及其 React 封装；根据 requirement 边界，首版不做聊天附件/拖放
+
+  - slug: frontend-chat-reasoning-block
+    description: Thinking/推理块——Reasoning 可折叠组件（ReasoningTrigger 可点击标题栏 + ReasoningContent 可折叠内容区），在 Chat/Agent 消息中展示 AI 思维过程
+    depends_on: [frontend-markdown]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 纯前端组件，不依赖后端变动；需 Claude CLI 输出 reasoning/thinking 类型内容块
+
+  - slug: frontend-chat-message-polish
+    description: 消息精细操作——Fork/Rewind 按钮（回退到该消息重新发送，截断后续历史）、Copy 按钮（已有基础可复用）、Context Divider（消息间"上下文已清空"分割线+文字）、ScrollMinimap（右侧细条显示消息位置，按 user/assistant 角色着色，hover 预览跳转）
+    depends_on: [frontend-chat-view, frontend-message-actions]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 除 Context Divider 外均纯前端；Context Divider 需在消息流中识别 SessionEvent::Clear 标记
+
+  - slug: frontend-sidebar-collapsible
+    description: 侧栏折叠增强——280px ↔ 48px 平滑动画过渡（transition-[width]）、图标模式（仅显示新建按钮+用户头像+模式图标+设置齿轮）、会话 Pin/Rename/Archive 操作（悬浮按钮 + 双击编辑标题 + Archive 独立视图 + "Back to active" 返回按钮）、会话日期分组（Today/Yesterday/Earlier）
+    depends_on: [frontend-left-sidebar, frontend-session-list]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 纯前端 CSS transition + Jotai 状态管理；Archive 需后端 archive/restore 会话命令
+
+  - slug: frontend-search-enhanced
+    description: 搜索增强——标题搜索体验补强（按更新时间排序、结果高亮、模式图标区分、结果回填一致性）、IME composition 处理、键盘导航与快捷键细节完善
+    depends_on: [frontend-search]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 根据 requirement 边界，首版不做 transcript 全文搜索；本条只优化标题搜索体验与结果打开一致性
+
+  - slug: frontend-settings-refined
+    description: 设置重构——左侧导航+右侧内容布局（导航 160px + ScrollArea 内容）、Settings UI 原语组件库（Card/Input/SecretInput/Row/Section/SegmentedControl/Select/Textarea/Toggle）、导航持久化（settingsTabAtom 记忆上次打开 tab）、未保存变更保护（AlertDialog 离开确认）
+    depends_on: [settings-dialog]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 新增导航项：PromptSettings（复用已有系统提示词编辑）、AppearanceSettings（已有主题/字体）、ToolSettings（依赖后端工具列表命令）
+
+  - slug: frontend-right-panel-tree
+    description: 右侧面板增强——递归文件树（点击目录展开时异步 readDir 子目录 + 缩进层级）、AgentHeader 内打开入口按钮（文件变更时 PanelRight 图标脉冲点）、面包屑导航（显示路径最后两段）、文件操作（Hover 显示重命名/删除/添加到聊天按钮）
+    depends_on: [frontend-right-panel, frontend-agent-view]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 递归读取依赖 Tauri fs plugin 的 readDir 递归调用；脉冲点通过 listen 文件变更 event 或轮询实现
+
+  - slug: backend-agent-governance-commands
+    description: Agent 治理命令——暴露 Skills/Hooks 的列表与启停配置口径：基于 j-cli 的 load_all_skills() / HookManager::list_hooks() 返回 GUI 可消费元数据，并通过 AgentConfig.disabled_skills / disabled_hooks 持久化启停状态
+    depends_on: [backend-config-commands]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 现有 get_agent_config/set_agent_config 只覆盖 providers/active_index/theme；首版先补列表与启停，不在 GUI 内创建或编辑 skill/hook 文件
+
+  - slug: backend-mcp-config-commands
+    description: MCP 配置命令——定义 j-gui 读取/写回的 MCP server 数据源、标准化结构、未知字段保留策略与保存时校验逻辑，供 Settings MCP tab 使用
+    depends_on: [backend-config-commands]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 当前 j-cli 仓库内尚无统一 MCP 配置抽象；首版必须先拍板配置文件位置/结构，再实现 GUI；不承诺在 GUI 内完成 server 安装或 marketplace 分发
+
+  - slug: frontend-settings-skills-ui
+    description: Skills UI——Settings 中新增 Skills tab，展示已加载 skill 的名称/描述/来源目录与覆盖关系，支持单项启停、全部启用、全部禁用与空态说明
+    depends_on: [frontend-settings-refined, backend-agent-governance-commands]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 交互语义参考 j-cli TUI 的 Skills tab；首版只管理启停与元数据展示，不在 GUI 内编辑 SKILL.md 正文
+
+  - slug: frontend-settings-hooks-ui
+    description: Hooks UI——Settings 中新增 Hooks tab，展示 hook 的 source/event/type/label/on_error/filter 摘要，支持按 unique_id 启停、全部启用、全部禁用与空态说明
+    depends_on: [frontend-settings-refined, backend-agent-governance-commands]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 行为锚定 j-cli TUI Hooks tab 与 HookManager::list_hooks()；首版聚焦治理视图和启停，不在 GUI 内注册、编辑或删除 hook 文件
+
+  - slug: frontend-settings-mcp-ui
+    description: MCP 配置 UI——Settings 中新增 MCP tab，展示 server 列表、transport/command/url/env 摘要、启停开关、详情编辑与校验错误提示
+    depends_on: [frontend-settings-refined, backend-mcp-config-commands]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 吸收 Proma 的 Settings 导航与脏状态保护经验，但不猜测 j-cli 的 MCP 模型；首版聚焦本地配置读写，不做远程 catalog、安装向导或健康探测面板

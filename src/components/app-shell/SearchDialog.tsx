@@ -1,23 +1,41 @@
 import { useState, useEffect, useCallback } from "react";
-import { Search } from "lucide-react";
+import { Search, MessageSquare, Bot } from "lucide-react";
 import type { SessionInfo } from "@/lib/tauri";
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  sessions: SessionInfo[];
-  onSelect: (id: string) => void;
+  chatSessions: SessionInfo[];
+  agentSessions: SessionInfo[];
+  onSelect: (id: string, type: "chat" | "agent") => void | Promise<void>;
 }
 
-export default function SearchDialog({ open, onClose, sessions, onSelect }: Props) {
+interface MergedItem {
+  session: SessionInfo;
+  type: "chat" | "agent";
+}
+
+export default function SearchDialog({
+  open,
+  onClose,
+  chatSessions,
+  agentSessions,
+  onSelect,
+}: Props) {
   const [query, setQuery] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
 
-  const filtered = sessions.filter(
-    (s) =>
+  // Merge both session sources with type tags for cross-mode search
+  const allSessions: MergedItem[] = [
+    ...chatSessions.map((s) => ({ session: s, type: "chat" as const })),
+    ...agentSessions.map((s) => ({ session: s, type: "agent" as const })),
+  ];
+
+  const filtered = allSessions.filter(
+    (item) =>
       !query ||
-      (s.title || "").toLowerCase().includes(query.toLowerCase()) ||
-      s.id.toLowerCase().includes(query.toLowerCase()),
+      (item.session.title || "").toLowerCase().includes(query.toLowerCase()) ||
+      item.session.id.toLowerCase().includes(query.toLowerCase()),
   );
 
   useEffect(() => {
@@ -42,11 +60,12 @@ export default function SearchDialog({ open, onClose, sessions, onSelect }: Prop
         e.preventDefault();
         setSelectedIdx((i) => Math.max(i - 1, 0));
       } else if (e.key === "Enter" && filtered[selectedIdx]) {
-        onSelect(filtered[selectedIdx].id);
+        const item = filtered[selectedIdx];
+        onSelect(item.session.id, item.type);
         onClose();
       }
     },
-    [onClose, onSelect, filtered, selectedIdx],
+    [filtered, onClose, onSelect, selectedIdx],
   );
 
   if (!open) return null;
@@ -67,7 +86,7 @@ export default function SearchDialog({ open, onClose, sessions, onSelect }: Prop
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="搜索会话..."
+            placeholder="搜索会话... (Chat + Agent)"
             className="flex-1 text-sm bg-transparent focus:outline-none"
           />
           <kbd className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
@@ -80,20 +99,27 @@ export default function SearchDialog({ open, onClose, sessions, onSelect }: Prop
               {query ? "无匹配会话" : "暂无会话"}
             </p>
           ) : (
-            filtered.map((s, i) => (
+            filtered.map((item, i) => (
               <button
-                key={s.id}
+                key={`${item.type}-${item.session.id}`}
                 onClick={() => {
-                  onSelect(s.id);
+                  onSelect(item.session.id, item.type);
                   onClose();
                 }}
                 className={`w-full text-left px-4 py-2.5 text-sm hover:bg-accent transition-colors ${
                   i === selectedIdx ? "bg-accent" : ""
                 }`}
               >
-                <span className="truncate block">{s.title || s.id}</span>
-                <span className="text-[10px] text-muted-foreground">
-                  {s.messageCount} 条消息
+                <div className="flex items-center gap-2">
+                  {item.type === "chat" ? (
+                    <MessageSquare size={14} className="text-muted-foreground shrink-0" />
+                  ) : (
+                    <Bot size={14} className="text-muted-foreground shrink-0" />
+                  )}
+                  <span className="truncate">{item.session.title || item.session.id}</span>
+                </div>
+                <span className="text-[10px] text-muted-foreground ml-6">
+                  {item.session.messageCount} 条消息 · {item.type === "chat" ? "Chat" : "Agent"}
                 </span>
               </button>
             ))
