@@ -8,6 +8,9 @@
 
 ### 编译与构建
 
+- 前端包管理用 **pnpm**（非 npm/yarn）
+- Rust 代码（`src-tauri/`）必须通过 `cargo fmt` 格式化 + `cargo clippy -- -D warnings` 零告警
+
 ### 运行与本地起服务
 
 ### 测试
@@ -19,3 +22,5 @@
 ### 环境变量与凭证
 
 ### 其他
+
+- Rust 编码规约详见 `compound/2026-05-08-decision-rust-coding-conventions.md`
