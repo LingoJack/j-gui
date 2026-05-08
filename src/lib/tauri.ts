@@ -97,6 +97,7 @@ export interface ProviderInfo {
 export interface AgentConfigInfo {
   providers: ProviderInfo[];
   activeIndex: number;
+  theme: string;
 }
 
 export async function getAgentConfig(): Promise<AgentConfigInfo> {
@@ -111,9 +112,25 @@ export async function setActiveProvider(index: number): Promise<void> {
   return invoke("set_active_provider", { index });
 }
 
+// ===== System Prompt =====
+
+export async function getSystemPrompt(): Promise<string | null> {
+  return invoke("get_system_prompt");
+}
+
+export async function setSystemPrompt(prompt: string): Promise<void> {
+  return invoke("set_system_prompt", { prompt });
+}
+
+// ===== Session =====
+
+export async function clearSession(sessionId: string): Promise<void> {
+  return invoke("clear_session", { sessionId });
+}
+
 // ===== System =====
 
-export async function setTheme(theme: "dark" | "light"): Promise<void> {
+export async function setTheme(theme: string): Promise<void> {
   return invoke("set_theme", { theme });
 }
 

@@ -1,4 +1,4 @@
-use j_cli::command::chat::storage::{load_agent_config, save_agent_config};
+use j_cli::command::chat::storage::{load_agent_config, save_agent_config, load_system_prompt, save_system_prompt};
 use j_cli::config::YamlConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -18,6 +18,7 @@ pub struct ProviderInfo {
 pub struct AgentConfigInfo {
     pub providers: Vec<ProviderInfo>,
     pub active_index: usize,
+    pub theme: String,
 }
 
 #[tauri::command]
@@ -47,6 +48,7 @@ pub fn get_agent_config() -> Result<AgentConfigInfo, String> {
             })
             .collect(),
         active_index: config.active_index,
+        theme: config.theme.to_str().to_string(),
     })
 }
 
@@ -124,5 +126,19 @@ pub fn set_config(section: String, key: String, value: String) -> Result<(), Str
         config.remove_property(&section, &key)
     } else {
         config.set_property(&section, &key, &value)
+    }
+}
+
+#[tauri::command]
+pub fn get_system_prompt() -> Result<Option<String>, String> {
+    Ok(load_system_prompt())
+}
+
+#[tauri::command]
+pub fn set_system_prompt(prompt: String) -> Result<(), String> {
+    if save_system_prompt(&prompt) {
+        Ok(())
+    } else {
+        Err("保存系统提示词失败".to_string())
     }
 }

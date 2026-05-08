@@ -1,15 +1,28 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import ChatView from "@/components/chat/ChatView";
+import WelcomePage from "./WelcomePage";
+import ErrorBoundary from "@/components/ui/ErrorBoundary";
+import { getVersion } from "@/lib/tauri";
 
 interface Tab {
   id: string;
   title: string;
 }
 
-export default function MainArea() {
+interface Props {
+  hasProviders: boolean;
+  onOpenSettings: () => void;
+}
+
+export default function MainArea({ hasProviders, onOpenSettings }: Props) {
   const [tabs] = useState<Tab[]>([{ id: "default", title: "Chat" }]);
   const [activeTabId] = useState("default");
+  const [version, setVersion] = useState("");
+
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => {});
+  }, []);
 
   return (
     <div className="flex flex-col h-full">
@@ -39,7 +52,13 @@ export default function MainArea() {
             key={tab.id}
             className={cn("h-full", tab.id !== activeTabId && "hidden")}
           >
-            <ChatView />
+            <ErrorBoundary>
+              {hasProviders ? (
+                <ChatView />
+              ) : (
+                <WelcomePage onOpenSettings={onOpenSettings} version={version} />
+              )}
+            </ErrorBoundary>
           </div>
         ))}
       </div>

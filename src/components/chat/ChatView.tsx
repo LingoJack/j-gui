@@ -1,6 +1,6 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useEffect, useState } from "react";
-import { useAtom, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Channel } from "@tauri-apps/api/core";
 import {
   currentSessionIdAtom,
@@ -9,38 +9,73 @@ import {
   type Message,
 } from "@/atoms/sessions";
 import { agentConfigAtom } from "@/atoms/config";
-import { sendMessage, createSession, deleteMessage, setActiveProvider, getAgentConfig, setTheme, getVersion } from "@/lib/tauri";
+import {
+  sendMessage,
+  createSession,
+  deleteMessage,
+  clearSession,
+  setActiveProvider,
+  getAgentConfig,
+  getSystemPrompt,
+  setSystemPrompt,
+  setTheme,
+  getVersion,
+} from "@/lib/tauri";
 import type { ChatEvent } from "@/lib/tauri";
-import { ChevronDown, Sun, Moon } from "lucide-react";
+import { ChevronDown, Sun, Moon, Pencil, Trash2 } from "lucide-react";
 import { toast } from "@/atoms/toast";
 import { themeAtom } from "@/atoms/theme";
+import { cn } from "@/lib/utils";
 import ChatMessages from "./ChatMessages";
 import ChatInput from "./ChatInput";
 
+function estimateTokens(messages: Message[]): number {
+  const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0);
+  return Math.max(0, Math.round(totalChars / 3.5));
+}
+
 export default function ChatView() {
   const [sessionId, setSessionId] = useAtom(currentSessionIdAtom);
+  const messages = useAtomValue(messagesAtom);
   const setMessages = useSetAtom(messagesAtom);
   const [streaming, setStreaming] = useAtom(streamingAtom);
   const [config, setConfig] = useAtom(agentConfigAtom);
   const [theme, setThemeState] = useAtom(themeAtom);
   const [version, setVersion] = useState("");
+  const [sysPrompt, setSysPrompt] = useState<string>("");
+  const [sysPromptOpen, setSysPromptOpen] = useState(false);
+  const [sysPromptDraft, setSysPromptDraft] = useState("");
   const streamingRef = useRef(false);
+  const sysPromptRef = useRef<HTMLDivElement>(null);
+
+  const tokenCount = useMemo(() => estimateTokens(messages), [messages]);
 
   useEffect(() => {
     getAgentConfig().then(setConfig).catch(() => {});
     getVersion().then(setVersion).catch(() => {});
+    getSystemPrompt().then((p) => setSysPrompt(p || "")).catch(() => {});
   }, [setConfig]);
+
+  // Click outside to close system prompt popover
+  useEffect(() => {
+    if (!sysPromptOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (sysPromptRef.current && !sysPromptRef.current.contains(e.target as Node)) {
+        setSysPromptOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [sysPromptOpen]);
 
   const handleSend = useCallback(
     async (content: string) => {
-      // Ensure we have a session
       let sid = sessionId;
       if (!sid) {
         sid = await createSession();
         setSessionId(sid);
       }
 
-      // Add user message
       const userMsg: Message = {
         id: crypto.randomUUID(),
         role: "user",
@@ -49,7 +84,6 @@ export default function ChatView() {
       };
       setMessages((prev) => [...prev, userMsg]);
 
-      // Add streaming placeholder
       const assistantId = crypto.randomUUID();
       const assistantMsg: Message = {
         id: assistantId,
@@ -126,6 +160,17 @@ export default function ChatView() {
     [sessionId, setSessionId, setMessages, setStreaming],
   );
 
+  const handleClearContext = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      await clearSession(sessionId);
+      setMessages([]);
+      toast("上下文已清空", "success");
+    } catch (e) {
+      toast(`清空失败: ${String(e)}`, "error");
+    }
+  }, [sessionId, setMessages]);
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between h-10 px-4 border-b border-border shrink-0 gap-2">
@@ -138,6 +183,62 @@ export default function ChatView() {
           )}
         </div>
         <div className="flex items-center gap-2 min-w-0">
+          {/* System prompt button */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setSysPromptDraft(sysPrompt);
+                setSysPromptOpen((v) => !v);
+              }}
+              className={cn(
+                "p-1 rounded-md hover:bg-accent shrink-0 transition-colors",
+                sysPromptOpen ? "bg-accent text-foreground" : "text-muted-foreground",
+              )}
+              title="系统提示词"
+            >
+              <Pencil size={14} />
+            </button>
+            {sysPromptOpen && (
+              <div ref={sysPromptRef} className="absolute right-0 top-8 w-72 bg-card border border-border rounded-lg shadow-lg z-40 p-3 space-y-2">
+                <textarea
+                  value={sysPromptDraft}
+                  onChange={(e) => setSysPromptDraft(e.target.value)}
+                  placeholder="系统提示词（可选，用于设定 AI 行为）"
+                  rows={6}
+                  className="w-full text-xs bg-muted rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+                />
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-muted-foreground">
+                    {sysPromptDraft.length > 0 ? `${Math.round(sysPromptDraft.length / 3.5)} tokens` : "未设置"}
+                  </span>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setSysPromptOpen(false)}
+                      className="px-2 py-1 text-[11px] rounded-md hover:bg-accent"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await setSystemPrompt(sysPromptDraft);
+                          setSysPrompt(sysPromptDraft);
+                          setSysPromptOpen(false);
+                          toast("系统提示词已保存", "success");
+                        } catch (e) {
+                          toast(`保存失败: ${String(e)}`, "error");
+                        }
+                      }}
+                      className="px-2 py-1 text-[11px] rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                    >
+                      保存
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Model selector */}
           {config.providers.length > 0 && (
             <div className="relative">
@@ -161,6 +262,26 @@ export default function ChatView() {
               />
             </div>
           )}
+
+          {/* Token count */}
+          {messages.length > 0 && (
+            <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
+              ~{tokenCount} tokens
+            </span>
+          )}
+
+          {/* Clear context */}
+          {messages.length > 0 && (
+            <button
+              onClick={handleClearContext}
+              className="text-xs text-muted-foreground hover:text-foreground shrink-0 flex items-center gap-1"
+              title="清空上下文"
+            >
+              <Trash2 size={12} />
+              清空
+            </button>
+          )}
+
           <button
             onClick={() => {
               setMessages([]);
@@ -200,7 +321,6 @@ export default function ChatView() {
             .catch((e) => toast(`删除失败: ${String(e)}`, "error"));
         }}
         onResend={(index, content) => {
-          // Remove messages from this user message onward, then resend
           setMessages((prev) => prev.slice(0, index));
           handleSend(content);
         }}

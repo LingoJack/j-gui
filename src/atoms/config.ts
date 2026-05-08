@@ -11,11 +11,13 @@ export interface ProviderInfo {
 export interface AgentConfigInfo {
   providers: ProviderInfo[];
   activeIndex: number;
+  theme: string;
 }
 
 export const agentConfigAtom = atom<AgentConfigInfo>({
   providers: [],
   activeIndex: 0,
+  theme: "dark",
 });
 
 export const activeProviderAtom = atom((get) => {

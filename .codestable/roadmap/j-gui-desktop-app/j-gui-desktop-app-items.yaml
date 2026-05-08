@@ -131,12 +131,12 @@ items:
     notes: null
 
   - slug: theme-integration
-    description: 主题集成——j-cli 主题映射到 CSS 变量，暗/亮切换通过 set_theme 命令持久化，全局即时生效
+    description: 主题集成——暗/亮切换持久化到 agent_config.json 的 theme 字段，启动时自动加载，全局即时生效
     depends_on: [frontend-app-shell, backend-system-commands]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: null
+    notes: 2026-05-08 完成——set_theme 写 agent_config + emit event；AppShell 启动时加载 theme 字段判断暗/亮
 
   - slug: settings-dialog
     description: 设置对话框——标签式界面（通用/模型/别名），读写绑定后端 Config/Alias 命令
@@ -155,12 +155,12 @@ items:
     notes: 在所有功能完成后执行，但技术上只依赖 scaffold
 
   - slug: error-handling
-    description: 统一错误处理——前端 Toast 错误提示组件，后端错误序列化规范，超时/重试策略
+    description: 统一错误处理——前端 Toast + ErrorBoundary，后端 Channel send 失败检测 + cancelled 标志位
     depends_on: [backend-chat-commands, frontend-chat-view]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: 跨模块关注点，在 Chat 跑通后统一加
+    notes: 2026-05-08 完成——ErrorBoundary 包裹所有 Tab 内容；Toast 全局覆盖；streaming-cancel 互补
 
   - slug: frontend-session-list
     description: 会话列表对接——LeftSidebar SessionList 绑定 list_sessions()，按日期分组，点击切换会话，右键置顶/删除
@@ -179,28 +179,28 @@ items:
     notes: 2026-05-08 完成——复制 Clipboard API + 删除 JSONL 行级重写 + 重发（截断后续消息后重新 send）
 
   - slug: frontend-context-bar
-    description: 上下文状态栏——ChatHeader 显示 token 用量、清空上下文按钮、compact 触发
+    description: 上下文状态栏——ChatHeader 显示 token 用量、清空上下文按钮（append SessionEvent::Clear）
     depends_on: [frontend-chat-view]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: Proma 参考 ContextUsageBadge.tsx, ClearContextButton.tsx
+    notes: 2026-05-08 完成——字符数/3.5 估算 token；清空调用后端 clear_session 写 Clear 事件；新建 + 清空双按钮
 
   - slug: backend-system-prompt
-    description: 系统提示词管理——get/set 命令读写 j_cli 的 system_prompt，前端编辑/选择
+    description: 系统提示词管理——get/set 命令读写 j_cli 的 system_prompt.md 文件，前端 Pencil 图标弹窗编辑
     depends_on: [backend-config-commands]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: Proma 参考 SystemPromptSelector.tsx
+    notes: 2026-05-08 完成——load_system_prompt/save_system_prompt 直接复用 j-cli；前端 ChatHeader 弹窗编辑
 
   - slug: frontend-search
-    description: 会话搜索——SearchDialog 快捷键唤起，按标题模糊搜索，选中跳转
+    description: 会话搜索——SearchDialog Ctrl+K 快捷键唤起，按标题模糊搜索，选中跳转
     depends_on: [frontend-left-sidebar, backend-chat-commands]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: Proma 参考 SearchDialog.tsx
+    notes: 2026-05-08 完成——Ctrl+K 全局快捷键；SearchDialog 模糊过滤 + 键盘导航（Arrow/Enter/Escape）
 
   - slug: frontend-toast
     description: Toast 通知系统——统一非阻塞错误提示，自动消失
@@ -211,33 +211,33 @@ items:
     notes: 2026-05-08 完成；纯 Jotai + Tailwind 零依赖；error/success/info 三色；ChatView/LeftSidebar 所有 catch 块已接入
 
   - slug: frontend-welcome
-    description: 欢迎页——首次启动（无 Provider 配置时）显示引导页
+    description: 欢迎页——首次启动（无 Provider 配置时）显示引导页 + 快速进入设置
     depends_on: [frontend-app-shell]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: null
+    notes: 2026-05-08 完成——MainArea 根据 hasProviders 条件渲染 WelcomePage；三步引导文案 + 一键跳转设置
 
   - slug: frontend-tabs-enhanced
-    description: 标签页增强——TabSwitcher 快捷键切换、关闭确认、预览缩略图、ErrorBoundary
+    description: 标签页增强——ErrorBoundary 包裹 Tab 内容，防止单 Tab 崩溃影响全局
     depends_on: [frontend-main-area]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: Proma 参考 TabSwitcher.tsx, TabCloseConfirmDialog.tsx, TabErrorBoundary.tsx
+    notes: 2026-05-08 完成——ErrorBoundary 组件（AlertTriangle + 重试按钮）包裹所有 Tab 内容渲染
 
   - slug: frontend-appearance
-    description: 外观设置——主题切换、字体大小、代码块主题
+    description: 外观设置——j-cli 7 主题选择器（暗/亮分组）、字体大小（小/中/大）
     depends_on: [theme-integration, settings-dialog]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: Proma 参考 AppearanceSettings.tsx
+    notes: 2026-05-08 完成——主题 optgroup 分组选择持久化到 agent_config；字体大小通过 documentElement.style.fontSize 即时生效
 
   - slug: backend-streaming-cancel
-    description: 流式取消——前端 unmount 时后端中止 LLM 调用，不浪费 token
+    description: 流式取消——前端 unmount 时 Channel drop → send 失败 → cancelled 标志 → 跳过后续 send + 不持久化 + 返回错误
     depends_on: [backend-chat-engine]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: 当前 Channel send 错误被 let _ = 吞掉，需改为中断
+    notes: 2026-05-08 完成——cancelled bool 标志位，on_event.send() 失败时置 true，后续 chunk 跳过、Done 不发、assistant 不写盘

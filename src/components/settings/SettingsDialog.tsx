@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useAtom } from "jotai";
 import { X, Plus, Trash2, Check } from "lucide-react";
 import { agentConfigAtom, type ProviderInfo } from "@/atoms/config";
-import { getAgentConfig, setAgentConfig, getConfig, setConfig, listAliases, setAlias, removeAlias, type YamlConfigInfo, type AliasEntry } from "@/lib/tauri";
+import { getAgentConfig, setAgentConfig, getConfig, setConfig, setTheme, listAliases, setAlias, removeAlias, type YamlConfigInfo, type AliasEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { toast } from "@/atoms/toast";
 
@@ -29,7 +29,7 @@ const ALIAS_SECTIONS = [
 ];
 
 export default function SettingsDialog({ open, onClose }: Props) {
-  const [, setConfigState] = useAtom(agentConfigAtom);
+  const [configState, setConfigState] = useAtom(agentConfigAtom);
   const [tab, setTab] = useState<Tab>("models");
   const [draft, setDraft] = useState<ProviderInfo[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -85,8 +85,8 @@ export default function SettingsDialog({ open, onClose }: Props) {
 
   const saveModels = async () => {
     try {
-      await setAgentConfig({ providers: draft, activeIndex });
-      setConfigState({ providers: draft, activeIndex });
+      await setAgentConfig({ providers: draft, activeIndex, theme: configState.theme || "dark" });
+      setConfigState({ providers: draft, activeIndex, theme: configState.theme || "dark" });
       setDirty(false);
       toast("模型配置已保存", "success");
     } catch (e) {
@@ -296,6 +296,54 @@ export default function SettingsDialog({ open, onClose }: Props) {
                     >
                       <option value="concise">简洁</option>
                       <option value="verbose">详细</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Appearance section */}
+              <div>
+                <h3 className="text-sm font-medium mb-2">外观</h3>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs text-muted-foreground w-24 shrink-0">主题</label>
+                    <select
+                      value={configState.theme || "dark"}
+                      onChange={async (e) => {
+                        const t = e.target.value;
+                        setConfigState((prev) => ({ ...prev, theme: t }));
+                        const isDark = t !== "light" && t !== "anthropic_light";
+                        document.documentElement.classList.toggle("dark", isDark);
+                        await setTheme(t);
+                      }}
+                      className="text-xs bg-muted rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      <optgroup label="暗色">
+                        <option value="dark">Dark</option>
+                        <option value="midnight">Midnight</option>
+                        <option value="nord">Nord</option>
+                        <option value="monokai">Monokai</option>
+                        <option value="anthropic_dark">Anthropic Dark</option>
+                      </optgroup>
+                      <optgroup label="亮色">
+                        <option value="light">Light</option>
+                        <option value="anthropic_light">Anthropic Light</option>
+                      </optgroup>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs text-muted-foreground w-24 shrink-0">字体大小</label>
+                    <select
+                      defaultValue="medium"
+                      onChange={(e) => {
+                        const scale = e.target.value === "small" ? "0.9" : e.target.value === "large" ? "1.1" : "1";
+                        document.documentElement.style.fontSize = `${Number(scale) * 100}%`;
+                      }}
+                      className="text-xs bg-muted rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      <option value="small">小</option>
+                      <option value="medium">中</option>
+                      <option value="large">大</option>
                     </select>
                   </div>
                 </div>

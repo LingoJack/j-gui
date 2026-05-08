@@ -42,7 +42,7 @@ impl ChatEngine {
         Self
     }
 
-    fn validate_session_id(id: &str) -> Result<(), String> {
+    pub fn validate_session_id(id: &str) -> Result<(), String> {
         if id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') && !id.is_empty() {
             Ok(())
         } else {
@@ -74,20 +74,33 @@ impl ChatEngine {
         let system_prompt_str = system_prompt.as_deref();
 
         let mut index: u32 = 0;
+        let mut cancelled = false;
 
         let result = call_llm_stream_async(
             &provider,
             &messages,
             system_prompt_str,
             &mut |chunk: &str| {
-                let _ = on_event.send(ChatEvent::Chunk {
-                    index,
-                    content: chunk.to_string(),
-                });
+                if cancelled {
+                    return;
+                }
+                if on_event
+                    .send(ChatEvent::Chunk {
+                        index,
+                        content: chunk.to_string(),
+                    })
+                    .is_err()
+                {
+                    cancelled = true;
+                }
                 index += 1;
             },
         )
         .await;
+
+        if cancelled {
+            return Err("流式传输已取消".to_string());
+        }
 
         match result {
             Ok(full_text) => {
