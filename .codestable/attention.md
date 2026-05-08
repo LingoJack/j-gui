@@ -8,10 +8,12 @@
 
 ### 编译与构建
 
-- 前端包管理用 **pnpm**（非 npm/yarn）
+- 前端包管理用 **bun**（非 npm/yarn/pnpm）
 - Rust 代码（`src-tauri/`）必须通过 `cargo fmt` 格式化 + `cargo clippy -- -D warnings` 零告警
 
 ### 运行与本地起服务
+
+- 启动开发环境：`bun run tauri dev`（不是 `cargo tauri dev`——cargo-tauri CLI 未安装，用 bun 自带的 `@tauri-apps/cli`）
 
 ### 测试
 

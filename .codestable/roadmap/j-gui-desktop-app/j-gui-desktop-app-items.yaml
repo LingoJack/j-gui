@@ -1,0 +1,155 @@
+roadmap: j-gui-desktop-app
+created: 2026-05-08
+
+items:
+  - slug: scaffold
+    description: 项目脚手架——Tauri v2 + React + Vite + TypeScript 初始化，Tailwind v4 + Jotai + shadcn/ui 安装，j_cli path dependency 配置，验证 cargo tauri dev 启动成功
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: backend-config-commands
+    description: Config 命令——get_config, set_config, get_agent_config, set_agent_config，读写 j-cli 的 YAML/JSON 配置
+    depends_on: [scaffold]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: backend-alias-commands
+    description: Alias 命令——list_aliases, set_alias, remove_alias
+    depends_on: [scaffold]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: backend-chat-engine
+    description: Chat Engine——封装 j_cli 的 agent_handle/session_mgr/tool_executor 为 ChatEngine 结构体，提供 send_message(list_sessions/create_session/switch_session/delete_session 方法，send_message 通过 Channel<ChatEvent> 推送流式响应
+    depends_on: [scaffold]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 核心模块——所有 Chat/Agent 功能依赖它；send_message 签名包含 Channel<ChatEvent> 参数
+
+  - slug: backend-chat-commands
+    description: Chat 命令——send_message（通过 Channel 流式推送）/list_sessions/create_session/switch_session/delete_session，依赖 ChatEngine
+    depends_on: [backend-chat-engine]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 定义 ChatEvent 枚举的 Channel payload 格式（Chunk/ToolCall/ToolResult/Done 四种 variant）
+
+  - slug: backend-system-commands
+    description: System 命令——get_version, set_theme
+    depends_on: [scaffold]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: frontend-app-shell
+    description: 三栏布局——AppShell 主布局容器（左/中/右），侧栏折叠/展开动画，右侧面板显隐，响应式适配
+    depends_on: [scaffold]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: frontend-left-sidebar
+    description: 左侧栏——ModeSwitch（Chat/Agent 滑动切换）、SessionList（按日期分组/置顶/右键菜单）、SettingsButton、VersionBadge
+    depends_on: [frontend-app-shell]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: frontend-main-area
+    description: 主区域标签页——TabBar（标题/关闭/切换）、TabContent 容器，支持多标签并行打开
+    depends_on: [frontend-app-shell]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: frontend-chat-view
+    description: Chat 视图——ChatHeader（标题/模型选择/清空上下文）、ChatMessages（流式消息列表通过 Channel.onmessage 更新）、ChatInput（文本输入 invoke send_message 并传入 Channel）
+    depends_on: [frontend-main-area, backend-chat-commands]
+    status: planned
+    feature: null
+    minimal_loop: true
+    notes: 最小闭环——做完后用户可在桌面窗口里输入消息并看到 AI 流式回复
+
+  - slug: frontend-markdown
+    description: Markdown 渲染——react-markdown + rehype-highlight + remark-gfm + Shiki 代码高亮，MessageBubble 组件应用
+    depends_on: [frontend-chat-view]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: frontend-agent-view
+    description: Agent 视图——AgentHeader、AgentMessages（含工具调用气泡）、AgentInput，复用 Chat 的消息渲染基础
+    depends_on: [frontend-chat-view]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: frontend-tool-call
+    description: 工具调用显示——Bash/Read/Write/Edit 等工具执行输入/输出渲染，折叠/展开，状态图标，绑定 ChatEvent::ToolCall 和 ChatEvent::ToolResult
+    depends_on: [frontend-agent-view]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: frontend-permission
+    description: 权限审批——plan/ask/tool 三种审批横幅，确认/拒绝按钮，超时自动拒绝
+    depends_on: [frontend-agent-view]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: frontend-right-panel
+    description: 右侧面板——工作区文件浏览器（仅 Agent 模式显示），列出当前工作目录文件树
+    depends_on: [frontend-agent-view]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: theme-integration
+    description: 主题集成——j-cli 主题映射到 CSS 变量，暗/亮切换通过 set_theme 命令持久化，全局即时生效
+    depends_on: [frontend-app-shell, backend-system-commands]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: settings-dialog
+    description: 设置对话框——标签式界面（通用/模型/别名），读写绑定后端 Config/Alias 命令
+    depends_on: [backend-config-commands, backend-alias-commands, frontend-app-shell]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: build-packaging
+    description: 构建打包——Tauri build 配置（图标/安装包/更新），验证 cargo tauri build 产出可安装包
+    depends_on: [scaffold]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 在所有功能完成后执行，但技术上只依赖 scaffold
+
+  - slug: error-handling
+    description: 统一错误处理——前端 Toast 错误提示组件，后端错误序列化规范，超时/重试策略
+    depends_on: [backend-chat-commands, frontend-chat-view]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 跨模块关注点，在 Chat 跑通后统一加

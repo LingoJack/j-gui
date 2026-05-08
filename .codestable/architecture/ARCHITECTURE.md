@@ -9,7 +9,6 @@ tags: [tauri, react, desktop]
 depends_on: []
 implements: []
 ---
-
 # j-gui 架构总入口
 
 > 状态：骨架阶段（Tauri 脚手架已搭建，业务代码待开发）
@@ -39,33 +38,34 @@ j-gui 是 Tauri v2 桌面应用。前端 React + TypeScript (Vite)，后端 Rust
 
 ### 2.2 前端 (src/)
 
-| 文件 | 职责 | 关键入口 |
-|------|------|----------|
+| 文件         | 职责                             | 关键入口             |
+| ------------ | -------------------------------- | -------------------- |
 | `main.tsx` | React 挂载入口，渲染 `<App />` | `src/main.tsx:5-9` |
-| `App.tsx` | 根组件，当前仅含 greet 演示 | `src/App.tsx:6-51` |
-| `App.css` | 全局样式 | `src/App.css` |
+| `App.tsx`  | 根组件，当前仅含 greet 演示      | `src/App.tsx:6-51` |
+| `App.css`  | 全局样式                         | `src/App.css`      |
 
 技术栈：React 19 + TypeScript 5.8 + Vite 7 (`package.json:13-25`)
 
 ### 2.3 后端 (src-tauri/)
 
-| 文件 | 职责 | 关键入口 |
-|------|------|----------|
-| `main.rs` | 二进制入口，调用 lib crate | `src-tauri/src/main.rs:4-6` |
-| `lib.rs` | Tauri Builder 配置 + 命令注册 | `src-tauri/src/lib.rs:8-14` |
-| `Cargo.toml` | 依赖声明 | `src-tauri/Cargo.toml` |
-| `tauri.conf.json` | Tauri 窗口/构建/安全配置 | `src-tauri/tauri.conf.json` |
+| 文件                | 职责                          | 关键入口                      |
+| ------------------- | ----------------------------- | ----------------------------- |
+| `main.rs`         | 二进制入口，调用 lib crate    | `src-tauri/src/main.rs:4-6` |
+| `lib.rs`          | Tauri Builder 配置 + 命令注册 | `src-tauri/src/lib.rs:8-14` |
+| `Cargo.toml`      | 依赖声明                      | `src-tauri/Cargo.toml`      |
+| `tauri.conf.json` | Tauri 窗口/构建/安全配置      | `src-tauri/tauri.conf.json` |
 
 当前依赖：`tauri` v2, `tauri-plugin-opener` v2, `serde` + `serde_json` (`src-tauri/Cargo.toml:17-20`)
 
 Crate 结构：
+
 - bin crate (`main.rs`) → 调用 `tauri_app_lib::run()`
 - lib crate (`lib.rs`) → `tauri::Builder` 组装，当前仅注册 `greet` 命令和 `opener` 插件
 
 ### 2.4 构建流水线
 
 ```
-pnpm dev (Vite HMR) ─── 前端开发服务器 :1420
+bun dev (Vite HMR) ─── 前端开发服务器 :1420
 cargo tauri dev ─────── 同时启动前端 + Rust 后端
 cargo tauri build ───── tsc + vite build → dist/ → Tauri bundle
 ```
@@ -78,23 +78,28 @@ cargo tauri build ───── tsc + vite build → dist/ → Tauri bundle
 
 ## 4. 关键决策
 
-- **Rust 编码规约**：继承自 jcli，适用于 `src-tauri/` 下所有 Rust 代码。详见 `compound/2026-05-08-decision-rust-coding-conventions.md`
+- **Rust 编码规约**：继承自 jcli。详见 `compound/2026-05-08-decision-rust-coding-conventions.md`
+- **后端集成方案**：Rust crate 依赖 j_cli（path dep），不用 WS remote。详见 `compound/2026-05-08-decision-j-gui-rust-integration.md`
+- **前后端数据流**：Tauri Commands（请求）+ Channels（流式推送）+ Events（全局通知）。详见 `compound/2026-05-08-decision-j-gui-ipc-dataflow.md`
+- **Chat Engine 封装**：`ChatEngine` 结构体作为 j-cli 和 Tauri 命令之间的唯一中介。详见 `compound/2026-05-08-decision-j-gui-chat-engine.md`
+- **前端 UI 架构**：三栏布局 + 标签页主区域，模仿 Proma。详见 `compound/2026-05-08-decision-j-gui-ui-architecture.md`
+- **前端技术栈**：React 19 + Tailwind v4 + Jotai + shadcn/ui + Shiki。详见 `compound/2026-05-08-decision-j-gui-frontend-stack.md`
 
 ## 5. 代码锚点
 
-| 想看什么 | 从哪看 |
-|----------|--------|
-| Tauri 命令定义 | `src-tauri/src/lib.rs:2-5` (greet) |
-| Tauri Builder 组装 | `src-tauri/src/lib.rs:8-14` (run) |
-| 前端 IPC 调用示例 | `src/App.tsx:10-12` (invoke greet) |
-| React 挂载 | `src/main.tsx:5-9` |
-| Tauri 窗口/构建配置 | `src-tauri/tauri.conf.json` |
-| 前端依赖 | `package.json:13-25` |
-| Rust 依赖 | `src-tauri/Cargo.toml:17-20` |
+| 想看什么            | 从哪看                               |
+| ------------------- | ------------------------------------ |
+| Tauri 命令定义      | `src-tauri/src/lib.rs:2-5` (greet) |
+| Tauri Builder 组装  | `src-tauri/src/lib.rs:8-14` (run)  |
+| 前端 IPC 调用示例   | `src/App.tsx:10-12` (invoke greet) |
+| React 挂载          | `src/main.tsx:5-9`                 |
+| Tauri 窗口/构建配置 | `src-tauri/tauri.conf.json`        |
+| 前端依赖            | `package.json:13-25`               |
+| Rust 依赖           | `src-tauri/Cargo.toml:17-20`       |
 
 ## 6. 已知约束 / 边界情况
 
-- 前端包管理用 **pnpm**（非 npm/yarn）(`.codestable/attention.md:11`)
+- 前端包管理用 **bun**（非 npm/yarn/pnpm）(`.codestable/attention.md:11`)
 - Rust 代码必须通过 `cargo fmt --check` + `cargo clippy -- -D warnings` (`compound/2026-05-08-decision-rust-coding-conventions.md`)
 - `tauri.conf.json` 中 `identifier` 已设为 `com.j-gui.app` (`src-tauri/tauri.conf.json:5`)
 
