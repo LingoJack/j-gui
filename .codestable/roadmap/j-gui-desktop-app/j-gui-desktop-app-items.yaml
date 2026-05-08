@@ -64,15 +64,15 @@ items:
     status: done
     feature: 2026-05-08-three-column-layout
     minimal_loop: false
-    notes: 会话列表仍为静态占位数据，待对接 list_sessions()
+    notes: 2026-05-08 完成——Chat 会话列表已接入 list_sessions；Agent 会话导航另见 #31/#32
 
   - slug: frontend-main-area
     description: 主区域标签页——TabBar（标题/关闭/切换）、TabContent 容器，支持多标签并行打开
     depends_on: [frontend-app-shell]
-    status: done
+    status: in-progress
     feature: 2026-05-08-three-column-layout
     minimal_loop: false
-    notes: 多标签功能后续迭代
+    notes: 当前只有固定 default tab；样式壳已完成，但多标签打开/关闭/切换仍未实现
 
   - slug: frontend-chat-view
     description: Chat 视图——ChatHeader（标题/模型选择/清空上下文）、ChatMessages（流式消息列表通过 Channel.onmessage 更新）、ChatInput（文本输入 invoke send_message 并传入 Channel）
@@ -91,44 +91,44 @@ items:
     notes: 2026-05-08 完成；使用 rehype-highlight（非 Shiki）以避免异步初始化复杂度；inline highlight.js 主题
 
   - slug: backend-agent-engine
-    description: Agent Engine——Claude Agent SDK CLI 子进程管理，streamInput/streamOutput，SDKMessage→AgentEvent 转换
+    description: Agent Engine——spawn claude CLI 子进程（--output-format stream-json --verbose），stdin/stdout JSON 行协议，SDKMessage→AgentEvent 解析，Channel 流式推送
     depends_on: [scaffold]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: 2026-05-08 决策：首版用 Claude Agent SDK CLI；j-cli Agent Loop 预留 AgentBackend trait 后补
+    notes: 2026-05-08 完成——AgentEngine 纯 Rust（零 SDK 依赖）；parse_sdk_line 解析 assistant/tool_use/result；which_claude 自动发现 CLI
 
   - slug: frontend-agent-view
-    description: Agent 视图——AgentHeader（权限模式选择器）、AgentMessages（SDKMessage 渲染）、AgentInput（发送 + streamInput 注入）
+    description: Agent 视图——AgentView（Channel<AgentEvent> 流式渲染）、AgentMessages（MessageBubble + ToolCallDisplay 条件渲染）、AgentInput
     depends_on: [backend-agent-engine, frontend-chat-view]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: 复用 MessageBubble 的 Markdown 渲染；SDKMessage 流式事件格式参考 Proma SDKMessageRenderer.tsx
+    notes: 2026-05-08 完成——基础流式链路打通；会话持久化与导航另见 #31/#32
 
   - slug: frontend-tool-call
-    description: 工具调用显示——Bash/Read/Write/Edit 等工具执行输入/输出渲染，折叠/展开，状态图标，绑定 AgentEvent 中的 tool_start/tool_result
+    description: 工具调用显示——ToolCallDisplay 折叠/展开 + 状态图标（Loader2/Check/X）+ JSON 输入/输出渲染
     depends_on: [frontend-agent-view]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: Proma 参考 ChatToolBlock.tsx, tool-result-renderers/
+    notes: 2026-05-08 完成——ChevronDown/Right 折叠；JSON 美化输入；Wrench 图标 + 工具名
 
   - slug: frontend-permission
-    description: 权限审批——plan/ask/tool 三种审批横幅（PermissionBanner/AskUserBanner/ExitPlanModeBanner），确认/拒绝按钮回传 CLI 进程
+    description: 权限审批——PermissionBanner（AlertTriangle + 允许/拒绝按钮 + 输入预览）
     depends_on: [frontend-agent-view]
     status: planned
     feature: null
     minimal_loop: false
-    notes: Proma 参考 PermissionBanner.tsx, AskUserBanner.tsx, ExitPlanModeBanner.tsx
+    notes: 当前仅有 tool_use/result 展示，没有 ask/plan/tool interrupt 协议与 approve/deny 回传链路；依赖 #30
 
   - slug: frontend-right-panel
-    description: 右侧面板——工作区文件浏览器（仅 Agent 模式显示），列出当前工作目录文件树
+    description: 右侧面板——工作区文件浏览器，Tauri fs plugin readDir 列出文件（过滤 .dotfiles/node_modules），刷新按钮
     depends_on: [frontend-agent-view]
-    status: planned
+    status: in-progress
     feature: null
     minimal_loop: false
-    notes: null
+    notes: 面板组件和顶层目录读取已完成，但还缺打开入口、递归树、文件预览/动作
 
   - slug: theme-integration
     description: 主题集成——暗/亮切换持久化到 agent_config.json 的 theme 字段，启动时自动加载，全局即时生效
@@ -197,10 +197,10 @@ items:
   - slug: frontend-search
     description: 会话搜索——SearchDialog Ctrl+K 快捷键唤起，按标题模糊搜索，选中跳转
     depends_on: [frontend-left-sidebar, backend-chat-commands]
-    status: done
+    status: in-progress
     feature: null
     minimal_loop: false
-    notes: 2026-05-08 完成——Ctrl+K 全局快捷键；SearchDialog 模糊过滤 + 键盘导航（Arrow/Enter/Escape）
+    notes: 搜索框和键盘导航已完成，但选中结果仍只设置 currentSessionId，未回填消息；Agent 模式接入另见 #32
 
   - slug: frontend-toast
     description: Toast 通知系统——统一非阻塞错误提示，自动消失
@@ -221,10 +221,10 @@ items:
   - slug: frontend-tabs-enhanced
     description: 标签页增强——ErrorBoundary 包裹 Tab 内容，防止单 Tab 崩溃影响全局
     depends_on: [frontend-main-area]
-    status: done
+    status: in-progress
     feature: null
     minimal_loop: false
-    notes: 2026-05-08 完成——ErrorBoundary 组件（AlertTriangle + 重试按钮）包裹所有 Tab 内容渲染
+    notes: ErrorBoundary 已完成，但快捷切换、关闭确认、预览缩略图尚未开始
 
   - slug: frontend-appearance
     description: 外观设置——j-cli 7 主题选择器（暗/亮分组）、字体大小（小/中/大）
@@ -241,3 +241,27 @@ items:
     feature: null
     minimal_loop: false
     notes: 2026-05-08 完成——cancelled bool 标志位，on_event.send() 失败时置 true，后续 chunk 跳过、Done 不发、assistant 不写盘
+
+  - slug: backend-agent-interrupts
+    description: Agent 中断协议——解析 Claude CLI 的 ask/plan/permission 类事件，新增 respond_agent_interrupt 命令，让前端可以继续/允许/拒绝
+    depends_on: [backend-agent-engine]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 当前 AgentEvent 只有 assistantContent/toolUse/toolResult/done/error，前后端都缺中断回传协议
+
+  - slug: backend-agent-session-storage
+    description: Agent 会话存储——为 agent transcript 建立持久化格式和 list/get/delete/resume 命令，区分 chat/agent 会话空间
+    depends_on: [backend-agent-engine]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 当前 agentMessages 只存在于 Jotai 内存，切换列表或重启应用后不可恢复
+
+  - slug: frontend-agent-session-navigation
+    description: Agent 会话导航——LeftSidebar/SearchDialog 按当前模式列出并切换 agent 会话，选中后回填 agentMessages 并恢复对应视图状态
+    depends_on: [backend-agent-session-storage, frontend-agent-view, frontend-search]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 当前新建/切换会话逻辑强制回到 chat，会话搜索也不会回填实际对话内容

@@ -6,7 +6,6 @@ created: 2026-05-08
 slug: agent-sdk-strategy
 title: Agent 模式实现策略——Claude Agent SDK 优先，j-cli Agent 留口后补
 ---
-
 # Agent 模式实现策略
 
 ## 背景
@@ -48,17 +47,40 @@ j-gui (Tauri)
 - **Provider 复用**：Claude Agent SDK 支持多种 provider（Anthropic/DeepSeek/Kimi），与当前 Provider 配置模型一致
 - **j-cli 口子**：定义 `AgentBackend` trait，后续只需实现 `JcliAgentBackend` 即可切换
 
+## CLI 子进程协议（2026-05-08 更新）
+
+Claude Code CLI 的非交互模式（headless）通过以下 flag 启动：
+
+```bash
+claude -p --output-format stream-json --verbose \
+  --include-partial-messages --permission-mode bypassPermissions
+```
+
+| Flag                                    | 必要性         | 说明                                              |
+| --------------------------------------- | -------------- | ------------------------------------------------- |
+| `-p`                                  | **必须** | 非交互模式，不加则 CLI 进入 TUI 且 stdout 无 JSON |
+| `--output-format stream-json`         | **必须** | 每行一个 JSON 对象                                |
+| `--verbose`                           | **必须** | `stream-json` 的强制前置条件                    |
+| `--include-partial-messages`          | 推荐           | 实时流式推送部分消息块                            |
+| `--permission-mode bypassPermissions` | 首版           | 跳过工具审批；后续改为交互模式                    |
+
+stdin 输入 JSON 格式：`{"type":"user","message":{"role":"user","content":[{"type":"text","text":"..."}]}}`
+
+stdout 输出消息类型：`assistant`（含 text/tool_use 块）、`user`（回显）、`result`（结束）
+
+详见 `2026-05-08-trick-claude-code-cli-protocol.md`
+
 ## 影响
 
 - `ChatEngine` 保持不变（无工具 Chat 继续走 `call_llm_stream_async`）
-- 新增 `AgentEngine` 模块管理 CLI 子进程生命周期
-- Agent 模式下前端新增 `AgentView`——StreamEvent 替换 ChatEvent
-- 权限交互：前端 `PermissionBanner` 接受 SDK 权限请求，用户确认/拒绝后回传给 CLI 进程
-- 首版仅支持本地已安装 `claude` CLI 的环境
+- 新增 `AgentEngine` 模块管理 CLI 子进程生命周期（`src-tauri/src/agent_engine.rs`）
+- Agent 模式下前端新增 `AgentView`——`Channel<AgentEvent>` 流式渲染
+- 首版权限模式：`bypassPermissions` 自动批准所有工具；PermissionBanner 组件已就绪，待接入交互模式
+- 首版仅支持本地已安装 `claude` / `claude-code` CLI 的环境（`which_claude` 自动发现）
 
 ## 相关文档
 
+- `2026-05-08-trick-claude-code-cli-protocol.md` — CLI 子进程通信协议详情
 - `2026-05-08-explore-j-cli-agent-coupling.md` — 为什么不用 j-cli Agent Loop
 - `2026-05-08-decision-j-gui-chat-engine.md` — ChatEngine 设计
-- `2026-05-08-decision-j-gui-ipc-dataflow.md` — Channel 流式协议（Agent 模式复用 Channel<AgentEvent>）
-- Proma 参考：`apps/electron/src/main/lib/adapters/claude-agent-adapter.ts`
+- `2026-05-08-decision-j-gui-ipc-dataflow.md` — Channel 流式协议

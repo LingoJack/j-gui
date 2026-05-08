@@ -8,15 +8,17 @@ pub async fn send_message(
     content: String,
     on_event: Channel<ChatEvent>,
 ) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
-        rt.block_on(async {
-            let engine = ChatEngine::new();
-            engine.send_message(session_id, content, on_event).await
-        })
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    let handle = tokio::runtime::Handle::current();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let result = handle.block_on(async {
+            ChatEngine::new()
+                .send_message(session_id, content, on_event)
+                .await
+        });
+        let _ = tx.send(result);
+    });
+    rx.await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

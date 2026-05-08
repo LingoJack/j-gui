@@ -34,6 +34,7 @@ src-tauri/              Rust 后端（commands/ + chat_engine.rs）
 - **启动开发环境**：`bun run tauri dev`（非 `cargo tauri dev` — CLI 未安装，用 bun 自带的 `@tauri-apps/cli`）
 - **Rust 检查**：`cargo fmt` + `cargo clippy -- -D warnings`
 - **TypeScript 检查**：`bunx tsc --noEmit`
+- **测试（TDD 强制）**：`bun test` + `cargo test` — 新功能必须先写失败测试再实现（见 `.codestable/compound/2026-05-08-decision-tdd-workflow.md`）
 - **j-cli 源码**：`E:\Coding\AI\j`，j-gui 通过相对路径依赖
 - **j-cli 数据目录**：`~/.jdata/`（由 `j_cli::constants` 定义）
 - **Agent 配置路径**：`~/.jdata/agent/data/agent_config.json`

@@ -1,4 +1,6 @@
-use j_cli::command::chat::storage::{load_agent_config, save_agent_config, load_system_prompt, save_system_prompt};
+use j_cli::command::chat::storage::{
+    load_agent_config, load_system_prompt, save_agent_config, save_system_prompt,
+};
 use j_cli::config::YamlConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -35,8 +37,14 @@ pub fn get_agent_config() -> Result<AgentConfigInfo, String> {
                         &p.api_key[..4],
                         &p.api_key[p.api_key.len() - 4..]
                     )
+                } else if p.api_key.len() > 2 {
+                    format!(
+                        "{}...{}",
+                        &p.api_key[..2],
+                        &p.api_key[p.api_key.len() - 2..]
+                    )
                 } else {
-                    "****".to_string()
+                    format!("...{}", p.api_key)
                 };
                 ProviderInfo {
                     name: p.name.clone(),
@@ -79,6 +87,13 @@ pub fn set_agent_config(config: AgentConfigInfo) -> Result<(), String> {
             }
         })
         .collect();
+    if config.active_index >= current.providers.len() && !current.providers.is_empty() {
+        return Err(format!(
+            "无效的 provider 索引: {}（共 {} 个提供方）",
+            config.active_index,
+            current.providers.len()
+        ));
+    }
     current.active_index = config.active_index;
     if save_agent_config(&current) {
         Ok(())
@@ -91,7 +106,11 @@ pub fn set_agent_config(config: AgentConfigInfo) -> Result<(), String> {
 pub fn set_active_provider(index: usize) -> Result<(), String> {
     let mut config = load_agent_config();
     if index >= config.providers.len() {
-        return Err(format!("无效的 provider 索引: {}（共 {} 个提供方）", index, config.providers.len()));
+        return Err(format!(
+            "无效的 provider 索引: {}（共 {} 个提供方）",
+            index,
+            config.providers.len()
+        ));
     }
     config.active_index = index;
     if save_agent_config(&config) {

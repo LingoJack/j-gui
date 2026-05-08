@@ -128,6 +128,27 @@ export async function clearSession(sessionId: string): Promise<void> {
   return invoke("clear_session", { sessionId });
 }
 
+// ===== Agent =====
+
+export type AgentEvent =
+  | { event: "assistantContent"; data: { text: string } }
+  | { event: "toolUse"; data: { toolId: string; toolName: string; toolInput: string } }
+  | { event: "toolResult"; data: { toolId: string; content: string } }
+  | { event: "done"; data: { totalTokens: number } }
+  | { event: "error"; data: { message: string } };
+
+export async function startAgent(onEvent: Channel<AgentEvent>): Promise<void> {
+  return invoke("start_agent", { onEvent });
+}
+
+export async function sendAgentMessage(content: string): Promise<void> {
+  return invoke("send_agent_message", { content });
+}
+
+export async function stopAgent(): Promise<void> {
+  return invoke("stop_agent");
+}
+
 // ===== System =====
 
 export async function setTheme(theme: string): Promise<void> {

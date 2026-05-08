@@ -1,13 +1,16 @@
 use j_cli::command::chat::agent::api::call_llm_stream_async;
-use j_cli::command::chat::storage::{
-    ChatMessage, MessageRole, SessionEvent, append_session_event, load_agent_config,
-    load_session, load_system_prompt,
-};
 use j_cli::command::chat::storage::session::list_sessions;
+use j_cli::command::chat::storage::{
+    append_session_event, load_agent_config, load_session, load_system_prompt, ChatMessage,
+    MessageRole, SessionEvent,
+};
 use serde::Serialize;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::Channel;
+
+static DELETE_LOCK: Mutex<()> = Mutex::new(());
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -160,6 +163,7 @@ impl ChatEngine {
     }
 
     pub fn delete_message(&self, session_id: &str, pair_index: usize) -> Result<(), String> {
+        let _lock = DELETE_LOCK.lock().map_err(|e| format!("锁定失败: {}", e))?;
         Self::validate_session_id(session_id)?;
         let paths = j_cli::command::chat::storage::session::SessionPaths::new(session_id);
         let transcript_path = paths.transcript();
@@ -187,10 +191,12 @@ impl ChatEngine {
             return Err("消息索引超出范围".to_string());
         }
 
-        let remove_lines: std::collections::HashSet<usize> =
-            [msg_event_indices[user_idx], msg_event_indices[assistant_idx]]
-                .into_iter()
-                .collect();
+        let remove_lines: std::collections::HashSet<usize> = [
+            msg_event_indices[user_idx],
+            msg_event_indices[assistant_idx],
+        ]
+        .into_iter()
+        .collect();
 
         let new_content: String = content
             .lines()

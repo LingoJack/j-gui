@@ -483,17 +483,49 @@ interface AliasEntry {
     - 对应 feature：未启动
     - 备注：当前 Channel send 错误被 `let _ =` 吞掉，需改为检查并返回/中断
 
+### 5.1 2026-05-08 Proma 差距校正
+
+> 本轮以代码现状为准校正 roadmap，详细证据见 `compound/2026-05-08-explore-proma-gap-analysis.md`。机器可读状态以 `j-gui-desktop-app-items.yaml` 为准。
+
+- `frontend-main-area` 从 `done` 回调为 `in-progress`：当前只有固定单 Tab 壳，没有多标签打开/关闭/切换。
+- `frontend-permission` 从 `done` 回调为 `planned`：还没有 ask/plan/tool interrupt 协议，也没有 approve/deny 回传命令。
+- `frontend-right-panel` 从 `done` 回调为 `in-progress`：文件树组件已存在，但没有打开入口、递归读取和文件动作。
+- `frontend-search` 从 `done` 回调为 `in-progress`：搜索选择结果只改 session id，不回填消息。
+- `frontend-tabs-enhanced` 从 `done` 回调为 `in-progress`：目前只完成 ErrorBoundary，TabSwitcher/关闭确认/预览都未落地。
+
+30. **backend-agent-interrupts** — Agent 中断协议：解析 Claude CLI 的 ask/plan/permission 类事件，增加 `respond_agent_interrupt` 命令，让前端能继续/允许/拒绝
+    - 所属模块：Tauri Backend (agent_engine.rs + commands/agent.rs)
+    - 依赖：backend-agent-engine
+    - 状态：planned
+    - 对应 feature：未启动
+    - 备注：这是 `frontend-permission` 真正可工作的前置条件
+
+31. **backend-agent-session-storage** — Agent 会话存储：为 agent transcript 建立持久化格式以及 `list/get/delete/resume` 命令，区分 chat/agent 两类会话空间
+    - 所属模块：Tauri Backend (agent_engine.rs + commands/agent.rs)
+    - 依赖：backend-agent-engine
+    - 状态：planned
+    - 对应 feature：未启动
+    - 备注：补齐 Agent 模式缺失的会话生命周期
+
+32. **frontend-agent-session-navigation** — Agent 会话导航：LeftSidebar / SearchDialog 按当前模式列出 Agent 会话，切换后回填 `agentMessages` 并恢复对应视图状态
+    - 所属模块：Frontend Shell + Agent UI
+    - 依赖：backend-agent-session-storage, frontend-agent-view, frontend-search
+    - 状态：planned
+    - 对应 feature：未启动
+    - 备注：补齐“切到 Agent 后对话找不回来”的产品闭环
+
 **最小闭环**：第 10 条 `frontend-chat-view` 做完后，用户可以在桌面窗口里输入消息、看到 AI 流式回复（纯文本 Chat 模式端到端跑通）。
 
 ## 6. 排期思路
 
-按**后端 → 前端 → Agent → 完善**四层递进：
+按**后端契约 → 前端核心 → Agent 闭环 → 壳层补完 → 完善**五层递进：
 
 1. **scaffold** 打底——项目跑不起来后面全堵住
 2. **后端命令**（config/alias/chat-engine/chat/system）并行推进——Config/Alias/System 各自独立，Chat 依赖 ChatEngine
 3. **前端核心**（app-shell → sidebar/main-area → chat-view → markdown）串行推进——布局先行、内容后填
-4. **Agent 模式**（agent-view → tool-call/permission/right-panel）依赖 Chat 视图的消息渲染基础
-5. **收尾**（theme/settings/build/error）并行推进——彼此独立
+4. **Agent MVP 收口**（agent-engine → interrupts → session-storage → session-navigation）先把 Agent 从“能流”补成“能恢复、能继续”
+5. **壳层补完**（main-area/search/right-panel/tabs-enhanced）把 Proma 式工作台体验补完整
+6. **收尾**（theme/settings/build/error）并行推进——彼此独立
 
 最小闭环选 `frontend-chat-view` 而非 `scaffold`——因为 scaffold 做完看不出任何产品价值，Chat 对话跑通才是第一个可演示里程碑。
 
@@ -504,6 +536,8 @@ interface AliasEntry {
 - `ARCHITECTURE.md` 随 feature acceptance 逐步回写模块详情
 - `requirements/` 下 `j-gui-ai-interaction` + `j-gui-personalization` 已升级为 `current`，`j-gui-session-management` 仍为 `draft`
 - 前端未引入 React Router——标签页切换通过 Jotai atoms 管理
+- **Proma 对齐现状**：当前更准确的定位是“Chat 优先桌面壳 + 可流式的 Agent 预览”，尚未达到可恢复的 Agent 工作台。详见 `compound/2026-05-08-explore-proma-gap-analysis.md`
+- **Agent 核心差距**：会话仍是内存态，审批/中断缺协议，侧边栏/搜索也还没有 mode-aware 的 Agent 会话导航
 - **Agent 模式策略已定**：首版使用 Claude Agent SDK（CLI 子进程），参考 Proma 的 `claude-agent-adapter.ts`。j-cli Agent Loop 通过 `AgentBackend` trait 预留接口，等 `j-agent` crate 就绪后补。详见 `compound/2026-05-08-decision-agent-sdk-strategy.md`
 - **j-cli Agent 耦合**：`MainAgentHandle::spawn()` 无法直接在 j-gui 中使用（`ChatApp` 53 个 pub 字段，`ToolRegistry` 依赖 TUI `ask_tx` 通道，`StreamMsg` 含 UI 状态）。Agent 模式需先在 j-cli 侧抽取 `j-agent` crate。详见 `compound/2026-05-08-explore-j-cli-agent-coupling.md`
 - Proma 参考：以下 Proma 模块暂不纳入首版——语音输入、飞书/钉钉集成、Bot Hub、MCP 配置 UI、Workspace 管理、Teams 协作、Tutorial 引导、Proxy 设置、快捷键自定义
@@ -511,3 +545,4 @@ interface AliasEntry {
 ## 变更日志
 
 - 2026-05-08：基于 Proma 源码审计新增 10 条子 feature（#20-#29），补充 Chat 交互细节、会话搜索、欢迎页、Toast、系统提示词等
+- 2026-05-08：基于当前代码与 Proma 再审视，回调 5 条被高估的状态（main-area / permission / right-panel / search / tabs-enhanced），并新增 3 条 Agent 闭环条目（#30-#32）

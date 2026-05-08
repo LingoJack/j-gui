@@ -4,19 +4,20 @@ import { Send } from "lucide-react";
 interface Props {
   onSend: (content: string) => void;
   disabled?: boolean;
+  sendDisabled?: boolean;
 }
 
-export default function ChatInput({ onSend, disabled }: Props) {
+export default function ChatInput({ onSend, disabled, sendDisabled }: Props) {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
-    if (!trimmed || disabled) return;
+    if (!trimmed || disabled || sendDisabled) return;
     onSend(trimmed);
     setText("");
     inputRef.current?.focus();
-  }, [text, disabled, onSend]);
+  }, [text, disabled, sendDisabled, onSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -40,7 +41,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
         />
         <button
           onClick={handleSend}
-          disabled={disabled || !text.trim()}
+          disabled={disabled || sendDisabled || !text.trim()}
           className="p-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 shrink-0"
         >
           <Send size={16} />

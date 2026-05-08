@@ -5,7 +5,7 @@ import { sidebarOpenAtom } from "@/atoms/sidebar";
 import {
   sessionsAtom,
   currentSessionIdAtom,
-  messagesAtom,
+  chatMessagesAtom,
 } from "@/atoms/sessions";
 import { listSessions, createSession, getSessionMessages } from "@/lib/tauri";
 import type { MessageInfo } from "@/lib/tauri";
@@ -58,7 +58,7 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
   const [open, setOpen] = useAtom(sidebarOpenAtom);
   const [sessions, setSessions] = useAtom(sessionsAtom);
   const [currentId, setCurrentId] = useAtom(currentSessionIdAtom);
-  const setMessages = useSetAtom(messagesAtom);
+  const setMessages = useSetAtom(chatMessagesAtom);
 
   const load = useCallback(async () => {
     try {
@@ -77,6 +77,7 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
 
   const handleNewSession = async () => {
     try {
+      setMode("chat");
       const id = await createSession();
       setCurrentId(id);
       setMessages([]);
@@ -87,6 +88,7 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
   };
 
   const handleSwitchSession = async (id: string) => {
+    setMode("chat");
     if (id === currentId) return;
     setCurrentId(id);
     try {

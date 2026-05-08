@@ -4,8 +4,8 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Channel } from "@tauri-apps/api/core";
 import {
   currentSessionIdAtom,
-  messagesAtom,
-  streamingAtom,
+  chatMessagesAtom,
+  chatStreamingAtom,
   type Message,
 } from "@/atoms/sessions";
 import { agentConfigAtom } from "@/atoms/config";
@@ -36,9 +36,9 @@ function estimateTokens(messages: Message[]): number {
 
 export default function ChatView() {
   const [sessionId, setSessionId] = useAtom(currentSessionIdAtom);
-  const messages = useAtomValue(messagesAtom);
-  const setMessages = useSetAtom(messagesAtom);
-  const [streaming, setStreaming] = useAtom(streamingAtom);
+  const messages = useAtomValue(chatMessagesAtom);
+  const setMessages = useSetAtom(chatMessagesAtom);
+  const [streaming, setStreaming] = useAtom(chatStreamingAtom);
   const [config, setConfig] = useAtom(agentConfigAtom);
   const [theme, setThemeState] = useAtom(themeAtom);
   const [version, setVersion] = useState("");
@@ -46,6 +46,7 @@ export default function ChatView() {
   const [sysPromptOpen, setSysPromptOpen] = useState(false);
   const [sysPromptDraft, setSysPromptDraft] = useState("");
   const streamingRef = useRef(false);
+  const channelRef = useRef<Channel<ChatEvent> | null>(null);
   const sysPromptRef = useRef<HTMLDivElement>(null);
 
   const tokenCount = useMemo(() => estimateTokens(messages), [messages]);
@@ -97,6 +98,7 @@ export default function ChatView() {
       streamingRef.current = true;
 
       const onEvent = new Channel<ChatEvent>();
+      channelRef.current = onEvent;
       onEvent.onmessage = (msg) => {
         if (!streamingRef.current) return;
 
@@ -246,6 +248,7 @@ export default function ChatView() {
                 value={config.activeIndex}
                 onChange={async (e) => {
                   const idx = Number(e.target.value);
+                  setConfig((prev) => ({ ...prev, activeIndex: idx }));
                   await setActiveProvider(idx);
                 }}
                 className="text-xs bg-muted rounded-md px-2 py-1 pr-6 appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring max-w-[140px] truncate"
@@ -284,8 +287,11 @@ export default function ChatView() {
 
           <button
             onClick={() => {
+              channelRef.current = null;
               setMessages([]);
               setSessionId(null);
+              setStreaming(false);
+              streamingRef.current = false;
             }}
             className="text-xs text-muted-foreground hover:text-foreground shrink-0"
           >

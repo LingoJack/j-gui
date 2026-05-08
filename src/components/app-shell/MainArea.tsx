@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
+import { useAtomValue } from "jotai";
 import { cn } from "@/lib/utils";
+import { appModeAtom } from "@/atoms/app-mode";
 import ChatView from "@/components/chat/ChatView";
+import AgentView from "@/components/agent/AgentView";
 import WelcomePage from "./WelcomePage";
 import ErrorBoundary from "@/components/ui/ErrorBoundary";
 import { getVersion } from "@/lib/tauri";
@@ -16,7 +19,8 @@ interface Props {
 }
 
 export default function MainArea({ hasProviders, onOpenSettings }: Props) {
-  const [tabs] = useState<Tab[]>([{ id: "default", title: "Chat" }]);
+  const mode = useAtomValue(appModeAtom);
+  const [tabs] = useState<Tab[]>([{ id: "default", title: mode === "chat" ? "Chat" : "Agent" }]);
   const [activeTabId] = useState("default");
   const [version, setVersion] = useState("");
 
@@ -39,7 +43,7 @@ export default function MainArea({ hasProviders, onOpenSettings }: Props) {
                   : "text-muted-foreground hover:bg-accent",
               )}
             >
-              <span className="truncate max-w-[140px]">{tab.title}</span>
+              <span className="truncate max-w-[140px]">{mode === "chat" ? "Chat" : "Agent"}</span>
             </div>
           ))}
         </div>
@@ -48,15 +52,14 @@ export default function MainArea({ hasProviders, onOpenSettings }: Props) {
       {/* Tab content */}
       <div className="flex-1 overflow-hidden">
         {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            className={cn("h-full", tab.id !== activeTabId && "hidden")}
-          >
+          <div key={tab.id} className={cn("h-full", tab.id !== activeTabId && "hidden")}>
             <ErrorBoundary>
-              {hasProviders ? (
-                <ChatView />
-              ) : (
+              {!hasProviders ? (
                 <WelcomePage onOpenSettings={onOpenSettings} version={version} />
+              ) : (
+                <>
+                  {mode === "chat" ? <ChatView /> : <AgentView />}
+                </>
               )}
             </ErrorBoundary>
           </div>

@@ -1,5 +1,9 @@
+mod agent_engine;
 mod chat_engine;
 mod commands;
+
+use commands::agent::AgentState;
+use std::sync::{Arc, Mutex};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -8,7 +12,11 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(AgentState(Arc::new(Mutex::new(None))))
         .invoke_handler(tauri::generate_handler![
+            commands::agent::start_agent,
+            commands::agent::send_agent_message,
+            commands::agent::stop_agent,
             commands::alias::list_aliases,
             commands::alias::set_alias,
             commands::alias::remove_alias,

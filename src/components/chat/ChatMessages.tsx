@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai";
-import { messagesAtom, streamingAtom } from "@/atoms/sessions";
+import { chatMessagesAtom, chatStreamingAtom } from "@/atoms/sessions";
 import MessageBubble from "./MessageBubble";
 
 interface Props {
@@ -8,8 +8,8 @@ interface Props {
 }
 
 export default function ChatMessages({ onDelete, onResend }: Props) {
-  const messages = useAtomValue(messagesAtom);
-  const streaming = useAtomValue(streamingAtom);
+  const messages = useAtomValue(chatMessagesAtom);
+  const streaming = useAtomValue(chatStreamingAtom);
 
   if (messages.length === 0 && !streaming) {
     return (
