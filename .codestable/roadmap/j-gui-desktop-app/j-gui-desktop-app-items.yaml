@@ -293,26 +293,26 @@ items:
     notes: ContextUsageBadge 需要后端或 Claude CLI 提供 token 统计事件；PermissionModeSelector 需联动 CLI 的 --permission-mode 参数
 
   - slug: frontend-chat-input-enhanced
-    description: Chat 输入框增强——TipTap/ProseMirror 富文本编辑器替换纯 textarea（支持 markdown 快捷格式化）、输入框底部工具栏（ModelSelector + Thinking开关 + ContextSettings + 发送/停止按钮）、草稿持久化（per-session 保存未发送内容）
+    description: Chat 输入框增强——草稿持久化（per-session）+ Thinking 开关按钮；TipTap 富文本后置（先定消息 payload 协议）
     depends_on: [frontend-chat-view]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-08-chat-input-enhanced
     minimal_loop: false
     notes: 涉及新增 TipTap 依赖及其 React 封装；根据 requirement 边界，首版不做聊天附件/拖放
 
   - slug: frontend-chat-reasoning-block
-    description: Thinking/推理块——Reasoning 可折叠组件（ReasoningTrigger 可点击标题栏 + ReasoningContent 可折叠内容区），在 Chat/Agent 消息中展示 AI 思维过程
+    description: Thinking/推理块——ReasoningBlock 可折叠组件，检测消息中【思考】标记前缀
     depends_on: [frontend-markdown]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-08-chat-reasoning-block
     minimal_loop: false
     notes: 纯前端组件，不依赖后端变动；需 Claude CLI 输出 reasoning/thinking 类型内容块
 
   - slug: frontend-chat-message-polish
-    description: 消息精细操作——Fork/Rewind 按钮（回退到该消息重新发送，截断后续历史）、Copy 按钮（已有基础可复用）、Context Divider（消息间"上下文已清空"分割线+文字）、ScrollMinimap（右侧细条显示消息位置，按 user/assistant 角色着色，hover 预览跳转）
+    description: 消息精细操作——Fork 回退重发按钮 + ContextDivider 分割线 + ScrollMinimap 后置
     depends_on: [frontend-chat-view, frontend-message-actions]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-08-chat-message-polish
     minimal_loop: false
     notes: 除 Context Divider 外均纯前端；Context Divider 需在消息流中识别 SessionEvent::Clear 标记
 

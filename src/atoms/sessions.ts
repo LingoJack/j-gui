@@ -36,6 +36,10 @@ export const chatStreamingAtom = atom<boolean>(false);
 export const agentMessagesAtom = atom<Message[]>([]);
 export const agentStreamingAtom = atom<boolean>(false);
 
+// Per-session draft storage: sessionId -> draftText
+export const chatDraftsAtom = atom<Record<string, string>>({});
+export const agentDraftsAtom = atom<Record<string, string>>({});
+
 export function timelineToMessages(items: AgentTimelineItem[]): Message[] {
   const messages: Message[] = [];
 

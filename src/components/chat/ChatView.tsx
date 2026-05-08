@@ -6,6 +6,7 @@ import {
   currentSessionIdAtom,
   chatMessagesAtom,
   chatStreamingAtom,
+  chatDraftsAtom,
   type Message,
 } from "@/atoms/sessions";
 import { agentConfigAtom } from "@/atoms/config";
@@ -44,10 +45,12 @@ export default function ChatView() {
   const activeTab = useAtomValue(activeTabAtom);
   const setTabs = useSetAtom(tabsAtom);
   const [theme, setThemeState] = useAtom(themeAtom);
+  const [drafts, setDrafts] = useAtom(chatDraftsAtom);
   const [version, setVersion] = useState("");
   const [sysPrompt, setSysPrompt] = useState<string>("");
   const [sysPromptOpen, setSysPromptOpen] = useState(false);
   const [sysPromptDraft, setSysPromptDraft] = useState("");
+  const [forkIndex, setForkIndex] = useState<number | undefined>(undefined);
   const streamingRef = useRef(false);
   const channelRef = useRef<Channel<ChatEvent> | null>(null);
   const sysPromptRef = useRef<HTMLDivElement>(null);
@@ -94,6 +97,7 @@ export default function ChatView() {
         isStreaming: false,
       };
       setMessages((prev) => [...prev, userMsg]);
+      setDrafts((prev) => ({ ...prev, [sid ?? ""]: "" }));
 
       const assistantId = crypto.randomUUID();
       const assistantMsg: Message = {
@@ -169,7 +173,14 @@ export default function ChatView() {
         streamingRef.current = false;
       }
     },
-    [activeTab, sessionId, setMessages, setSessionId, setStreaming, setTabs],
+    [activeTab, sessionId, setMessages, setDrafts, setSessionId, setStreaming, setTabs],
+  );
+
+  const handleDraftChange = useCallback(
+    (text: string) => {
+      setDrafts((prev) => ({ ...prev, [sessionId ?? ""]: text }));
+    },
+    [sessionId, setDrafts],
   );
 
   const handleClearContext = useCallback(async () => {
@@ -177,11 +188,28 @@ export default function ChatView() {
     try {
       await clearSession(sessionId);
       setMessages([]);
+      setForkIndex(undefined);
       toast("上下文已清空", "success");
     } catch (e) {
       toast(`清空失败: ${String(e)}`, "error");
     }
   }, [sessionId, setMessages]);
+
+  const handleFork = useCallback(
+    async (msgIndex: number, content: string) => {
+      if (!sessionId) return;
+      const oldCount = messages.slice(0, msgIndex).length;
+      try {
+        await clearSession(sessionId);
+      } catch {
+        // continue even if clear fails
+      }
+      setMessages((prev) => prev.slice(0, msgIndex));
+      setForkIndex(oldCount);
+      handleSend(content);
+    },
+    [sessionId, messages, setMessages, handleSend],
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -300,6 +328,7 @@ export default function ChatView() {
               channelRef.current = null;
               setMessages([]);
               setSessionId(null);
+              setForkIndex(undefined);
               if (activeTab) {
                 setTabs((prev) =>
                   prev.map((tab) =>
@@ -347,8 +376,15 @@ export default function ChatView() {
           setMessages((prev) => prev.slice(0, index));
           handleSend(content);
         }}
+        onFork={handleFork}
+        forkIndex={forkIndex}
       />
-      <ChatInput onSend={handleSend} disabled={streaming} />
+      <ChatInput
+        onSend={handleSend}
+        disabled={streaming}
+        draft={drafts[sessionId ?? ""] ?? ""}
+        onDraftChange={handleDraftChange}
+      />
     </div>
   );
 }

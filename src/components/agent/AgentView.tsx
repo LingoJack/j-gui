@@ -14,6 +14,7 @@ import { agentConfigAtom } from "@/atoms/config";
 import {
   agentMessagesAtom,
   agentStreamingAtom,
+  agentDraftsAtom,
   currentSessionIdAtom,
   type Message,
 } from "@/atoms/sessions";
@@ -31,6 +32,7 @@ export default function AgentView() {
   const setMessages = useSetAtom(agentMessagesAtom);
   const [currentSessionId, setCurrentSessionId] = useAtom(currentSessionIdAtom);
   const [config, setConfig] = useAtom(agentConfigAtom);
+  const [drafts, setDrafts] = useAtom(agentDraftsAtom);
   const [rightPanelOpen, setRightPanelOpen] = useAtom(rightPanelOpenAtom);
   const activeTab = useAtomValue(activeTabAtom);
   const setTabs = useSetAtom(tabsAtom);
@@ -337,6 +339,7 @@ export default function AgentView() {
         isStreaming: false,
       };
       setMessages((prev) => [...prev, userMsg]);
+      setDrafts((prev) => ({ ...prev, [sessionId ?? ""]: "" }));
 
       setStreaming(true);
       streamingRef.current = true;
@@ -357,11 +360,19 @@ export default function AgentView() {
       currentSessionId,
       pushAgentError,
       setCurrentSessionId,
+      setDrafts,
       setMessages,
       setStreaming,
       setTabs,
       startEngine,
     ],
+  );
+
+  const handleDraftChange = useCallback(
+    (text: string) => {
+      setDrafts((prev) => ({ ...prev, [currentSessionId ?? ""]: text }));
+    },
+    [currentSessionId, setDrafts],
   );
 
   return (
@@ -417,7 +428,13 @@ export default function AgentView() {
           }}
         />
       )}
-      <ChatInput onSend={handleSend} sendDisabled={streaming} placeholder="输入消息... (@引用文件 / 调用Skills / # 调用MCP, Enter 发送)" />
+      <ChatInput
+        onSend={handleSend}
+        sendDisabled={streaming}
+        placeholder="输入消息... (@引用文件 / 调用Skills / # 调用MCP, Enter 发送)"
+        draft={drafts[currentSessionId ?? ""] ?? ""}
+        onDraftChange={handleDraftChange}
+      />
     </div>
   );
 }

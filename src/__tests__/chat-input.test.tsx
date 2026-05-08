@@ -12,7 +12,7 @@ describe("ChatInput", () => {
 
     expect(input).not.toBeDisabled();
     expect((input as HTMLTextAreaElement).value).toBe("next prompt");
-    expect(screen.getByRole("button")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
   });
 
   it("sends when input is enabled", () => {
@@ -21,7 +21,7 @@ describe("ChatInput", () => {
 
     const input = screen.getByPlaceholderText("输入消息... (Enter 发送, Shift+Enter 换行)");
     fireEvent.change(input, { target: { value: "hello" } });
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     expect(onSend).toHaveBeenCalledWith("hello");
   });

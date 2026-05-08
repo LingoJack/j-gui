@@ -19,12 +19,12 @@ export default function AgentMessages() {
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
       <TaskProgressCard messages={messages} />
-      {messages.map((msg) => (
+      {messages.map((msg, i) => (
         <div key={msg.id}>
           {msg.toolCall ? (
             <ToolCallDisplay toolCall={msg.toolCall} />
           ) : (
-            <MessageBubble message={msg} />
+            <MessageBubble message={msg} index={i} />
           )}
         </div>
       ))}
