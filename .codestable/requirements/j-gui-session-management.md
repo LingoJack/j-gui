@@ -2,9 +2,9 @@
 doc_type: requirement
 slug: j-gui-session-management
 pitch: 会话不丢不乱——创建、切换、搜索、删除，按日期自动分组
-status: draft
+status: current
 last_reviewed: 2026-05-08
-implemented_by: []
+implemented_by: [chat_engine, commands/chat]
 tags: [session, history, organization]
 ---
 

@@ -415,6 +415,74 @@ interface AliasEntry {
     - 状态：planned
     - 对应 feature：未启动
 
+20. **frontend-session-list** — 会话列表对接：LeftSidebar 的 SessionList 绑定 `list_sessions()` 命令，按日期分组，点击切换会话，右键置顶/删除
+    - 所属模块：Frontend Shell (app-shell/LeftSidebar.tsx)
+    - 依赖：frontend-left-sidebar, backend-chat-commands
+    - 状态：planned
+    - 对应 feature：未启动
+    - 备注：替换当前静态 placeholderSessions
+
+21. **frontend-message-actions** — 消息操作：复制消息内容按钮（CopyButton）、删除消息、重新发送
+    - 所属模块：Chat UI (chat/)
+    - 依赖：frontend-chat-view
+    - 状态：planned
+    - 对应 feature：未启动
+    - 备注：Proma 参考——CopyButton.tsx, DeleteMessageDialog.tsx
+
+22. **frontend-context-bar** — 上下文状态栏：ChatHeader 显示当前上下文 token 用量（ContextUsageBadge）、清空上下文按钮（ClearContextButton）、compact 触发
+    - 所属模块：Chat UI (chat/)
+    - 依赖：frontend-chat-view
+    - 状态：planned
+    - 对应 feature：未启动
+    - 备注：Proma 参考——ContextUsageBadge.tsx, ClearContextButton.tsx, ContextSettingsPopover.tsx
+
+23. **backend-system-prompt** — 系统提示词管理：`get_system_prompt` / `set_system_prompt` 命令，读写 j-cli 的 `system_prompt` 字段，前端 ChatHeader 下拉选择或编辑
+    - 所属模块：Tauri Backend (commands/config.rs) + Chat UI
+    - 依赖：backend-config-commands
+    - 状态：planned
+    - 对应 feature：未启动
+    - 备注：Proma 参考——SystemPromptSelector.tsx
+
+24. **frontend-search** — 会话搜索：SearchDialog（快捷键唤起），按标题模糊搜索会话，选中跳转
+    - 所属模块：Frontend Shell (app-shell/SearchDialog.tsx)
+    - 依赖：frontend-left-sidebar, backend-chat-commands
+    - 状态：planned
+    - 对应 feature：未启动
+    - 备注：Proma 参考——SearchDialog.tsx, search-atoms.ts
+
+25. **frontend-toast** — Toast 通知系统：统一错误提示（网络超时/API 错误/配置缺失），非阻塞式弹出，自动消失
+    - 所属模块：跨模块
+    - 依赖：scaffold
+    - 状态：planned
+    - 对应 feature：未启动
+    - 备注：与 #19 error-handling 互补——Toast 是 UI 层，error-handling 偏后端序列化
+
+26. **frontend-welcome** — 欢迎页：首次启动（无配置时）显示引导页——配置 Provider 的快速入口 + 项目简介
+    - 所属模块：Frontend Shell
+    - 依赖：frontend-app-shell
+    - 状态：planned
+    - 对应 feature：未启动
+
+27. **frontend-tabs-enhanced** — 标签页增强：TabSwitcher（快捷键切换）、关闭确认对话框、标签页预览缩略图、错误边界
+    - 所属模块：Frontend Shell (MainArea)
+    - 依赖：frontend-main-area
+    - 状态：planned
+    - 对应 feature：未启动
+    - 备注：Proma 参考——TabSwitcher.tsx, TabCloseConfirmDialog.tsx, TabErrorBoundary.tsx
+
+28. **frontend-appearance** — 外观设置：主题切换（暗/亮）、字体大小调节、代码块主题选择
+    - 所属模块：Settings UI (settings/AppearanceSettings.tsx)
+    - 依赖：theme-integration, settings-dialog
+    - 状态：planned
+    - 对应 feature：未启动
+
+29. **backend-streaming-cancel** — 流式取消：前端 unmount 时通过 Channel drop 触发后端中止 LLM 调用，不浪费 token
+    - 所属模块：Tauri Backend (chat_engine.rs)
+    - 依赖：backend-chat-engine
+    - 状态：planned
+    - 对应 feature：未启动
+    - 备注：当前 Channel send 错误被 `let _ =` 吞掉，需改为检查并返回/中断
+
 **最小闭环**：第 10 条 `frontend-chat-view` 做完后，用户可以在桌面窗口里输入消息、看到 AI 流式回复（纯文本 Chat 模式端到端跑通）。
 
 ## 6. 排期思路
@@ -433,6 +501,13 @@ interface AliasEntry {
 
 ## 7. 观察项
 
-- `ARCHITECTURE.md` 目前仅有骨架，等各 feature 完成后需通过 acceptance 回写模块详情
-- `requirements/` 下 3 份 req 均为 `draft`，第一条 feature-acceptance 完成后触发 `cs-req update` 升级为 `current`
-- 前端未引入 React Router——标签页切换通过 Jotai atoms 管理，如果后续需要 URL 路由需重新评估
+- `ARCHITECTURE.md` 随 feature acceptance 逐步回写模块详情
+- `requirements/` 下 `j-gui-ai-interaction` + `j-gui-personalization` 已升级为 `current`，`j-gui-session-management` 仍为 `draft`
+- 前端未引入 React Router——标签页切换通过 Jotai atoms 管理
+- **Agent 模式策略已定**：首版使用 Claude Agent SDK（CLI 子进程），参考 Proma 的 `claude-agent-adapter.ts`。j-cli Agent Loop 通过 `AgentBackend` trait 预留接口，等 `j-agent` crate 就绪后补。详见 `compound/2026-05-08-decision-agent-sdk-strategy.md`
+- **j-cli Agent 耦合**：`MainAgentHandle::spawn()` 无法直接在 j-gui 中使用（`ChatApp` 53 个 pub 字段，`ToolRegistry` 依赖 TUI `ask_tx` 通道，`StreamMsg` 含 UI 状态）。Agent 模式需先在 j-cli 侧抽取 `j-agent` crate。详见 `compound/2026-05-08-explore-j-cli-agent-coupling.md`
+- Proma 参考：以下 Proma 模块暂不纳入首版——语音输入、飞书/钉钉集成、Bot Hub、MCP 配置 UI、Workspace 管理、Teams 协作、Tutorial 引导、Proxy 设置、快捷键自定义
+
+## 变更日志
+
+- 2026-05-08：基于 Proma 源码审计新增 10 条子 feature（#20-#29），补充 Chat 交互细节、会话搜索、欢迎页、Toast、系统提示词等

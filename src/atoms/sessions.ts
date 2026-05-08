@@ -2,7 +2,7 @@ import { atom } from "jotai";
 
 export interface SessionInfo {
   id: string;
-  title?: string;
+  title?: string | null;
   messageCount: number;
   updatedAt: number;
 }

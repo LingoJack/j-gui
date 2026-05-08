@@ -41,3 +41,5 @@ Tauri 后端以 **Rust crate 依赖** 方式集成 j-cli，路径依赖 `j_cli =
 ## 相关文档
 
 - 上游项目：`E:\Coding\AI\j` (j-cli)
+- `2026-05-08-decision-j-gui-ipc-dataflow.md` — 集成方式决定了 IPC 协议选型
+- `2026-05-08-decision-j-gui-chat-engine.md` — ChatEngine 直接依赖 j_cli crate

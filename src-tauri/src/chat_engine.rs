@@ -21,6 +21,13 @@ pub enum ChatEvent {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MessageInfo {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionInfo {
     pub id: String,
     pub title: Option<String>,
@@ -35,12 +42,21 @@ impl ChatEngine {
         Self
     }
 
+    fn validate_session_id(id: &str) -> Result<(), String> {
+        if id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') && !id.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("无效的 session ID: {}", id))
+        }
+    }
+
     pub async fn send_message(
         &self,
         session_id: String,
         content: String,
         on_event: Channel<ChatEvent>,
     ) -> Result<(), String> {
+        Self::validate_session_id(&session_id)?;
         let agent_config = load_agent_config();
         let provider = agent_config
             .providers
@@ -114,7 +130,70 @@ impl ChatEngine {
         format!("{:x}-{:x}-{:x}", ts, pid, seq)
     }
 
+    pub fn get_messages(&self, session_id: &str) -> Result<Vec<MessageInfo>, String> {
+        Self::validate_session_id(session_id)?;
+        let messages = load_session(session_id);
+        Ok(messages
+            .into_iter()
+            .map(|m| MessageInfo {
+                role: match m.role {
+                    MessageRole::User => "user".to_string(),
+                    MessageRole::Assistant => "assistant".to_string(),
+                    _ => "unknown".to_string(),
+                },
+                content: m.content,
+            })
+            .collect())
+    }
+
+    pub fn delete_message(&self, session_id: &str, pair_index: usize) -> Result<(), String> {
+        Self::validate_session_id(session_id)?;
+        let paths = j_cli::command::chat::storage::session::SessionPaths::new(session_id);
+        let transcript_path = paths.transcript();
+        if !transcript_path.exists() {
+            return Err("会话记录不存在".to_string());
+        }
+
+        let content = std::fs::read_to_string(&transcript_path)
+            .map_err(|e| format!("读取会话记录失败: {}", e))?;
+
+        // Count message events (skip non-message events like Clear)
+        // Parse each line as JSON and check for {"msg":...} wrapper
+        let mut msg_event_indices: Vec<usize> = Vec::new();
+        for (i, line) in content.lines().enumerate() {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                if v.get("msg").is_some() {
+                    msg_event_indices.push(i);
+                }
+            }
+        }
+
+        let user_idx = pair_index * 2;
+        let assistant_idx = user_idx + 1;
+        if assistant_idx >= msg_event_indices.len() {
+            return Err("消息索引超出范围".to_string());
+        }
+
+        let remove_lines: std::collections::HashSet<usize> =
+            [msg_event_indices[user_idx], msg_event_indices[assistant_idx]]
+                .into_iter()
+                .collect();
+
+        let new_content: String = content
+            .lines()
+            .enumerate()
+            .filter(|(i, _)| !remove_lines.contains(i))
+            .map(|(_, line)| line.to_string() + "\n")
+            .collect();
+
+        std::fs::write(&transcript_path, new_content)
+            .map_err(|e| format!("写入会话记录失败: {}", e))?;
+
+        Ok(())
+    }
+
     pub fn delete_session(&self, session_id: &str) -> Result<(), String> {
+        Self::validate_session_id(session_id)?;
         let path = j_cli::command::chat::storage::session::SessionPaths::new(session_id);
         let transcript = path.transcript();
         let meta = path.meta_file();

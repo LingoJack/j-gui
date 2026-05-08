@@ -27,7 +27,7 @@ j-gui 是 Tauri v2 桌面应用。前端 React + TypeScript (Vite)，后端 Rust
 ```
 ┌──────────────────────┐     Tauri IPC       ┌──────────────────────┐
 │   Frontend (WebView) │◄──────────────────►│   Backend (Rust)      │
-│   src/               │  invoke() + events  │   src-tauri/src/      │
+│   src/               │  invoke() + channels │   src-tauri/src/      │
 │   React + Vite       │                     │   Tauri commands      │
 └──────────────────────┘                     └──────────────────────┘
 ```
@@ -72,11 +72,19 @@ cargo tauri build ───── tsc + vite build → dist/ → Tauri bundle
 
 开发命令定义在 `package.json:7-11`，Tauri 配置在 `src-tauri/tauri.conf.json:7-11`
 
-## 3. 数据与状态
+## 3. 子系统
+
+| 子系统 | 文档 | 状态 |
+|--------|------|------|
+| ChatEngine（后端） | [backend-chat-engine](./backend-chat-engine.md) | current |
+| Chat UI（前端） | [frontend-chat-ui](./frontend-chat-ui.md) | current |
+| Settings UI（前端） | [frontend-settings-ui](./frontend-settings-ui.md) | current |
+
+## 4. 数据与状态
 
 当前无持久化状态。前端状态仅 React `useState` 管理的 greet 演示 (`src/App.tsx:7-8`)。
 
-## 4. 关键决策
+## 5. 关键决策
 
 - **Rust 编码规约**：继承自 jcli。详见 `compound/2026-05-08-decision-rust-coding-conventions.md`
 - **后端集成方案**：Rust crate 依赖 j_cli（path dep），不用 WS remote。详见 `compound/2026-05-08-decision-j-gui-rust-integration.md`
@@ -85,25 +93,27 @@ cargo tauri build ───── tsc + vite build → dist/ → Tauri bundle
 - **前端 UI 架构**：三栏布局 + 标签页主区域，模仿 Proma。详见 `compound/2026-05-08-decision-j-gui-ui-architecture.md`
 - **前端技术栈**：React 19 + Tailwind v4 + Jotai + shadcn/ui + Shiki。详见 `compound/2026-05-08-decision-j-gui-frontend-stack.md`
 
-## 5. 代码锚点
+## 6. 代码锚点
 
 | 想看什么            | 从哪看                               |
 | ------------------- | ------------------------------------ |
-| Tauri 命令定义      | `src-tauri/src/lib.rs:2-5` (greet) |
-| Tauri Builder 组装  | `src-tauri/src/lib.rs:8-14` (run)  |
-| 前端 IPC 调用示例   | `src/App.tsx:10-12` (invoke greet) |
-| React 挂载          | `src/main.tsx:5-9`                 |
+| Chat 命令定义       | `src-tauri/src/commands/chat.rs:1-34` |
+| Config 命令定义     | `src-tauri/src/commands/config.rs:1-98` |
+| Tauri Builder 组装  | `src-tauri/src/lib.rs:1-18` (run)  |
+| ChatEngine          | `src-tauri/src/chat_engine.rs:1-129` |
+| 前端 IPC 封装       | `src/lib/tauri.ts:1-91`            |
+| AppShell 入口       | `src/App.tsx:1-5`                  |
 | Tauri 窗口/构建配置 | `src-tauri/tauri.conf.json`        |
 | 前端依赖            | `package.json:13-25`               |
 | Rust 依赖           | `src-tauri/Cargo.toml:17-20`       |
 
-## 6. 已知约束 / 边界情况
+## 7. 已知约束 / 边界情况
 
 - 前端包管理用 **bun**（非 npm/yarn/pnpm）(`.codestable/attention.md:11`)
 - Rust 代码必须通过 `cargo fmt --check` + `cargo clippy -- -D warnings` (`compound/2026-05-08-decision-rust-coding-conventions.md`)
 - `tauri.conf.json` 中 `identifier` 已设为 `com.j-gui.app` (`src-tauri/tauri.conf.json:5`)
 
-## 7. 相关文档
+## 8. 相关文档
 
 - `compound/2026-05-08-decision-rust-coding-conventions.md` — Rust 编码规约
 - `.codestable/attention.md` — 项目注意事项

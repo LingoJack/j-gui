@@ -1,4 +1,4 @@
-use crate::chat_engine::{ChatEngine, ChatEvent, SessionInfo};
+use crate::chat_engine::{ChatEngine, ChatEvent, MessageInfo, SessionInfo};
 use tauri::ipc::Channel;
 
 #[tauri::command]
@@ -31,4 +31,14 @@ pub fn create_session() -> Result<String, String> {
 #[tauri::command]
 pub fn delete_session(session_id: String) -> Result<(), String> {
     ChatEngine::new().delete_session(&session_id)
+}
+
+#[tauri::command]
+pub fn get_session_messages(session_id: String) -> Result<Vec<MessageInfo>, String> {
+    ChatEngine::new().get_messages(&session_id)
+}
+
+#[tauri::command]
+pub fn delete_message(session_id: String, pair_index: usize) -> Result<(), String> {
+    ChatEngine::new().delete_message(&session_id, pair_index)
 }

@@ -2,9 +2,9 @@
 doc_type: requirement
 slug: j-gui-ai-interaction
 pitch: 在桌面端与 AI 对话，支持普通聊天和能执行工具的 Agent 两种模式
-status: draft
+status: current
 last_reviewed: 2026-05-08
-implemented_by: []
+implemented_by: [chat_engine, commands/chat]
 tags: [ai, chat, agent, desktop]
 ---
 

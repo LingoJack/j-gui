@@ -5,8 +5,6 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type ChatEvent =
   | { event: "chunk"; data: { index: number; content: string } }
-  | { event: "toolCall"; data: { toolName: string; toolInput: string } }
-  | { event: "toolResult"; data: { toolName: string; toolOutput: string; success: boolean } }
   | { event: "done"; data: { totalTokens: number } }
   | { event: "error"; data: { message: string } };
 
@@ -35,21 +33,58 @@ export async function createSession(): Promise<string> {
   return invoke("create_session");
 }
 
-export async function switchSession(sessionId: string): Promise<void> {
-  return invoke("switch_session", { sessionId });
-}
-
 export async function deleteSession(sessionId: string): Promise<void> {
   return invoke("delete_session", { sessionId });
 }
 
-// ===== Config =====
+export interface MessageInfo {
+  role: string;
+  content: string;
+}
 
-export async function getConfig(): Promise<Record<string, unknown>> {
+export async function getSessionMessages(sessionId: string): Promise<MessageInfo[]> {
+  return invoke("get_session_messages", { sessionId });
+}
+
+export async function deleteMessage(sessionId: string, pairIndex: number): Promise<void> {
+  return invoke("delete_message", { sessionId, pairIndex });
+}
+
+// ===== YamlConfig =====
+
+export interface YamlConfigInfo {
+  sections: Record<string, Record<string, string>>;
+}
+
+export async function getConfig(): Promise<YamlConfigInfo> {
   return invoke("get_config");
 }
 
-// ===== Config =====
+export async function setConfig(section: string, key: string, value: string): Promise<void> {
+  return invoke("set_config", { section, key, value });
+}
+
+// ===== Alias =====
+
+export interface AliasEntry {
+  section: string;
+  name: string;
+  value: string;
+}
+
+export async function listAliases(): Promise<AliasEntry[]> {
+  return invoke("list_aliases");
+}
+
+export async function setAlias(section: string, name: string, value: string): Promise<void> {
+  return invoke("set_alias", { section, name, value });
+}
+
+export async function removeAlias(section: string, name: string): Promise<void> {
+  return invoke("remove_alias", { section, name });
+}
+
+// ===== Agent Config =====
 
 export interface ProviderInfo {
   name: string;
@@ -76,14 +111,14 @@ export async function setActiveProvider(index: number): Promise<void> {
   return invoke("set_active_provider", { index });
 }
 
-export async function setConfig(key: string, value: unknown): Promise<void> {
-  return invoke("set_config", { key, value });
-}
-
 // ===== System =====
 
 export async function setTheme(theme: "dark" | "light"): Promise<void> {
   return invoke("set_theme", { theme });
+}
+
+export async function getVersion(): Promise<string> {
+  return invoke("get_version");
 }
 
 export function onThemeChanged(callback: (theme: string) => void): Promise<UnlistenFn> {

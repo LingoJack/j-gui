@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useEffect, useState } from "react";
+import { useAtom, useSetAtom } from "jotai";
 import { Channel } from "@tauri-apps/api/core";
 import {
   currentSessionIdAtom,
@@ -8,9 +9,11 @@ import {
   type Message,
 } from "@/atoms/sessions";
 import { agentConfigAtom } from "@/atoms/config";
-import { sendMessage, createSession, setActiveProvider } from "@/lib/tauri";
+import { sendMessage, createSession, deleteMessage, setActiveProvider, getAgentConfig, setTheme, getVersion } from "@/lib/tauri";
 import type { ChatEvent } from "@/lib/tauri";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Sun, Moon } from "lucide-react";
+import { toast } from "@/atoms/toast";
+import { themeAtom } from "@/atoms/theme";
 import ChatMessages from "./ChatMessages";
 import ChatInput from "./ChatInput";
 
@@ -18,8 +21,15 @@ export default function ChatView() {
   const [sessionId, setSessionId] = useAtom(currentSessionIdAtom);
   const setMessages = useSetAtom(messagesAtom);
   const [streaming, setStreaming] = useAtom(streamingAtom);
-  const config = useAtomValue(agentConfigAtom);
+  const [config, setConfig] = useAtom(agentConfigAtom);
+  const [theme, setThemeState] = useAtom(themeAtom);
+  const [version, setVersion] = useState("");
   const streamingRef = useRef(false);
+
+  useEffect(() => {
+    getAgentConfig().then(setConfig).catch(() => {});
+    getVersion().then(setVersion).catch(() => {});
+  }, [setConfig]);
 
   const handleSend = useCallback(
     async (content: string) => {
@@ -89,6 +99,7 @@ export default function ChatView() {
             );
             setStreaming(false);
             streamingRef.current = false;
+            toast(msg.data.message, "error");
             break;
         }
       };
@@ -108,6 +119,7 @@ export default function ChatView() {
           ),
         );
         setStreaming(false);
+        toast(`发送失败: ${String(e)}`, "error");
         streamingRef.current = false;
       }
     },
@@ -117,7 +129,14 @@ export default function ChatView() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between h-10 px-4 border-b border-border shrink-0 gap-2">
-        <span className="text-sm font-medium shrink-0">Chat</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm font-medium">Chat</span>
+          {version && (
+            <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              {version}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2 min-w-0">
           {/* Model selector */}
           {config.providers.length > 0 && (
@@ -151,9 +170,41 @@ export default function ChatView() {
           >
             新建
           </button>
+          <button
+            onClick={async () => {
+              const next = theme === "dark" ? "light" : "dark";
+              setThemeState(next);
+              document.documentElement.classList.toggle("dark", next === "dark");
+              await setTheme(next);
+            }}
+            className="p-1 rounded-md hover:bg-accent text-muted-foreground shrink-0"
+            title={theme === "dark" ? "切换亮色" : "切换暗色"}
+          >
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
         </div>
       </div>
-      <ChatMessages />
+      <ChatMessages
+        onDelete={(index) => {
+          if (!sessionId) return;
+          const pairIndex = Math.floor(index / 2);
+          deleteMessage(sessionId, pairIndex)
+            .then(() => {
+              setMessages((prev) => {
+                const userIdx = pairIndex * 2;
+                const newMsgs = [...prev];
+                newMsgs.splice(userIdx, 2);
+                return newMsgs;
+              });
+            })
+            .catch((e) => toast(`删除失败: ${String(e)}`, "error"));
+        }}
+        onResend={(index, content) => {
+          // Remove messages from this user message onward, then resend
+          setMessages((prev) => prev.slice(0, index));
+          handleSend(content);
+        }}
+      />
       <ChatInput onSend={handleSend} disabled={streaming} />
     </div>
   );

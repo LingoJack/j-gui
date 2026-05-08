@@ -56,3 +56,4 @@ Tauri 命令层（`commands/`）只做参数解析和权限检查，业务逻辑
 
 - `2026-05-08-decision-j-gui-rust-integration.md` — j-cli 依赖方式
 - `2026-05-08-decision-j-gui-ipc-dataflow.md` — 事件推送路径
+- `2026-05-08-explore-j-cli-agent-coupling.md` — j-cli Agent 与 TUI 的耦合分析（Agent 模式阻塞原因）

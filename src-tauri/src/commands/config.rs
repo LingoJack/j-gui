@@ -1,5 +1,7 @@
 use j_cli::command::chat::storage::{load_agent_config, save_agent_config};
+use j_cli::config::YamlConfig;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -94,5 +96,33 @@ pub fn set_active_provider(index: usize) -> Result<(), String> {
         Ok(())
     } else {
         Err("保存配置失败".to_string())
+    }
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YamlConfigInfo {
+    pub sections: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+#[tauri::command]
+pub fn get_config() -> Result<YamlConfigInfo, String> {
+    let config = YamlConfig::load();
+    let mut sections: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    for &s in j_cli::constants::ALL_SECTIONS {
+        if let Some(map) = config.get_section(s) {
+            sections.insert(s.to_string(), map.clone());
+        }
+    }
+    Ok(YamlConfigInfo { sections })
+}
+
+#[tauri::command]
+pub fn set_config(section: String, key: String, value: String) -> Result<(), String> {
+    let mut config = YamlConfig::load();
+    if value.is_empty() {
+        config.remove_property(&section, &key)
+    } else {
+        config.set_property(&section, &key, &value)
     }
 }

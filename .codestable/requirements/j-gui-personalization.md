@@ -2,9 +2,9 @@
 doc_type: requirement
 slug: j-gui-personalization
 pitch: 选模型、换主题、管别名，把 j-gui 调成自己顺手的样子
-status: draft
+status: current
 last_reviewed: 2026-05-08
-implemented_by: []
+implemented_by: [commands/config]
 tags: [configuration, theme, alias]
 ---
 
