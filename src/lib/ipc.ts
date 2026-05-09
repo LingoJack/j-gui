@@ -441,6 +441,14 @@ export const updateAppendSetting = (setting: any) => tryInvoke('update_append_se
 // ============================================================
 
 export const getChatTools = () => tryInvoke<any[]>('get_chat_tools', undefined, [])
+
+/** List built-in chat tools with enabled/disabled state (from AgentConfig.disabled_tools) */
+export const listChatTools = () =>
+  invoke<Array<{ name: string; description: string; enabled: boolean }>>('list_chat_tools')
+
+/** Enable or disable a built-in chat tool by name */
+export const setToolEnabled = (name: string, enabled: boolean) =>
+  invoke<void>('set_tool_enabled', { name, enabled })
 export const onCustomToolChanged = stubEvent('customToolChanged')
 export const updateChatToolState = (id: string, state: any) =>
   tryInvoke('update_chat_tool_state', { id, state })
@@ -554,6 +562,13 @@ export interface HookInfo {
 }
 
 export const listHooks = () => tryInvoke<HookInfo[]>('list_hooks', undefined, [])
+
+// ============================================================
+// Yaml Config
+// ============================================================
+
+export const getConfig = () => tryInvoke<{ sections: Record<string, Record<string, string>> }>('get_config', undefined, { sections: {} })
+export const setConfig = (section: string, key: string, value: string) => tryInvoke('set_config', { section, key, value })
 
 // ============================================================
 // Aliases
