@@ -539,6 +539,23 @@ export const updateProxySettings = (config: any) => tryInvoke('update_proxy_sett
 export const detectSystemProxy = () => tryInvoke<any>('detect_system_proxy', undefined, { detected: false })
 
 // ============================================================
+// Hooks
+// ============================================================
+
+export interface HookInfo {
+  name: string | null
+  event: string
+  source: string
+  hookType: string
+  label: string
+  timeout: number | null
+  onError: string | null
+  uniqueId: string
+}
+
+export const listHooks = () => tryInvoke<HookInfo[]>('list_hooks', undefined, [])
+
+// ============================================================
 // Aliases
 // ============================================================
 
