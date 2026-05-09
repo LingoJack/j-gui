@@ -120,18 +120,9 @@ export default function MainArea({ onOpenSettings }: Props) {
     setTabs((prev) => {
       const remaining = prev.filter((t) => t.id !== tabId);
       if (remaining.length === 0) {
-        if (!hasProviders) {
-          setActiveTabId(null);
-          return [];
-        }
-        const newTab: Tab = {
-          id: crypto.randomUUID(),
-          type: "chat",
-          title: "Chat",
-          sessionId: null,
-        };
-        setActiveTabId(newTab.id);
-        return [newTab];
+        // Let MainArea show the empty state / welcome page (#3 fix)
+        setActiveTabId(null);
+        return [];
       }
       const closedIdx = prev.findIndex((t) => t.id === tabId);
       if (activeTabId === tabId) {

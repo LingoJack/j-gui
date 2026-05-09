@@ -366,7 +366,14 @@ fn parse_sdk_line(line: &str) -> Vec<AgentEvent> {
         "system" | "stream_event" => Vec::new(),
         "user" => parse_user_event(&v),
         "plan" => parse_plan_event(&v),
-        _ => Vec::new(),
+        _ => {
+            eprintln!(
+                "[warn] parse_sdk_line: unknown msg_type '{}' from SDK line: {}",
+                &msg_type,
+                &line[..line.len().min(120)]
+            );
+            Vec::new()
+        }
     }
 }
 

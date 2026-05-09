@@ -1,11 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useAtomValue } from "jotai";
-import { Send, Brain } from "lucide-react";
+import { Send, Square, Brain } from "lucide-react";
 import { rightPanelDirsAtom } from "@/atoms/sidebar";
 import FileMentionPopup, { type FileSuggestion } from "@/components/agent/FileMentionPopup";
 
 interface Props {
   onSend: (content: string) => void;
+  onStop?: () => void;
   disabled?: boolean;
   sendDisabled?: boolean;
   placeholder?: string;
@@ -16,6 +17,7 @@ interface Props {
 
 export default function ChatInput({
   onSend,
+  onStop,
   disabled,
   sendDisabled,
   placeholder,
@@ -239,14 +241,24 @@ export default function ChatInput({
         >
           <Brain size={16} />
         </button>
-        <button
-          onClick={handleSend}
-          disabled={disabled || sendDisabled || !text.trim()}
-          className="p-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 shrink-0"
-          aria-label="发送"
-        >
-          <Send size={16} />
-        </button>
+        {sendDisabled && onStop ? (
+          <button
+            onClick={onStop}
+            className="p-2 rounded-md bg-destructive text-destructive-foreground hover:opacity-90 shrink-0"
+            aria-label="停止生成"
+          >
+            <Square size={16} />
+          </button>
+        ) : (
+          <button
+            onClick={handleSend}
+            disabled={disabled || sendDisabled || !text.trim()}
+            className="p-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 shrink-0"
+            aria-label="发送"
+          >
+            <Send size={16} />
+          </button>
+        )}
       </div>
     </div>
   );

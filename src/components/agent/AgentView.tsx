@@ -158,7 +158,7 @@ export default function AgentView() {
 
   const startEngine = useCallback(async (sessionId: string) => {
     const tabId = activeTabId;
-    const mode = tabId ? (permissionModeByTab[tabId] ?? "bypassPermissions") : "bypassPermissions";
+    const mode = tabId ? (permissionModeByTab[tabId] ?? "default") : "default";
     try {
       await engine.startEngine(sessionId, mode);
       setAgentStarted(true);
@@ -282,8 +282,8 @@ export default function AgentView() {
     : "Agent";
 
   const permissionMode = activeTabId
-    ? permissionModeByTab[activeTabId] ?? "bypassPermissions"
-    : "bypassPermissions";
+    ? permissionModeByTab[activeTabId] ?? "default"
+    : "default";
 
   const handlePermissionModeChange = useCallback(
     (mode: string) => {
@@ -459,6 +459,7 @@ export default function AgentView() {
       {interruptBanner}
       <ChatInput
         onSend={handleSend}
+        onStop={() => { engine.stopEngine(); }}
         sendDisabled={streaming}
         mode="agent"
         placeholder="输入消息... (@引用文件, Enter 发送)"

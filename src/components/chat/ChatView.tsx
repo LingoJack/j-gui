@@ -143,7 +143,16 @@ export default function ChatView() {
 
       const onEvent = new Channel<ChatEvent>();
       onEvent.onmessage = (msg) => {
-        if (chatRunIdByTabRef.current[activeTabId] !== runId) return;
+        // Debug: log all incoming events
+        if (import.meta.env.DEV) {
+          console.log("[ChatView] Channel event:", msg.event, msg.data);
+        }
+        if (chatRunIdByTabRef.current[activeTabId] !== runId) {
+          if (import.meta.env.DEV) {
+            console.warn("[ChatView] runId mismatch:", chatRunIdByTabRef.current[activeTabId], "!==", runId);
+          }
+          return;
+        }
         if (!streamingByTabRef.current[activeTabId]) return;
 
         switch (msg.event) {
@@ -271,6 +280,14 @@ export default function ChatView() {
     },
     [activeTabId, setDrafts],
   );
+
+  const handleStopStream = useCallback(() => {
+    if (!activeTabId) return;
+    chatRunIdByTabRef.current[activeTabId] =
+      (chatRunIdByTabRef.current[activeTabId] ?? 0) + 1;
+    setStreamingByTab((prev) => ({ ...prev, [activeTabId]: false }));
+    streamingByTabRef.current[activeTabId] = false;
+  }, [activeTabId, setStreamingByTab]);
 
   const handleClearContext = useCallback(async () => {
     if (!sessionId) return;
@@ -476,6 +493,7 @@ export default function ChatView() {
       />
       <ChatInput
         onSend={handleSend}
+        onStop={handleStopStream}
         disabled={streaming}
         draft={drafts[activeTabId ?? ""] ?? ""}
         onDraftChange={handleDraftChange}
