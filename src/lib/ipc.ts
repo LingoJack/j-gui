@@ -338,6 +338,10 @@ export const reorderAgentWorkspaces = (orderedIds: string[]) =>
 // Workspace Capabilities (MCP + Skills)
 // ============================================================
 
+/** List j-cli MCP servers from ~/.jdata/agent/mcp_config.json (read-only source) */
+export const listMcpServers = () =>
+  tryInvoke<Array<{ name: string; transport: string; command?: string; args?: string[]; url?: string; env?: Record<string, string>; disabled: boolean }>>('list_mcp_servers', undefined, [])
+
 export const getWorkspaceCapabilities = (workspaceSlug: string) =>
   tryInvoke<any>('get_workspace_capabilities', { workspaceSlug }, { mcpServers: [], skills: [] })
 export const getWorkspaceMcpConfig = (workspaceSlug: string) =>

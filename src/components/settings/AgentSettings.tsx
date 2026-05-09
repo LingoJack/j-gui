@@ -169,8 +169,12 @@ export function AgentSettings(): React.ReactElement {
   const [viewMode, setViewMode] = React.useState<ViewMode>('list')
   const [editingServer, setEditingServer] = React.useState<EditingServer | null>(null)
 
+  // MCP source selector
+  const [mcpSource, setMcpSource] = React.useState<'workspace' | 'jcli'>('workspace')
+
   // Data
   const [mcpConfig, setMcpConfig] = React.useState<WorkspaceMcpConfig>({ servers: {} })
+  const [jCliMcpServers, setJCliMcpServers] = React.useState<any[]>([])
   const [skills, setSkills] = React.useState<SkillMeta[]>([])
   const [skillsDir, setSkillsDir] = React.useState('')
   const [jCliSkills, setJCliSkills] = React.useState<ExternalSkill[]>([])
@@ -192,16 +196,18 @@ export function AgentSettings(): React.ReactElement {
       return
     }
     try {
-      const [config, skillList, dir, jCliList] = await Promise.all([
+      const [config, skillList, dir, jCliList, jCliMcp] = await Promise.all([
         ipc.getWorkspaceMcpConfig(workspaceSlug),
         ipc.getWorkspaceSkills(workspaceSlug),
         ipc.getWorkspaceSkillsDir(workspaceSlug),
         ipc.listSkills().catch(() => [] as ExternalSkill[]),
+        ipc.listMcpServers(),
       ])
       setMcpConfig(config)
       setSkills(skillList)
       setSkillsDir(dir)
       setJCliSkills(jCliList)
+      setJCliMcpServers(jCliMcp)
     } catch (error) {
       console.error('[Agent 设置] 加载工作区配置失败:', error)
     } finally {
@@ -623,48 +629,80 @@ ${skillList}
         <TabsContent value="mcp" className="mt-4 space-y-4">
           <SettingsSection
             title="MCP 服务器"
-            description={`当前工作区: ${currentWorkspace.name}`}
+            description={mcpSource === 'workspace' ? `当前工作区: ${currentWorkspace.name}` : undefined}
             action={
               <div className="flex items-center gap-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button size="sm" onClick={() => handleConfigViaChat(buildMcpPrompt())}>
-                      <MessageSquare size={14} />
-                      <span>AI 配置</span>
+                <div className="flex rounded-lg bg-muted p-0.5">
+                  <button
+                    onClick={() => setMcpSource('workspace')}
+                    className={cn(
+                      'px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
+                      mcpSource === 'workspace'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    工作区 MCP
+                  </button>
+                  <button
+                    onClick={() => setMcpSource('jcli')}
+                    className={cn(
+                      'px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
+                      mcpSource === 'jcli'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    j-cli MCP
+                  </button>
+                </div>
+                {mcpSource === 'workspace' && (
+                  <>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button size="sm" onClick={() => handleConfigViaChat(buildMcpPrompt())}>
+                          <MessageSquare size={14} />
+                          <span>AI 配置</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs text-xs">
+                        j-gui Agent 可以帮助你联网查找公开的 MCP 并配置到当前工作区，你可以在 Agent 模式下用自然语言表达你想要的 MCP 并要求安装到当前工作区即可；也可以跟 j-gui Agent 一起探讨创建你的专属 MCP 到当前工作区
+                      </TooltipContent>
+                    </Tooltip>
+                    <Button size="sm" variant="outline" onClick={() => { setActiveTab('mcp'); setViewMode('create') }}>
+                      <Plus size={16} />
+                      <span>添加服务器</span>
                     </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-xs text-xs">
-                    j-gui Agent 可以帮助你联网查找公开的 MCP 并配置到当前工作区，你可以在 Agent 模式下用自然语言表达你想要的 MCP 并要求安装到当前工作区即可；也可以跟 j-gui Agent 一起探讨创建你的专属 MCP 到当前工作区
-                  </TooltipContent>
-                </Tooltip>
-                <Button size="sm" variant="outline" onClick={() => { setActiveTab('mcp'); setViewMode('create') }}>
-                  <Plus size={16} />
-                  <span>添加服务器</span>
-                </Button>
+                  </>
+                )}
               </div>
             }
           >
             {loading ? (
               <div className="text-sm text-muted-foreground py-8 text-center">加载中...</div>
-            ) : serverEntries.length === 0 ? (
-              <SettingsCard divided={false}>
-                <div className="text-sm text-muted-foreground py-12 text-center">
-                  还没有配置任何 MCP 服务器，点击上方"添加服务器"开始
-                </div>
-              </SettingsCard>
+            ) : mcpSource === 'workspace' ? (
+              serverEntries.length === 0 ? (
+                <SettingsCard divided={false}>
+                  <div className="text-sm text-muted-foreground py-12 text-center">
+                    还没有配置任何 MCP 服务器，点击上方"添加服务器"开始
+                  </div>
+                </SettingsCard>
+              ) : (
+                <SettingsCard>
+                  {serverEntries.map(([name, entry]) => (
+                    <McpServerRow
+                      key={name}
+                      name={name}
+                      entry={entry}
+                      onEdit={() => { setEditingServer({ name, entry }); setViewMode('edit') }}
+                      onDelete={() => handleDeleteMcp(name)}
+                      onToggle={() => handleToggleMcp(name)}
+                    />
+                  ))}
+                </SettingsCard>
+              )
             ) : (
-              <SettingsCard>
-                {serverEntries.map(([name, entry]) => (
-                  <McpServerRow
-                    key={name}
-                    name={name}
-                    entry={entry}
-                    onEdit={() => { setEditingServer({ name, entry }); setViewMode('edit') }}
-                    onDelete={() => handleDeleteMcp(name)}
-                    onToggle={() => handleToggleMcp(name)}
-                  />
-                ))}
-              </SettingsCard>
+              <JCliMcpView servers={jCliMcpServers} />
             )}
           </SettingsSection>
         </TabsContent>
@@ -1098,6 +1136,62 @@ function MetadataEditRow({ label, value, onChange, multiline }: { label: string;
         />
       )}
     </div>
+  )
+}
+
+// ===== j-cli MCP View (Read-only) =====
+
+interface JCliMcpViewProps {
+  servers: Array<{
+    name: string
+    transport: string
+    command?: string | null
+    args?: string[] | null
+    url?: string | null
+    env?: Record<string, string> | null
+    disabled: boolean
+  }>
+}
+
+function JCliMcpView({ servers }: JCliMcpViewProps): React.ReactElement {
+  if (servers.length === 0) {
+    return (
+      <SettingsCard divided={false}>
+        <div className="text-sm text-muted-foreground py-12 text-center">
+          暂无 j-cli MCP 服务器
+        </div>
+      </SettingsCard>
+    )
+  }
+
+  return (
+    <SettingsCard>
+      {servers.map((server) => {
+        const transportInfo = server.transport === 'stdio'
+          ? `${server.command ?? ''} ${(server.args ?? []).join(' ')}`
+          : server.url ?? ''
+
+        return (
+          <SettingsRow
+            key={server.name}
+            label={server.name}
+            icon={<Plug size={18} className="text-blue-500" />}
+            description={transportInfo}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground font-medium">
+                {TRANSPORT_LABELS[server.transport] ?? server.transport}
+              </span>
+              {server.disabled && (
+                <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-600 dark:text-red-400 font-medium">
+                  已禁用
+                </span>
+              )}
+            </div>
+          </SettingsRow>
+        )
+      })}
+    </SettingsCard>
   )
 }
 
