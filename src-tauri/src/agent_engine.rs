@@ -411,8 +411,8 @@ fn parse_assistant_event(v: &serde_json::Value) -> Vec<AgentEvent> {
                     // Fallback: generate synthetic ID + infer name
                     if tool_id.is_empty() {
                         let raw = serde_json::to_string(item).unwrap_or_default();
-                        let hash: String = raw.bytes().take(8)
-                            .map(|b| format!("{:02x}", b)).collect();
+                        let hash: String =
+                            raw.bytes().take(8).map(|b| format!("{:02x}", b)).collect();
                         tool_id = format!("tool_{}", hash);
                     }
                     if tool_name.is_empty() {
@@ -454,9 +454,7 @@ fn parse_user_event(v: &serde_json::Value) -> Vec<AgentEvent> {
                 let tool_id = item["tool_use_id"].as_str().unwrap_or("").to_string();
                 let content = item["content"].as_str().unwrap_or("").to_string();
                 if tool_id.is_empty() {
-                    eprintln!(
-                        "[warn] parse_user_event: tool_result missing tool_use_id"
-                    );
+                    eprintln!("[warn] parse_user_event: tool_result missing tool_use_id");
                 }
                 return vec![AgentEvent::ToolResult { tool_id, content }];
             }
@@ -472,10 +470,7 @@ fn parse_plan_event(v: &serde_json::Value) -> Vec<AgentEvent> {
         .filter(|s| !s.is_empty())
         .unwrap_or("plan")
         .to_string();
-    let plan_summary = v["plan_summary"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let plan_summary = v["plan_summary"].as_str().unwrap_or("").to_string();
     let steps = v["steps"].as_array();
     let tool_input = serde_json::json!({
         "plan_summary": plan_summary,

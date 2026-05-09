@@ -27,6 +27,7 @@ pub enum ChatEvent {
 pub struct MessageInfo {
     pub role: String,
     pub content: String,
+    pub timestamp: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -95,6 +96,9 @@ impl ChatEngine {
             &messages,
             system_prompt_str,
             &mut |chunk: &str| {
+                // TODO: Check commands::chat::is_session_stopped(&session_id) here
+                // and set cancelled=true when the session has been flagged by stop_generation.
+                // This replaces the current channel-drop-only cancellation mechanism.
                 if cancelled {
                     return;
                 }
@@ -169,6 +173,10 @@ impl ChatEngine {
                     _ => "unknown".to_string(),
                 },
                 content: m.content,
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
             })
             .collect())
     }

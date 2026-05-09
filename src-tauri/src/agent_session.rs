@@ -269,6 +269,19 @@ pub fn get_agent_session(session_id: &str) -> Result<Vec<AgentTimelineItem>, Str
     read_timeline(session_id)
 }
 
+pub fn update_session_title(session_id: &str, title: &str) -> Result<(), String> {
+    validate_session_id(session_id)?;
+    let dir = agent_sessions_dir().join(session_id);
+    let meta_path = dir.join("meta.json");
+    let content =
+        std::fs::read_to_string(&meta_path).map_err(|e| format!("读取 meta 失败: {}", e))?;
+    let mut v: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    v["title"] = serde_json::Value::String(title.to_string());
+    std::fs::write(&meta_path, serde_json::to_string(&v).unwrap())
+        .map_err(|e| format!("写入 meta 失败: {}", e))?;
+    Ok(())
+}
+
 pub fn delete_agent_session(session_id: &str) -> Result<(), String> {
     validate_session_id(session_id)?;
     let dir = agent_sessions_dir().join(session_id);

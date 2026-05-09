@@ -1,6 +1,9 @@
 pub mod agent;
 pub mod alias;
+pub mod channels;
 pub mod chat;
 pub mod config;
+pub mod files;
 pub mod governance;
+pub mod settings;
 pub mod system;
