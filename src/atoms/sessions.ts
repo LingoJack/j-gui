@@ -1,5 +1,6 @@
 import { atom } from "jotai";
 import type { AgentTimelineItem } from "@/lib/tauri";
+import { activeTabAtom, activeTabIdAtom, tabsAtom } from "@/atoms/tabs";
 
 export interface SessionInfo {
   id: string;
@@ -8,8 +9,28 @@ export interface SessionInfo {
   updatedAt: number;
 }
 
-export const sessionsAtom = atom<SessionInfo[]>([]);
-export const currentSessionIdAtom = atom<string | null>(null);
+export const chatSessionsAtom = atom<SessionInfo[]>([]);
+export const agentSessionsListAtom = atom<SessionInfo[]>([]);
+export const sessionsAtom = atom((get) => {
+  const activeTab = get(activeTabAtom);
+  if (activeTab?.type === "agent") {
+    return get(agentSessionsListAtom);
+  }
+  return get(chatSessionsAtom);
+});
+
+export const currentSessionIdAtom = atom(
+  (get) => get(activeTabAtom)?.sessionId ?? null,
+  (get, set, sessionId: string | null) => {
+    const activeTabId = get(activeTabIdAtom);
+    if (!activeTabId) return;
+    set(tabsAtom, (prev) =>
+      prev.map((tab) =>
+        tab.id === activeTabId ? { ...tab, sessionId } : tab,
+      ),
+    );
+  },
+);
 
 export interface ToolCall {
   toolId: string;
@@ -27,18 +48,82 @@ export interface Message {
   toolCall?: ToolCall;
 }
 
-// NOTE: 当前为全局共享 atoms——同类型多标签共享消息状态。
-// 切换 activeTab 时由 AppShell useEffect 自动 reload，但不支持真正的并行对话。
-// per-tab 消息隔离（如 Map<tabId, Message[]>）为已知架构改进项，后置处理。
-export const chatMessagesAtom = atom<Message[]>([]);
-export const chatStreamingAtom = atom<boolean>(false);
+type MessageMap = Record<string, Message[]>;
+type StreamingMap = Record<string, boolean>;
+type DraftMap = Record<string, string>;
 
-export const agentMessagesAtom = atom<Message[]>([]);
-export const agentStreamingAtom = atom<boolean>(false);
+export const chatMessagesByTabAtom = atom<MessageMap>({});
+export const chatStreamingByTabAtom = atom<StreamingMap>({});
 
-// Per-session draft storage: sessionId -> draftText
-export const chatDraftsAtom = atom<Record<string, string>>({});
-export const agentDraftsAtom = atom<Record<string, string>>({});
+export const agentMessagesByTabAtom = atom<MessageMap>({});
+export const agentStreamingByTabAtom = atom<StreamingMap>({});
+export const chatMessagesAtom = atom(
+  (get) => {
+    const activeTabId = get(activeTabIdAtom);
+    if (!activeTabId) return [];
+    return get(chatMessagesByTabAtom)[activeTabId] ?? [];
+  },
+  (get, set, update: Message[] | ((prev: Message[]) => Message[])) => {
+    const activeTabId = get(activeTabIdAtom);
+    if (!activeTabId) return;
+    set(chatMessagesByTabAtom, (prevMap) => {
+      const prev = prevMap[activeTabId] ?? [];
+      const next = typeof update === "function" ? update(prev) : update;
+      return { ...prevMap, [activeTabId]: next };
+    });
+  },
+);
+export const chatStreamingAtom = atom(
+  (get) => {
+    const activeTabId = get(activeTabIdAtom);
+    if (!activeTabId) return false;
+    return get(chatStreamingByTabAtom)[activeTabId] ?? false;
+  },
+  (get, set, value: boolean) => {
+    const activeTabId = get(activeTabIdAtom);
+    if (!activeTabId) return;
+    set(chatStreamingByTabAtom, (prev) => ({ ...prev, [activeTabId]: value }));
+  },
+);
+
+export const agentMessagesAtom = atom(
+  (get) => {
+    const activeTabId = get(activeTabIdAtom);
+    if (!activeTabId) return [];
+    return get(agentMessagesByTabAtom)[activeTabId] ?? [];
+  },
+  (get, set, update: Message[] | ((prev: Message[]) => Message[])) => {
+    const activeTabId = get(activeTabIdAtom);
+    if (!activeTabId) return;
+    set(agentMessagesByTabAtom, (prevMap) => {
+      const prev = prevMap[activeTabId] ?? [];
+      const next = typeof update === "function" ? update(prev) : update;
+      return { ...prevMap, [activeTabId]: next };
+    });
+  },
+);
+export const agentStreamingAtom = atom(
+  (get) => {
+    const activeTabId = get(activeTabIdAtom);
+    if (!activeTabId) return false;
+    return get(agentStreamingByTabAtom)[activeTabId] ?? false;
+  },
+  (get, set, value: boolean) => {
+    const activeTabId = get(activeTabIdAtom);
+    if (!activeTabId) return;
+    set(agentStreamingByTabAtom, (prev) => ({ ...prev, [activeTabId]: value }));
+  },
+);
+export const sessionTitleOverridesAtom = atom<Record<string, string>>({});
+
+export const chatDraftsAtom = atom<DraftMap>({});
+export const agentDraftsAtom = atom<DraftMap>({});
+
+function shortenTitle(text: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const firstClause = normalized.split(/[。！？!?；;\n]/)[0]?.trim() ?? normalized;
+  return firstClause.length > 24 ? `${firstClause.slice(0, 24)}…` : firstClause;
+}
 
 export function timelineToMessages(items: AgentTimelineItem[]): Message[] {
   const messages: Message[] = [];
@@ -90,4 +175,16 @@ export function timelineToMessages(items: AgentTimelineItem[]): Message[] {
   }
 
   return messages;
+}
+
+export function deriveSessionTitle(messages: Message[]): string | null {
+  const firstUserMessage = messages.find(
+    (message) => message.role === "user" && message.content.trim(),
+  );
+  if (!firstUserMessage) {
+    return null;
+  }
+
+  const title = shortenTitle(firstUserMessage.content);
+  return title.length > 0 ? title : null;
 }

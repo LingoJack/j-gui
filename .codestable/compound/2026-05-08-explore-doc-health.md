@@ -2,13 +2,16 @@
 doc_type: explore
 type: module-overview
 slug: doc-health
-status: active
+status: superseded
 created: 2026-05-08
+superseded-by: 2026-05-09-explore-doc-health-refresh.md
 confidence: high
 tags: [documentation, quality, audit, codestable]
 ---
 
 # CodeStable 文档完善度审查
+
+**[已取代]** 当前结论见 `2026-05-09-explore-doc-health-refresh.md`。本文件中关于 requirements 状态和 `docs/api` 缺失的判断已经过期。
 
 > 审查日期：2026-05-08 | 置信度：high | 审查范围：全部 26 份 CodeStable 文档
 

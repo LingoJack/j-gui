@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::Channel;
 
-static DELETE_LOCK: Mutex<()> = Mutex::new(());
+static SESSION_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -53,6 +53,17 @@ impl ChatEngine {
         }
     }
 
+    fn append_session_event_locked(session_id: &str, event: &SessionEvent) -> Result<(), String> {
+        let _lock = SESSION_WRITE_LOCK
+            .lock()
+            .map_err(|e| format!("锁定会话写入失败: {}", e))?;
+        if append_session_event(session_id, event) {
+            Ok(())
+        } else {
+            Err("写入会话记录失败".to_string())
+        }
+    }
+
     pub async fn send_message(
         &self,
         session_id: String,
@@ -70,7 +81,7 @@ impl ChatEngine {
         let mut messages = load_session(&session_id);
         let user_msg = ChatMessage::text(MessageRole::User, &content);
         // Persist user message before LLM call to avoid data loss on error
-        append_session_event(&session_id, &SessionEvent::msg(user_msg.clone()));
+        Self::append_session_event_locked(&session_id, &SessionEvent::msg(user_msg.clone()))?;
         messages.push(user_msg);
 
         let system_prompt = load_system_prompt();
@@ -108,7 +119,7 @@ impl ChatEngine {
         match result {
             Ok(full_text) => {
                 let assistant_msg = ChatMessage::text(MessageRole::Assistant, &full_text);
-                append_session_event(&session_id, &SessionEvent::msg(assistant_msg));
+                Self::append_session_event_locked(&session_id, &SessionEvent::msg(assistant_msg))?;
 
                 let _ = on_event.send(ChatEvent::Done { total_tokens: 0 });
                 Ok(())
@@ -163,7 +174,9 @@ impl ChatEngine {
     }
 
     pub fn delete_message(&self, session_id: &str, pair_index: usize) -> Result<(), String> {
-        let _lock = DELETE_LOCK.lock().map_err(|e| format!("锁定失败: {}", e))?;
+        let _lock = SESSION_WRITE_LOCK
+            .lock()
+            .map_err(|e| format!("锁定会话写入失败: {}", e))?;
         Self::validate_session_id(session_id)?;
         let paths = j_cli::command::chat::storage::session::SessionPaths::new(session_id);
         let transcript_path = paths.transcript();
@@ -209,6 +222,11 @@ impl ChatEngine {
             .map_err(|e| format!("写入会话记录失败: {}", e))?;
 
         Ok(())
+    }
+
+    pub fn clear_session(&self, session_id: &str) -> Result<(), String> {
+        Self::validate_session_id(session_id)?;
+        Self::append_session_event_locked(session_id, &SessionEvent::Clear)
     }
 
     pub fn delete_session(&self, session_id: &str) -> Result<(), String> {

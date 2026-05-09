@@ -1,0 +1,136 @@
+project: j-gui
+entry_type: mixed
+source_root: src
+last_scanned: 2026-05-09
+
+entries:
+  - entry: agent-commands
+    category: Tauri IPC
+    source_files:
+      - src-tauri/src/commands/agent.rs
+      - src-tauri/src/agent_engine.rs
+      - src-tauri/src/agent_session.rs
+      - src/lib/tauri.ts
+    doc_path: docs/api/agent-commands.md
+    status: draft
+    note: "Agent runtime, session, interrupt, and streaming command reference."
+
+  - entry: chat-commands
+    category: Tauri IPC
+    source_files:
+      - src-tauri/src/commands/chat.rs
+      - src-tauri/src/chat_engine.rs
+      - src/lib/tauri.ts
+    doc_path: docs/api/chat-commands.md
+    status: draft
+    note: "Chat session, message streaming, message history, deletion, and clearing command reference."
+
+  - entry: config-commands
+    category: Tauri IPC
+    source_files:
+      - src-tauri/src/commands/config.rs
+      - src/lib/tauri.ts
+    doc_path: docs/api/config-commands.md
+    status: draft
+    note: "Agent config, provider selection, YAML config, and system prompt command reference."
+
+  - entry: governance-commands
+    category: Tauri IPC
+    source_files:
+      - src-tauri/src/commands/governance.rs
+      - src/lib/tauri.ts
+    doc_path: docs/api/governance-commands.md
+    status: draft
+    note: "Skills, hooks, and MCP server governance command reference."
+
+  - entry: alias-commands
+    category: Tauri IPC
+    source_files:
+      - src-tauri/src/commands/alias.rs
+      - src/lib/tauri.ts
+    doc_path: docs/api/alias-commands.md
+    status: draft
+    note: "Alias list, set, and remove command reference."
+
+  - entry: system-commands
+    category: Tauri IPC
+    source_files:
+      - src-tauri/src/commands/system.rs
+      - src/lib/tauri.ts
+    doc_path: docs/api/system-commands.md
+    status: draft
+    note: "Version, theme mutation, and theme-change event bridge reference."
+
+  - entry: tauri-frontend-bridge
+    category: Frontend API
+    source_files:
+      - src/lib/tauri.ts
+    doc_path: docs/api/tauri-frontend-bridge.md
+    status: draft
+    note: "TypeScript invoke wrappers, Channel event types, and shared frontend IPC payload shapes."
+
+  - entry: frontend-state-atoms
+    category: Frontend API
+    source_files:
+      - src/atoms/app-mode.ts
+      - src/atoms/config.ts
+      - src/atoms/sessions.ts
+      - src/atoms/sidebar.ts
+      - src/atoms/tabs.ts
+      - src/atoms/theme.ts
+      - src/atoms/toast.ts
+    doc_path: docs/api/frontend-state-atoms.md
+    status: draft
+    note: "Jotai atoms used as cross-component state surface for tabs, sessions, mode, theme, and toast."
+
+  - entry: app-shell-components
+    category: React Components
+    source_files:
+      - src/components/app-shell/AppShell.tsx
+      - src/components/app-shell/LeftSidebar.tsx
+      - src/components/app-shell/MainArea.tsx
+      - src/components/app-shell/RightSidePanel.tsx
+      - src/components/app-shell/SearchDialog.tsx
+      - src/components/app-shell/WelcomePage.tsx
+    doc_path: docs/api/app-shell-components.md
+    status: draft
+    note: "Shell, sidebar, main workspace, right panel, search, and welcome component reference."
+
+  - entry: chat-components
+    category: React Components
+    source_files:
+      - src/components/chat/ChatView.tsx
+      - src/components/chat/ChatInput.tsx
+      - src/components/chat/ChatMessages.tsx
+      - src/components/chat/MessageBubble.tsx
+      - src/components/chat/ReasoningBlock.tsx
+    doc_path: docs/api/chat-components.md
+    status: draft
+    note: "Chat view, input, message rendering, message actions, and reasoning block reference."
+
+  - entry: agent-components
+    category: React Components
+    source_files:
+      - src/components/agent/AgentView.tsx
+      - src/components/agent/AgentMessages.tsx
+      - src/components/agent/PermissionBanner.tsx
+      - src/components/agent/TaskProgressCard.tsx
+      - src/components/agent/ToolCallDisplay.tsx
+    doc_path: docs/api/agent-components.md
+    status: draft
+    note: "Agent view, timeline rendering, permission banner, task progress, and tool call display reference."
+
+  - entry: settings-components
+    category: React Components
+    source_files:
+      - src/components/settings/SettingsDialog.tsx
+      - src/components/settings/SkillsTab.tsx
+      - src/components/settings/HooksTab.tsx
+      - src/components/settings/McpTab.tsx
+      - src/components/settings/primitives/SettingsCard.tsx
+      - src/components/settings/primitives/SettingsRow.tsx
+      - src/components/settings/primitives/SettingsSection.tsx
+      - src/components/settings/primitives/SettingsToggle.tsx
+    doc_path: docs/api/settings-components.md
+    status: draft
+    note: "Settings dialog, governance tabs, and settings primitive component reference."

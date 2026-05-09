@@ -3,7 +3,7 @@ doc_type: roadmap
 slug: j-gui-desktop-app
 status: active
 created: 2026-05-08
-last_reviewed: 2026-05-08
+last_reviewed: 2026-05-09
 tags: [tauri, desktop, ai-chat, agent]
 related_requirements:
   - j-gui-ai-interaction
@@ -17,7 +17,7 @@ related_architecture:
 
 ## 1. 背景
 
-为 j-cli（Rust CLI AI 工具）开发 Tauri 桌面端。j-cli 已有完整的 AI Chat/Agent 能力、配置管理、会话存储等——但只在终端里跑。桌面端通过 Tauri v2 把 j-cli 包装成 GUI 应用，前端模仿 Proma（Electron AI Agent 桌面应用）的三栏布局设计。
+为 j-cli（Rust CLI AI 工具）开发 Tauri 桌面端。j-cli 已有完整的 AI Chat/Agent 能力、配置管理、会话存储等——但只在终端里跑。桌面端通过 Tauri v2 把 j-cli 包装成 GUI 应用，前端按 Proma（Electron AI Agent 桌面应用）当前远程版本做 1:1 复刻，除明确不需要的功能外保持 UI 和功能一致。
 
 后端以 Rust crate 依赖方式集成 j-cli（`j_cli = { path = "../../j" }`），不复用 WS remote 协议。前端 React + TypeScript + Vite + Tailwind + Jotai。
 
@@ -31,6 +31,7 @@ related_architecture:
 - Agent 会话存储/导航、Agent 中断协议
 - 搜索增强（标题搜索体验补强 + 结果回填 + 高亮 + IME）、设置重构（多 tab + UI 原语库）、侧栏折叠动画、右侧面板文件树
 - 构建打包（Tauri bundle）
+- 以 Proma 当前远程版本为 UI / 功能对照基线，逐项补齐可见差异
 
 ### 明确不做
 - 多语言支持（仅中文，英语翻译不在首版范围）
@@ -41,9 +42,24 @@ related_architecture:
 - 会话内容全文搜索（首版只做标题搜索与结果回填）
 - 聊天附件/文件直接拖入输入框
 - j-cli 自身的安装/升级管理
-- Proma 的 Workspace 管理、BotHub/多人协作、飞书/IM 集成、Tutorial 引导、Proxy 设置、MemOS 记忆
+- Proma 的 Workspace 管理、BotHub/多人协作、飞书/IM 集成、Tutorial 引导、Proxy 设置、应用内更新检查、MemOS 记忆
 
-## 3. 模块拆分（概设）
+## 3. 复刻验收口径
+
+Proma 复刻不是“功能点已经做了”，而是“用户看到、用到、感受到的行为已经对齐”。
+
+验收分四层：
+
+1. **布局层**：默认布局、导航层级、面板显隐、空态、错误态
+2. **行为层**：会话切换、消息发送、Agent 中断、搜索回填、设置保存
+3. **交互层**：按钮位置、标签切换、审批流、输入区反馈、内建快捷键
+4. **治理层**：Skills / Hooks / MCP 的入口、列表、启停、范围边界
+
+逐屏验收以 `.codestable/reference/proma-parity-acceptance.md` 为准；组件对照以 `.codestable/reference/proma-mapping.md` 为准；边界以 `.codestable/requirements/j-gui-proma-parity.md` 为准；差距证据以 `.codestable/compound/2026-05-08-explore-proma-gap-analysis.md` 为准；实施规格以本目录 `proma-parity-implementation-spec.md` 和 `proma-parity-matrix.yaml` 为准。
+
+当前文档状态：已经足够作为 Proma 1:1 复刻的实现输入，不再继续无限补文档；但它不是最终完成证明。最终是否 1:1，只能由 #62 `proma-parity-evidence-pass` 汇总的手动验收记录、录屏、DOM/组件状态、自动化检查和源码对照证据判定。
+
+## 4. 模块拆分（概设）
 
 ```
 j-gui
@@ -121,7 +137,7 @@ j-gui
 - **职责**：封装 `@tauri-apps/api` 的 `invoke()` + `Channel` + `listen()`，类型安全。不包含业务逻辑。
 - **承载的子 feature**：随 scaffold 产出基础封装，后续 feature 扩展
 
-## 4. 模块间接口契约 / 共享协议
+## 5. 模块间接口契约 / 共享协议
 
 ### 4.1 Tauri Commands（Frontend → Backend）
 
@@ -349,125 +365,75 @@ enum PlanDecision {
 }
 ```
 
-## 5. 子 feature 清单
+## 6. 子 feature 清单
 
-### 已闭环（done — 29 条）
+> 状态口径：本节以 `j-gui-desktop-app-items.yaml` 为状态源。`done` 表示基础实现链路已闭环，不自动等于 Proma 视觉、交互和行为 1:1 追平；Proma 追平只看 `proma-parity-*` item 和 `proma-parity-acceptance.md` 的行为证据。
 
-1. **scaffold** — 项目脚手架 ✅
-2. **backend-config-commands** — Config 命令 ✅
-3. **backend-alias-commands** — Alias 命令 ✅
-4. **backend-chat-engine** — Chat Engine ✅
-5. **backend-chat-commands** — Chat 命令 ✅
-6. **backend-system-commands** — System 命令 ✅
-7. **frontend-app-shell** — 三栏布局 ✅
-8. **frontend-left-sidebar** — 左侧栏 ✅
-10. **frontend-chat-view** — Chat 视图 ⭐ 最小闭环 ✅
-11. **frontend-markdown** — Markdown 渲染 ✅
-12. **backend-agent-engine** — Agent Engine ✅
-13. **frontend-agent-view** — Agent 视图 ✅
-14. **frontend-tool-call** — 工具调用显示 ✅
-17. **theme-integration** — 主题集成 ✅
-18. **settings-dialog** — 设置对话框 ✅
-20. **error-handling** — 统一错误处理 ✅
-21. **frontend-session-list** — 会话列表对接 ✅
-22. **frontend-message-actions** — 消息操作 ✅
-23. **frontend-context-bar** — 上下文状态栏 ✅
-24. **backend-system-prompt** — 系统提示词 ✅
-26. **frontend-toast** — Toast 通知 ✅
-27. **frontend-welcome** — 欢迎页 ✅
-29. **frontend-appearance** — 外观设置 ✅
-30. **backend-streaming-cancel** — 流式取消 ✅
+> 实施口径：#50-#62 不允许只按一句话描述开工。每条 feature design 必须读取 `proma-parity-implementation-spec.md` 的对应章节，并从 `proma-parity-matrix.yaml` 抽取 acceptance_points 作为验收输入。
 
-### 进行中（in-progress — 4 条）
+### 已闭环 — 基础实现（done — 47 条）
 
-9. **frontend-main-area** — 主区域标签页：当前只有固定 default tab 壳，多标签打开/关闭/切换未实现
-16. **frontend-right-panel** — 右侧面板：顶层目录读取完成，缺打开入口/递归树/文件动作
-25. **frontend-search** — 会话搜索：键盘导航完成，结果只设 sessionId 不回填消息
-28. **frontend-tabs-enhanced** — 标签页增强：ErrorBoundary 完成，缺切换/确认/预览
+**后端与 IPC**：#1 scaffold、#2 backend-config-commands、#3 backend-alias-commands、#4 backend-chat-engine、#5 backend-chat-commands、#6 backend-system-commands、#12 backend-agent-engine、#20 error-handling、#24 backend-system-prompt、#30 backend-streaming-cancel、#31 backend-agent-interrupts、#32 backend-agent-session-storage、#44 backend-agent-governance-commands、#45 backend-mcp-config-commands。
 
-### 待实现 — Agent 闭环（planned — 3 条）
+**Shell / 状态 / 导航**：#7 frontend-app-shell、#8 frontend-left-sidebar、#9 frontend-main-area、#16 frontend-right-panel、#17 theme-integration、#18 settings-dialog、#21 frontend-session-list、#25 frontend-search、#26 frontend-toast、#27 frontend-welcome、#28 frontend-tabs-enhanced、#29 frontend-appearance、#40 frontend-sidebar-collapsible、#41 frontend-search-enhanced、#42 frontend-settings-refined、#43 frontend-right-panel-tree。
 
-31. **backend-agent-interrupts** — Agent 中断协议：解析 ask/plan/permission 事件 + respond_agent_interrupt 命令；回传协议需覆盖 always-allow / ask-user answers / plan 四种分支
-32. **backend-agent-session-storage** — Agent 会话存储：create/list/get/delete 命令；resume 语义首版限定为“重开 transcript 并继续 GUI 线程”，不承诺恢复底层 Claude 子进程状态
-33. **frontend-agent-session-navigation** — Agent 会话导航：LeftSidebar/Search 在 Agent 模式调用独立 Agent 会话命令列出+切换+回填
+**Chat UI**：#10 frontend-chat-view、#11 frontend-markdown、#22 frontend-message-actions、#23 frontend-context-bar、#37 frontend-chat-input-enhanced、#38 frontend-chat-reasoning-block、#39 frontend-chat-message-polish。
 
-### 待实现 — Agent UI 组件（planned — 3 条）
+**Agent UI**：#13 frontend-agent-view、#14 frontend-tool-call、#33 frontend-agent-session-navigation、#34 frontend-agent-interrupt-ui、#35 frontend-agent-task-progress、#36 frontend-agent-context-tools。
 
-34. **frontend-agent-interrupt-ui** — 中断审批 UI：PermissionBanner + AskUserBanner + ExitPlanModeBanner（取代原 #15 frontend-permission）
-35. **frontend-agent-task-progress** — 任务进度聚合：TaskProgressCard + BackgroundTasksPanel
-36. **frontend-agent-context-tools** — Context 用量环 + 权限模式选择器 + @/# 引语法提示
+**Settings / 治理 UI 与打包**：#19 build-packaging、#46 frontend-settings-skills-ui、#47 frontend-settings-hooks-ui、#48 frontend-settings-mcp-ui。
 
-### 待实现 — Chat UI 精细度（planned — 3 条）
+### 待实现 — 基础补齐（planned — 1 条）
 
-37. **frontend-chat-input-enhanced** — 富文本输入：TipTap 编辑器 + 工具栏 + 草稿持久化（首版不做附件/拖放）
-38. **frontend-chat-reasoning-block** — Thinking 推理块：Reasoning 可折叠组件
-39. **frontend-chat-message-polish** — 消息精细操作：Fork/Rewind + ContextDivider + ScrollMinimap
+49. **frontend-settings-chat-tools-ui** — Chat 工具 UI：Settings 中新增 Chat Tools / ToolSettings 入口，展示可用 Chat 工具、启停状态、配置入口、空态与错误态。
 
-### 待实现 — Shell 增强（planned — 4 条）
+### 待实现 — Proma 1:1 复刻验收拆解（planned — 13 条）
 
-40. **frontend-sidebar-collapsible** — 侧栏折叠动画 + 图标模式 + Pin/Archive
-41. **frontend-search-enhanced** — 标题搜索体验补强 + 高亮 + IME
-42. **frontend-settings-refined** — 设置重构：多 tab 导航 + UI 原语库 + 未保存保护
-43. **frontend-right-panel-tree** — 递归文件树 + 面包屑 + 入口按钮
-
-### 待实现 — Settings / Agent 治理（planned — 5 条）
-
-44. **backend-agent-governance-commands** — Skills/Hooks 治理命令：把 j-cli 的 `load_all_skills()` / `HookManager::list_hooks()` 与 `AgentConfig.disabled_skills` / `disabled_hooks` 暴露为稳定 IPC 契约；Skills UI 可参考 Proma 的实际组织方式，但语义仍以仓库真实能力为准
-45. **backend-mcp-config-commands** — MCP 配置命令：参考 Proma/Claude Agent SDK 实际做法定义 Agent 侧 MCP server 配置数据源、标准化结构与校验口径；明确不接入当前 Chat 命令链路
-46. **frontend-settings-skills-ui** — Skills UI：Settings 中新增 Skills tab，展示已加载 skill 的名称/描述/来源/覆盖关系，支持单项启停和批量启停
-47. **frontend-settings-hooks-ui** — Hooks UI：Settings 中新增 Hooks tab，展示 hook source/event/type/label 摘要，支持按唯一 id 启停和空态说明
-48. **frontend-settings-mcp-ui** — MCP 配置 UI：Settings 中新增 MCP tab，展示 Agent 侧 server 列表、transport/command/env 摘要、启停开关与基础编辑入口；不向当前 Chat 模式宣称 MCP 生效
-
-### 待实现 — 收尾（planned — 1 条）
-
-19. **build-packaging** — 构建打包
+50. **proma-parity-shell-sidebar** — Shell / 左侧栏 parity：Agent Working / pinned 区域、未查看完成状态、工作区能力提示、折叠态细节、右侧面板显隐、窗口拖动/非拖动区域
+51. **proma-parity-tabs-workspace** — Tabs 工作区 parity：预览面板、拖拽重排、关闭确认、错误隔离、横向滚动体验、欢迎页/空态
+52. **proma-parity-chat-experience** — Chat 体验 parity：RichText 输入、工具栏布局、Thinking、ContextDivider、ScrollMinimap、Agent 推荐入口
+53. **proma-parity-chat-tools** — Chat 工具 parity：工具活动提示、工具块渲染、Settings ToolSettings 入口
+54. **proma-parity-agent-interrupts** — Agent 审批 parity：Permission / AskUser / ExitPlanMode 三类中断 UI 和回传闭环
+55. **proma-parity-agent-tool-renderers** — Agent 工具渲染 parity：read/write/edit/bash/search 等工具结果分型渲染
+56. **proma-parity-agent-task-context** — Agent 任务、Context 与 runtime 选择 parity：TaskProgressCard、BackgroundTasksPanel、ContextUsageBadge、真实 token/context 来源、slash skills/MCP runtime 选择器
+57. **proma-parity-agent-file-context** — Agent 单工作区文件上下文 parity：文件树、目录添加、文件 mention、slash 文件选择、SidePanel 联动
+58. **proma-parity-search-navigation** — Search parity：标题搜索、高亮、IME、键盘导航、打开结果回填、归档标识
+59. **proma-parity-settings-console** — Settings parity：Dialog 外观、左导航、脏状态保护、UI 原语、Provider/Prompt/Agent/Chat Tools tab
+60. **proma-parity-core-shortcuts** — 内建快捷键 parity：设置、新建、侧栏、模式切换、搜索、聚焦、清上下文、停止、关 tab
+61. **proma-parity-agent-session-workbench** — Agent 会话工作台 parity：AgentHeader、Agent 会话保存/切换/搜索/回填、Chat/Agent 会话隔离、no-response/timeout/retry 状态
+62. **proma-parity-evidence-pass** — Proma parity 证据收口：Proma 基线截图/录屏、j-gui 对照截图/录屏、逐项验收记录
 
 > 已 drop：原 #15 `frontend-permission` 被 #34 `frontend-agent-interrupt-ui` 取代（后者覆盖全部三种中断 Banner）
 
-## 6. 排期与依赖图
+## 7. 排期与依赖图
 
 ```
-Phase A: 收尾 in-progress（先修现状偏差）
-  9  frontend-main-area        ⬜ → 多标签打开/关闭/切换
-  16 frontend-right-panel      ⬜ → 基本文件树完善
+Phase A: 基础补齐
+  49 frontend-settings-chat-tools-ui  ── 依赖 42
 
-Phase B: Agent / 配置后端（解锁 Agent UI 与治理 UI）
-  31 backend-agent-interrupts   ──── 前置依赖
-  32 backend-agent-session-storage ── 前置依赖
-  44 backend-agent-governance-commands ── 依赖 2
-  45 backend-mcp-config-commands       ── 依赖 2
-
-Phase C: Agent 前端（可并行）
-  33 frontend-agent-session-navigation ── 依赖 31+32
-  34 frontend-agent-interrupt-ui       ── 依赖 31
-  35 frontend-agent-task-progress      ── 依赖 13
-  36 frontend-agent-context-tools      ── 依赖 13
-
-Phase D: Chat UI 精细度（可并行）
-  37 frontend-chat-input-enhanced     ── 依赖 10
-  38 frontend-chat-reasoning-block    ── 依赖 11
-  39 frontend-chat-message-polish     ── 依赖 10
-
-Phase E: Shell / Settings 增强（可并行）
-  25 frontend-search                  ⬜ 先完成回填消息
-  40 frontend-sidebar-collapsible     ── 依赖 8
-  41 frontend-search-enhanced         ── 依赖 25
-  42 frontend-settings-refined        ── 依赖 18
-  43 frontend-right-panel-tree        ── 依赖 16
-  46 frontend-settings-skills-ui      ── 依赖 42+44
-  47 frontend-settings-hooks-ui       ── 依赖 42+44
-  48 frontend-settings-mcp-ui         ── 依赖 42+45
-
-Phase F: 收尾
-  28 frontend-tabs-enhanced           ⬜
-  19 build-packaging
+Phase P: Proma parity 追平（按验收清单收口；依赖的基础 item 已完成或在 Phase A 补齐）
+  50 proma-parity-shell-sidebar       ── 依赖 40+43
+  51 proma-parity-tabs-workspace      ── 依赖 9+28
+  52 proma-parity-chat-experience     ── 依赖 37+38+39
+  53 proma-parity-chat-tools          ── 依赖 49
+  54 proma-parity-agent-interrupts    ── 依赖 31+34
+  55 proma-parity-agent-tool-renderers ── 依赖 14
+  56 proma-parity-agent-task-context  ── 依赖 35+36
+  57 proma-parity-agent-file-context  ── 依赖 36+37+43
+  58 proma-parity-search-navigation   ── 依赖 25+41
+  59 proma-parity-settings-console    ── 依赖 42+46+47+48+49
+  60 proma-parity-core-shortcuts      ── 依赖 8+9+10+13+18+23+25+30+37
+  61 proma-parity-agent-session-workbench ── 依赖 32+33+43
+  62 proma-parity-evidence-pass       ── 依赖 50+51+52+53+54+55+56+57+58+59+60+61
 ```
 
-**依赖图 DAG 校验**：无循环依赖——Phase A→B→C 串行，D/E 内部可并行，F 收尾。
+**依赖图 DAG 校验**：无循环依赖——基础补齐先完成 #49，Proma parity item 再按区域并行收口，最终由 #62 汇总证据。
 
-**最小闭环**：Phase A 完成后，用户至少有可用的多标签工作区。Phase B+C 完成后 Agent 从"纯流式预览"升级为"可恢复、可审批的 Agent 工作台"。Phase D 完成后 Chat 体验与 Proma 对齐。Phase E 补齐后，设置页从“基础 provider/theme 表单”升级为“可治理 Agent 能力边界的控制台”。
+**P0 执行顺序**：先做 #50、#51、#52、#54、#55、#57、#61，覆盖用户当前反馈的会话隔离、Agent 无回应、标题/会话工作台、UI 完整度、Agent 审批、工具渲染和文件上下文问题；#53、#56、#58、#59、#60 随后补齐 P1；#62 只做最终证据收口，不替代任何前置实现。
 
-## 7. 接口契约要点（新 feature 的跨模块约束）
+**最小闭环**：#49 完成后，Settings 不再缺 Chat Tools 入口。P0 第一轮完成后，用户反馈的七个核心差距必须都有实现和行为证据。Phase P 完成后，Proma 对齐从“基础实现可用”升级为“逐屏验收有证据的 1:1 复刻”。
+
+## 8. 接口契约要点（新 feature 的跨模块约束）
 
 以下接口在 Phase B 实现前必须先定下来，各 feature-design 以此为硬约束：
 
@@ -479,24 +445,32 @@ Phase F: 收尾
 | `get_agent_session` | #32 commands/agent | #33 session-navigation | 返回 `Vec<AgentTimelineItem>`，保留 tool_call / interrupt 等 Agent 专属信息，不能退化成纯文本消息数组 |
 | `Channel<AgentEvent>` 新增变体 | #31 agent_engine | #34-#36 agent-ui | 新增变体不破坏已有 `assistantContent`/`toolUse`/`toolResult`/`done`/`error` 路径 |
 
-## 8. 观察项
+## 9. 观察项
 
 - `.codestable/architecture/ARCHITECTURE.md` 随 feature acceptance 逐步回写模块详情
-- `requirements/` 下 `j-gui-ai-interaction` + `j-gui-personalization` 已升级为 `current`，`j-gui-session-management` 仍为 `draft`
+- `requirements/` 下 `j-gui-ai-interaction`、`j-gui-session-management`、`j-gui-personalization` 已升级为 `current`；`j-gui-proma-parity` 仍为 `draft`
 - 前端未引入 React Router——标签页切换通过 Jotai atoms 管理
-- **Proma 对齐现状**：当前更准确的定位是"Chat 优先桌面壳 + 可流式的 Agent 预览"，详见 `compound/2026-05-08-explore-proma-gap-analysis.md`
-- **Agent 核心差距**：会话仍是内存态，审批/中断缺协议，Agent UI 组件（权限审批/任务进度/Context 环）空白
+- **Proma 对齐现状**：当前更准确的定位是"Chat 优先桌面壳 + 可流式的 Agent 预览"；目标口径已经升级为按 Proma 当前远程版本做 1:1 复刻，详见 `requirements/j-gui-proma-parity.md`
+- **Agent parity 差距**：Agent 会话存储、审批协议和基础 UI 组件已有实现链路，但是否达到 Proma 的 AgentHeader、会话恢复、审批回传、任务进度、Context 环体验，仍以 #54/#56/#61 的行为证据为准，并由 #62 最终收口
 - **Agent 模式策略已定**：首版使用 Claude Agent SDK（CLI 子进程），j-cli Agent Loop 通过 `AgentBackend` trait 预留接口。详见 `compound/2026-05-08-decision-agent-sdk-strategy.md`
 - **Proma 经验吸收边界**：首版吸收 Proma 的状态拆分、协议分型、交互阈值经验，但不因此扩大产品范围到“内容全文搜索”或“聊天附件拖入”
-- **Agent 治理范围已纳入首版**：`MCP 配置 UI`、`Skills UI`、`Hooks UI` 进入 Settings 规划；其中 Skills/Hooks 优先复用 j-cli 现有语义并参考 Proma 的实际组织方式，MCP 参考 Proma/Claude Agent SDK 的 Agent 侧做法，但明确不扩到当前 Chat 路径
+- **Agent 治理范围已纳入首版**：`MCP 配置 UI`、`Skills UI`、`Hooks UI` 进入 Settings 规划；其中 Skills/Hooks 优先复用 j-cli 现有语义并按 Proma 当前远程版本的组织方式对齐，MCP 按 Proma/Claude Agent SDK 的 Agent 侧做法对齐，但明确不扩到当前 Chat 路径
+- **Agent runtime 选择范围**：slash runtime 选择只在 Agent 输入区生效，覆盖已导入 Skills、MCP server、Hooks/运行上下文提示和文件 mention；Chat 输入区只允许 Chat Tools，不把 MCP 宣称为 Chat 能力
 - **Architecture docs 仍需扩展**：当前已有 `backend-chat-engine.md`、`frontend-chat-ui.md`、`frontend-settings-ui.md` 等子系统文档，但覆盖面还不完整，后续实现时继续通过 `cs-arch backfill` 补齐
-- Proma 参考：以下 Proma 模块暂不纳入首版——Workspace 管理、BotHub/多人协作、飞书/IM 集成、Tutorial 引导、Proxy 设置、快捷键自定义、语音输入、MemOS 记忆
+- Proma 复刻排除项：以下 Proma 模块暂不纳入首版——Workspace 管理、BotHub/多人协作、飞书/IM 集成、Tutorial 引导、Proxy 设置、快捷键自定义、语音输入、应用内更新检查、MemOS 记忆
+- roadmap items.yaml 的 `done` 表示对应实现链路已闭环，不自动等于“Proma 体验 100% 对齐”；对齐程度请以 `proma-mapping.md` 的状态列为准
+- Proma 1:1 复刻的执行层使用 `proma-parity-*` item 追踪；这些 item 只能在 `proma-parity-acceptance.md` 对应验收项有行为证据后标 done
+- Proma parity 的可实现规格已拆到 `proma-parity-implementation-spec.md`，机器可读验收矩阵在 `proma-parity-matrix.yaml`
 
 ## 变更日志
 
 - 2026-05-08：基于 Proma 源码审计新增 10 条子 feature（#20-#29），补充 Chat 交互细节、会话搜索、欢迎页、Toast、系统提示词等
 - 2026-05-08：基于当前代码与 Proma 再审视，回调 5 条被高估的状态（main-area / permission / right-panel / search / tabs-enhanced），并新增 3 条 Agent 闭环条目（#31-#33）
-- 2026-05-08（本次）：基于 Proma UI 深度调研新增 10 条 UI 追平 feature（#34-#43），按 Agent 审批 UI / 任务进度 / Context 工具 / Chat 输入增强 / 推理块 / 消息精细操作 / 侧栏折叠 / 搜索增强 / 设置重构 / 文件树 拆分，drop 原 #15 frontend-permission（被 #34 取代），新增 `respond_agent_interrupt`/`list_agent_sessions`/`search_transcripts` 命令契约
+- 2026-05-08（本次）：基于 Proma UI 深度调研新增 10 条 UI 追平 feature（#34-#43），按 Agent 审批 UI / 任务进度 / Context 工具 / Chat 输入增强 / 推理块 / 消息精细操作 / 侧栏折叠 / 搜索增强 / 设置重构 / 文件树 拆分，drop 原 #15 frontend-permission（被 #34 取代），新增 `respond_agent_interrupt` / `list_agent_sessions` 命令契约
 - 2026-05-08（本次补充）：根据 `explore-proma-gap-analysis` 收紧 Proma 经验吸收边界，移除首版 roadmap 中与 requirement 冲突的“内容全文搜索”“聊天附件拖入”，并把 `start_agent(session_id, permission_mode, ...)`、`get_agent_session -> AgentTimelineItem[]` 固化为 design 前硬约束
 - 2026-05-08（本次再补充）：根据最新范围确认，把 `MCP 配置 UI`、`Skills UI`、`Hooks UI` 正式纳入首版，并补齐后端治理契约条目（#44-#45）与对应设置页 UI 条目（#46-#48）
-- 2026-05-08（本次范围澄清）：把 `MCP` 明确限定在 Agent runtime，允许 `Skills/MCP` 参考 Proma 的实际做法，但不把当前 j-cli Chat 路径扩写成“支持 MCP”
+- 2026-05-08（本次范围澄清）：把 `MCP` 明确限定在 Agent runtime，允许 `Skills/MCP` 按 Proma 当前远程版本的实际做法对齐，但不把当前 j-cli Chat 路径扩写成“支持 MCP”
+- 2026-05-09：把 `proma-parity-acceptance.md` 的 Partial / Fail 项拆成 13 条 `proma-parity-*` 执行 item，并新增最终证据收口项 `proma-parity-evidence-pass`
+- 2026-05-09（本次修正）：同步 `items.yaml` 当前状态，明确 47 条基础实现已闭环、#49 与 13 条 Proma parity item 待完成；补入 AgentHeader/会话恢复、右侧面板/窗口拖动、欢迎页、文件树和快捷键依赖覆盖
+- 2026-05-09（实施规格）：新增 `proma-parity-implementation-spec.md` 与 `proma-parity-matrix.yaml`，把 #50-#62 拆到源文件、承接点、必须实现状态/交互和证据要求
+- 2026-05-09（实施规格审查修正）：补齐 slash skills/MCP runtime 选择路径和 Agent no-response/timeout/retry 验收，避免用户反馈项只停留在最终证据摘要

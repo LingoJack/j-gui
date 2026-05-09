@@ -1,10 +1,13 @@
+use j_cli::config::YamlConfig;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static AGENT_SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
+static AGENT_TRANSCRIPT_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,15 +49,16 @@ pub struct AgentSessionInfo {
     pub updated_at: u64,
 }
 
-fn home_dir() -> PathBuf {
-    std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."))
+fn validate_session_id(id: &str) -> Result<(), String> {
+    if id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') && !id.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("无效的 session ID: {}", id))
+    }
 }
 
 pub fn agent_sessions_dir() -> PathBuf {
-    home_dir().join(".jdata").join("agent").join("sessions")
+    YamlConfig::data_dir().join("agent").join("sessions")
 }
 
 pub fn now_millis() -> u64 {
@@ -95,6 +99,10 @@ pub fn create_agent_session() -> Result<String, String> {
 }
 
 pub fn append_timeline_item(session_id: &str, item: &AgentTimelineItem) -> Result<(), String> {
+    validate_session_id(session_id)?;
+    let _guard = AGENT_TRANSCRIPT_LOCK
+        .lock()
+        .map_err(|e| format!("锁定 Agent transcript 失败: {}", e))?;
     let path = agent_sessions_dir()
         .join(session_id)
         .join("transcript.jsonl");
@@ -143,6 +151,10 @@ pub fn update_tool_call_result(
     tool_id: &str,
     content: &str,
 ) -> Result<(), String> {
+    validate_session_id(session_id)?;
+    let _guard = AGENT_TRANSCRIPT_LOCK
+        .lock()
+        .map_err(|e| format!("锁定 Agent transcript 失败: {}", e))?;
     let mut items = read_timeline(session_id)?;
     for item in items.iter_mut().rev() {
         if let Some(tool_call) = item.tool_call.as_mut() {
@@ -161,6 +173,10 @@ pub fn update_interrupt_response(
     interrupt_id: &str,
     response: &str,
 ) -> Result<(), String> {
+    validate_session_id(session_id)?;
+    let _guard = AGENT_TRANSCRIPT_LOCK
+        .lock()
+        .map_err(|e| format!("锁定 Agent transcript 失败: {}", e))?;
     let mut items = read_timeline(session_id)?;
     for item in items.iter_mut().rev() {
         if let Some(interrupt) = item.interrupt.as_mut() {
@@ -223,15 +239,23 @@ pub fn list_agent_sessions() -> Result<Vec<AgentSessionInfo>, String> {
 }
 
 pub fn get_agent_session(session_id: &str) -> Result<Vec<AgentTimelineItem>, String> {
+    validate_session_id(session_id)?;
     let dir = agent_sessions_dir().join(session_id);
     if !dir.exists() {
         return Err("会话不存在".to_string());
     }
+    let _guard = AGENT_TRANSCRIPT_LOCK
+        .lock()
+        .map_err(|e| format!("锁定 Agent transcript 失败: {}", e))?;
     read_timeline(session_id)
 }
 
 pub fn delete_agent_session(session_id: &str) -> Result<(), String> {
+    validate_session_id(session_id)?;
     let dir = agent_sessions_dir().join(session_id);
+    let _guard = AGENT_TRANSCRIPT_LOCK
+        .lock()
+        .map_err(|e| format!("锁定 Agent transcript 失败: {}", e))?;
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
     }

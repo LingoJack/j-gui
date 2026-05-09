@@ -212,6 +212,52 @@ export async function deleteAgentSession(sessionId: string): Promise<void> {
   return invoke("delete_agent_session", { sessionId });
 }
 
+// ===== Governance =====
+
+export interface SkillInfo {
+  name: string;
+  description: string;
+  source: string;
+  dirPath: string;
+}
+
+export interface HookInfo {
+  name?: string | null;
+  event: string;
+  source: string;
+  hookType: string;
+  label: string;
+  timeout?: number | null;
+  onError?: string | null;
+  uniqueId: string;
+}
+
+export interface McpServerConfig {
+  name: string;
+  transport: string;
+  command?: string | null;
+  args?: string[] | null;
+  url?: string | null;
+  env?: Record<string, string> | null;
+  disabled: boolean;
+}
+
+export async function listSkills(): Promise<SkillInfo[]> {
+  return invoke("list_skills");
+}
+
+export async function listHooks(): Promise<HookInfo[]> {
+  return invoke("list_hooks");
+}
+
+export async function listMcpServers(): Promise<McpServerConfig[]> {
+  return invoke("list_mcp_servers");
+}
+
+export async function saveMcpServers(servers: McpServerConfig[]): Promise<void> {
+  return invoke("save_mcp_servers", { servers });
+}
+
 // ===== System =====
 
 export async function setTheme(theme: string): Promise<void> {

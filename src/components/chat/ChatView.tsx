@@ -5,8 +5,13 @@ import { Channel } from "@tauri-apps/api/core";
 import {
   currentSessionIdAtom,
   chatMessagesAtom,
+  chatMessagesByTabAtom,
   chatStreamingAtom,
+  chatStreamingByTabAtom,
   chatDraftsAtom,
+  chatSessionsAtom,
+  sessionTitleOverridesAtom,
+  deriveSessionTitle,
   type Message,
 } from "@/atoms/sessions";
 import { agentConfigAtom } from "@/atoms/config";
@@ -40,7 +45,11 @@ export default function ChatView() {
   const [sessionId, setSessionId] = useAtom(currentSessionIdAtom);
   const messages = useAtomValue(chatMessagesAtom);
   const setMessages = useSetAtom(chatMessagesAtom);
-  const [streaming, setStreaming] = useAtom(chatStreamingAtom);
+  const streaming = useAtomValue(chatStreamingAtom);
+  const setMessagesByTab = useSetAtom(chatMessagesByTabAtom);
+  const setStreamingByTab = useSetAtom(chatStreamingByTabAtom);
+  const setChatSessions = useSetAtom(chatSessionsAtom);
+  const setSessionTitleOverrides = useSetAtom(sessionTitleOverridesAtom);
   const [config, setConfig] = useAtom(agentConfigAtom);
   const activeTab = useAtomValue(activeTabAtom);
   const setTabs = useSetAtom(tabsAtom);
@@ -51,9 +60,15 @@ export default function ChatView() {
   const [sysPromptOpen, setSysPromptOpen] = useState(false);
   const [sysPromptDraft, setSysPromptDraft] = useState("");
   const [forkIndex, setForkIndex] = useState<number | undefined>(undefined);
-  const streamingRef = useRef(false);
-  const channelRef = useRef<Channel<ChatEvent> | null>(null);
+  const chatRunIdByTabRef = useRef<Record<string, number>>({});
+  const streamingByTabRef = useRef<Record<string, boolean>>({});
   const sysPromptRef = useRef<HTMLDivElement>(null);
+  const activeTabId = activeTab?.id ?? null;
+
+  useEffect(() => {
+    if (!activeTabId) return;
+    streamingByTabRef.current[activeTabId] = streaming;
+  }, [activeTabId, streaming]);
 
   const tokenCount = useMemo(() => estimateTokens(messages), [messages]);
 
@@ -77,6 +92,7 @@ export default function ChatView() {
 
   const handleSend = useCallback(
     async (content: string) => {
+      if (!activeTabId) return;
       let sid = sessionId;
       if (!sid) {
         sid = await createSession();
@@ -96,8 +112,17 @@ export default function ChatView() {
         content,
         isStreaming: false,
       };
+      const derivedTitle = deriveSessionTitle([userMsg]);
+      if (derivedTitle) {
+        setChatSessions((prev) =>
+          prev.map((session) =>
+            session.id === sid ? { ...session, title: derivedTitle } : session,
+          ),
+        );
+        setSessionTitleOverrides((prev) => ({ ...prev, [sid]: derivedTitle }));
+      }
       setMessages((prev) => [...prev, userMsg]);
-      setDrafts((prev) => ({ ...prev, [sid ?? ""]: "" }));
+      setDrafts((prev) => ({ ...prev, [activeTabId]: "" }));
 
       const assistantId = crypto.randomUUID();
       const assistantMsg: Message = {
@@ -108,36 +133,41 @@ export default function ChatView() {
       };
       setMessages((prev) => [...prev, assistantMsg]);
 
-      setStreaming(true);
-      streamingRef.current = true;
+      setStreamingByTab((prev) => ({ ...prev, [activeTabId]: true }));
+      streamingByTabRef.current[activeTabId] = true;
+      const runId = (chatRunIdByTabRef.current[activeTabId] ?? 0) + 1;
+      chatRunIdByTabRef.current[activeTabId] = runId;
 
       const onEvent = new Channel<ChatEvent>();
-      channelRef.current = onEvent;
       onEvent.onmessage = (msg) => {
-        if (!streamingRef.current) return;
+        if (chatRunIdByTabRef.current[activeTabId] !== runId) return;
+        if (!streamingByTabRef.current[activeTabId]) return;
 
         switch (msg.event) {
           case "chunk":
-            setMessages((prev) =>
-              prev.map((m) =>
+            setMessagesByTab((prev) => ({
+              ...prev,
+              [activeTabId]: (prev[activeTabId] ?? []).map((m) =>
                 m.id === assistantId
                   ? { ...m, content: m.content + msg.data.content }
                   : m,
               ),
-            );
+            }));
             break;
           case "done":
-            setMessages((prev) =>
-              prev.map((m) =>
+            setMessagesByTab((prev) => ({
+              ...prev,
+              [activeTabId]: (prev[activeTabId] ?? []).map((m) =>
                 m.id === assistantId ? { ...m, isStreaming: false } : m,
               ),
-            );
-            setStreaming(false);
-            streamingRef.current = false;
+            }));
+            setStreamingByTab((prev) => ({ ...prev, [activeTabId]: false }));
+            streamingByTabRef.current[activeTabId] = false;
             break;
           case "error":
-            setMessages((prev) =>
-              prev.map((m) =>
+            setMessagesByTab((prev) => ({
+              ...prev,
+              [activeTabId]: (prev[activeTabId] ?? []).map((m) =>
                 m.id === assistantId
                   ? {
                       ...m,
@@ -146,9 +176,9 @@ export default function ChatView() {
                     }
                   : m,
               ),
-            );
-            setStreaming(false);
-            streamingRef.current = false;
+            }));
+            setStreamingByTab((prev) => ({ ...prev, [activeTabId]: false }));
+            streamingByTabRef.current[activeTabId] = false;
             toast(msg.data.message, "error");
             break;
         }
@@ -157,30 +187,34 @@ export default function ChatView() {
       try {
         await sendMessage(sid!, content, onEvent);
       } catch (e) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId
-              ? {
-                  ...m,
-                  content: `发送失败: ${String(e)}`,
-                  isStreaming: false,
-                }
-              : m,
-          ),
-        );
-        setStreaming(false);
+        if (activeTabId) {
+          setMessagesByTab((prev) => ({
+            ...prev,
+            [activeTabId]: (prev[activeTabId] ?? []).map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content: `发送失败: ${String(e)}`,
+                    isStreaming: false,
+                  }
+                : m,
+            ),
+          }));
+          setStreamingByTab((prev) => ({ ...prev, [activeTabId]: false }));
+        }
         toast(`发送失败: ${String(e)}`, "error");
-        streamingRef.current = false;
+        if (activeTabId) streamingByTabRef.current[activeTabId] = false;
       }
     },
-    [activeTab, sessionId, setMessages, setDrafts, setSessionId, setStreaming, setTabs],
+    [activeTab, activeTabId, sessionId, setDrafts, setMessages, setMessagesByTab, setSessionId, setStreamingByTab, setTabs],
   );
 
   const handleDraftChange = useCallback(
     (text: string) => {
-      setDrafts((prev) => ({ ...prev, [sessionId ?? ""]: text }));
+      if (!activeTabId) return;
+      setDrafts((prev) => ({ ...prev, [activeTabId]: text }));
     },
-    [sessionId, setDrafts],
+    [activeTabId, setDrafts],
   );
 
   const handleClearContext = useCallback(async () => {
@@ -325,8 +359,15 @@ export default function ChatView() {
 
           <button
             onClick={() => {
-              channelRef.current = null;
-              setMessages([]);
+              if (!activeTabId) {
+                setMessages([]);
+                return;
+              }
+              chatRunIdByTabRef.current[activeTabId] =
+                (chatRunIdByTabRef.current[activeTabId] ?? 0) + 1;
+              setMessagesByTab((prev) => ({ ...prev, [activeTabId]: [] }));
+              setStreamingByTab((prev) => ({ ...prev, [activeTabId]: false }));
+              streamingByTabRef.current[activeTabId] = false;
               setSessionId(null);
               setForkIndex(undefined);
               if (activeTab) {
@@ -336,8 +377,6 @@ export default function ChatView() {
                   ),
                 );
               }
-              setStreaming(false);
-              streamingRef.current = false;
             }}
             className="text-xs text-muted-foreground hover:text-foreground shrink-0"
           >
@@ -382,7 +421,7 @@ export default function ChatView() {
       <ChatInput
         onSend={handleSend}
         disabled={streaming}
-        draft={drafts[sessionId ?? ""] ?? ""}
+        draft={drafts[activeTabId ?? ""] ?? ""}
         onDraftChange={handleDraftChange}
       />
     </div>

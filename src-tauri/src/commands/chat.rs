@@ -1,5 +1,4 @@
 use crate::chat_engine::{ChatEngine, ChatEvent, MessageInfo, SessionInfo};
-use j_cli::command::chat::storage::{append_session_event, SessionEvent};
 use tauri::ipc::Channel;
 
 #[tauri::command]
@@ -48,10 +47,5 @@ pub fn delete_message(session_id: String, pair_index: usize) -> Result<(), Strin
 
 #[tauri::command]
 pub fn clear_session(session_id: String) -> Result<(), String> {
-    ChatEngine::validate_session_id(&session_id)?;
-    if append_session_event(&session_id, &SessionEvent::Clear) {
-        Ok(())
-    } else {
-        Err("清空会话失败".to_string())
-    }
+    ChatEngine::new().clear_session(&session_id)
 }

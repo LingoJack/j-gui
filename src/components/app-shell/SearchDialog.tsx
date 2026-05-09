@@ -10,6 +10,19 @@ interface Props {
   onSelect: (id: string, type: "chat" | "agent") => void | Promise<void>;
 }
 
+function highlightMatch(text: string, query: string): React.ReactNode {
+  if (!query) return text;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-primary/20 rounded px-0.5">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
 interface MergedItem {
   session: SessionInfo;
   type: "chat" | "agent";
@@ -24,19 +37,22 @@ export default function SearchDialog({
 }: Props) {
   const [query, setQuery] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [composing, setComposing] = useState(false);
 
-  // Merge both session sources with type tags for cross-mode search
+  // Merge both session sources with type tags for cross-mode search, sorted by most recent
   const allSessions: MergedItem[] = [
     ...chatSessions.map((s) => ({ session: s, type: "chat" as const })),
     ...agentSessions.map((s) => ({ session: s, type: "agent" as const })),
-  ];
+  ].sort((a, b) => b.session.updatedAt - a.session.updatedAt);
 
-  const filtered = allSessions.filter(
-    (item) =>
-      !query ||
-      (item.session.title || "").toLowerCase().includes(query.toLowerCase()) ||
-      item.session.id.toLowerCase().includes(query.toLowerCase()),
-  );
+  const filtered = composing
+    ? allSessions
+    : allSessions.filter(
+        (item) =>
+          !query ||
+          (item.session.title || "").toLowerCase().includes(query.toLowerCase()) ||
+          item.session.id.toLowerCase().includes(query.toLowerCase()),
+      );
 
   useEffect(() => {
     if (open) {
@@ -51,6 +67,9 @@ export default function SearchDialog({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (composing || (e.nativeEvent as KeyboardEvent).isComposing) {
+        return;
+      }
       if (e.key === "Escape") {
         onClose();
       } else if (e.key === "ArrowDown") {
@@ -65,7 +84,7 @@ export default function SearchDialog({
         onClose();
       }
     },
-    [filtered, onClose, onSelect, selectedIdx],
+    [composing, filtered, onClose, onSelect, selectedIdx],
   );
 
   if (!open) return null;
@@ -86,6 +105,11 @@ export default function SearchDialog({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
+            onCompositionStart={() => setComposing(true)}
+            onCompositionEnd={(e) => {
+              setComposing(false);
+              setQuery(e.currentTarget.value);
+            }}
             placeholder="搜索会话... (Chat + Agent)"
             className="flex-1 text-sm bg-transparent focus:outline-none"
           />
@@ -116,7 +140,7 @@ export default function SearchDialog({
                   ) : (
                     <Bot size={14} className="text-muted-foreground shrink-0" />
                   )}
-                  <span className="truncate">{item.session.title || item.session.id}</span>
+                  <span className="truncate">{highlightMatch(item.session.title || item.session.id, query)}</span>
                 </div>
                 <span className="text-[10px] text-muted-foreground ml-6">
                   {item.session.messageCount} 条消息 · {item.type === "chat" ? "Chat" : "Agent"}

@@ -1,5 +1,6 @@
 use crate::agent_session::{self, AgentTimelineItem, InterruptSnapshot, ToolCallSnapshot};
 use j_cli::command::chat::storage::load_agent_config;
+use j_cli::util::log::write_error_log;
 use serde::Serialize;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -174,10 +175,25 @@ impl AgentEngine {
                         return;
                     }
                     if let Some((tool_id, content)) = tool_result_update {
-                        let _ = agent_session::update_tool_call_result(&sid, &tool_id, &content);
+                        if let Err(err) =
+                            agent_session::update_tool_call_result(&sid, &tool_id, &content)
+                        {
+                            write_error_log(
+                                "AgentEngine::update_tool_call_result",
+                                &format!("session_id={}, tool_id={}, error={}", sid, tool_id, err),
+                            );
+                        }
                     }
                     if let Some(item) = timeline_item {
-                        let _ = agent_session::append_timeline_item(&sid, &item);
+                        if let Err(err) = agent_session::append_timeline_item(&sid, &item) {
+                            write_error_log(
+                                "AgentEngine::append_timeline_item",
+                                &format!(
+                                    "session_id={}, item_id={}, kind={}, error={}",
+                                    sid, item.id, item.kind, err
+                                ),
+                            );
+                        }
                     }
                 }
             }

@@ -1,13 +1,26 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { themeAtom } from "@/atoms/theme";
-import { activeTabAtom, tabsAtom } from "@/atoms/tabs";
-import { sessionsAtom } from "@/atoms/sessions";
+import { activeTabAtom, activeTabIdAtom, tabsAtom, type Tab } from "@/atoms/tabs";
 import { agentConfigAtom } from "@/atoms/config";
-import { currentSessionIdAtom, chatMessagesAtom, agentMessagesAtom, timelineToMessages } from "@/atoms/sessions";
+import {
+  agentSessionsListAtom,
+  chatSessionsAtom,
+  currentSessionIdAtom,
+  chatMessagesAtom,
+  agentMessagesAtom,
+  sessionTitleOverridesAtom,
+  deriveSessionTitle,
+  timelineToMessages,
+} from "@/atoms/sessions";
 import { rightPanelOpenAtom } from "@/atoms/sidebar";
-import { getAgentConfig, getSessionMessages, getAgentSession, listAgentSessions } from "@/lib/tauri";
-import type { SessionInfo } from "@/lib/tauri";
+import {
+  getAgentConfig,
+  getSessionMessages,
+  getAgentSession,
+  listAgentSessions,
+  listSessions,
+} from "@/lib/tauri";
 import LeftSidebar from "./LeftSidebar";
 import MainArea from "./MainArea";
 import RightSidePanel from "./RightSidePanel";
@@ -21,15 +34,21 @@ export default function AppShell() {
   const theme = useAtomValue(themeAtom);
   const setTheme = useSetAtom(themeAtom);
   const setConfig = useSetAtom(agentConfigAtom);
-  const sessions = useAtomValue(sessionsAtom);
-  const [agentSessions, setAgentSessions] = useState<SessionInfo[]>([]);
+  const chatSessions = useAtomValue(chatSessionsAtom);
+  const agentSessions = useAtomValue(agentSessionsListAtom);
+  const setChatSessions = useSetAtom(chatSessionsAtom);
+  const setAgentSessions = useSetAtom(agentSessionsListAtom);
+  const setSessionTitleOverrides = useSetAtom(sessionTitleOverridesAtom);
   const setSessionId = useSetAtom(currentSessionIdAtom);
   const setMessages = useSetAtom(chatMessagesAtom);
   const activeTab = useAtomValue(activeTabAtom);
+  const tabs = useAtomValue(tabsAtom);
   const setTabs = useSetAtom(tabsAtom);
+  const setActiveTabId = useSetAtom(activeTabIdAtom);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const setAgentMessages = useSetAtom(agentMessagesAtom);
+  const titleOverrides = useAtomValue(sessionTitleOverridesAtom);
   const loadRequestRef = useRef(0);
 
   // Load agent config (including theme) on mount
@@ -43,10 +62,20 @@ export default function AppShell() {
       .catch(() => {});
   }, []);
 
-  // Load agent sessions for cross-mode search
+  // Load session lists for cross-mode search
   useEffect(() => {
-    listAgentSessions().then(setAgentSessions).catch(() => {});
-  }, []);
+    const loadSearchSessions = async () => {
+      try {
+        const [chatList, agentList] = await Promise.all([listSessions(), listAgentSessions()]);
+        setChatSessions(chatList);
+        setAgentSessions(agentList);
+      } catch {
+        // Search data stays best-effort.
+      }
+    };
+
+    void loadSearchSessions();
+  }, [setAgentSessions, setChatSessions]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -79,20 +108,38 @@ export default function AppShell() {
         if (activeTab.type === "agent") {
           const timeline = await getAgentSession(sessionId);
           if (loadRequestRef.current !== requestId) return;
-          setAgentMessages(timelineToMessages(timeline));
+          const messages = timelineToMessages(timeline);
+          setAgentMessages(messages);
+          const derivedTitle = deriveSessionTitle(messages);
+          if (derivedTitle) {
+            setAgentSessions((prev) =>
+              prev.map((session) =>
+                session.id === sessionId ? { ...session, title: derivedTitle } : session,
+              ),
+            );
+            setSessionTitleOverrides((prev) => ({ ...prev, [sessionId]: derivedTitle }));
+          }
           return;
         }
 
         const msgs = await getSessionMessages(sessionId);
         if (loadRequestRef.current !== requestId) return;
-        setMessages(
-          msgs.map((m) => ({
-            id: crypto.randomUUID(),
-            role: m.role as "user" | "assistant",
-            content: m.content,
-            isStreaming: false,
-          })),
-        );
+        const mappedMessages = msgs.map((m) => ({
+          id: crypto.randomUUID(),
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          isStreaming: false,
+        }));
+        setMessages(mappedMessages);
+        const derivedTitle = deriveSessionTitle(mappedMessages);
+        if (derivedTitle) {
+          setChatSessions((prev) =>
+            prev.map((session) =>
+              session.id === sessionId ? { ...session, title: derivedTitle } : session,
+            ),
+          );
+          setSessionTitleOverrides((prev) => ({ ...prev, [sessionId]: derivedTitle }));
+        }
       } catch {
         if (loadRequestRef.current !== requestId) return;
         if (activeTab.type === "agent") {
@@ -118,22 +165,30 @@ export default function AppShell() {
   }, []);
 
   const handleSelectSession = useCallback((id: string, type: "chat" | "agent") => {
-    // If the active tab doesn't match the session type, switch it
-    if (activeTab && activeTab.type !== type) {
-      setTabs((prev) =>
-        prev.map((tab) =>
-          tab.id === activeTab.id ? { ...tab, type, sessionId: id, title: type === "agent" ? "Agent" : "Chat" } : tab,
-        ),
-      );
-    } else if (activeTab) {
-      setTabs((prev) =>
-        prev.map((tab) =>
-          tab.id === activeTab.id ? { ...tab, sessionId: id } : tab,
-        ),
-      );
+    const existingTab = tabs.find((tab) => tab.type === type && tab.sessionId === id);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+      return;
     }
-    setSessionId(id);
-  }, [activeTab, setSessionId, setTabs]);
+
+    const nextTab: Tab = {
+      id: crypto.randomUUID(),
+      type,
+      title: type === "agent" ? "Agent" : "Chat",
+      sessionId: id,
+    };
+    setTabs((prev) => [...prev, nextTab]);
+    setActiveTabId(nextTab.id);
+  }, [setActiveTabId, setTabs, tabs]);
+
+  const chatSearchSessions = chatSessions.map((session) => ({
+    ...session,
+    title: titleOverrides[session.id] ?? session.title,
+  }));
+  const agentSearchSessions = agentSessions.map((session) => ({
+    ...session,
+    title: titleOverrides[session.id] ?? session.title,
+  }));
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background">
@@ -146,8 +201,8 @@ export default function AppShell() {
       <SearchDialog
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
-        chatSessions={sessions}
-        agentSessions={agentSessions}
+        chatSessions={chatSearchSessions}
+        agentSessions={agentSearchSessions}
         onSelect={handleSelectSession}
       />
       <ToastContainer />

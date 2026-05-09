@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { cn } from "@/lib/utils";
 import { tabsAtom, activeTabIdAtom, activeTabAtom, type Tab } from "@/atoms/tabs";
-import { chatStreamingAtom, agentStreamingAtom } from "@/atoms/sessions";
+import { chatStreamingByTabAtom, agentStreamingByTabAtom } from "@/atoms/sessions";
 import { agentConfigAtom } from "@/atoms/config";
 import ChatView from "@/components/chat/ChatView";
 import AgentView from "@/components/agent/AgentView";
@@ -19,8 +19,8 @@ export default function MainArea({ onOpenSettings }: Props) {
   const [tabs, setTabs] = useAtom(tabsAtom);
   const [activeTabId, setActiveTabId] = useAtom(activeTabIdAtom);
   const activeTab = useAtomValue(activeTabAtom);
-  const chatStreaming = useAtomValue(chatStreamingAtom);
-  const agentStreaming = useAtomValue(agentStreamingAtom);
+  const chatStreamingByTab = useAtomValue(chatStreamingByTabAtom);
+  const agentStreamingByTab = useAtomValue(agentStreamingByTabAtom);
   const config = useAtomValue(agentConfigAtom);
   const [version, setVersion] = useState("");
   const [closeConfirmTabId, setCloseConfirmTabId] = useState<string | null>(null);
@@ -94,8 +94,8 @@ export default function MainArea({ onOpenSettings }: Props) {
     previousActiveTabRef.current = activeTab;
   }, [activeTab]);
   const isStreaming = (tab: Tab) => {
-    if (tab.type === "chat") return chatStreaming;
-    return agentStreaming;
+    if (tab.type === "chat") return chatStreamingByTab[tab.id] ?? false;
+    return agentStreamingByTab[tab.id] ?? false;
   };
 
   const handleAddTab = () => {
@@ -106,7 +106,7 @@ export default function MainArea({ onOpenSettings }: Props) {
       title: nextType === "agent" ? "Agent" : "Chat",
       sessionId: null,
     };
-    setTabs([...tabs, newTab]);
+    setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
   };
 
@@ -114,7 +114,7 @@ export default function MainArea({ onOpenSettings }: Props) {
     const tab = tabs.find((item) => item.id === tabId);
     if (!tab) return;
     // 防御：流式中的 agent tab 应先通过 confirm 流程，不应直接关闭
-    if (tab.type === "agent" && agentStreaming) {
+    if (tab.type === "agent" && (agentStreamingByTab[tab.id] ?? false)) {
       console.warn("[MainArea] executeCloseTab called on streaming agent tab without confirm");
     }
     if (tab.type === "agent") {

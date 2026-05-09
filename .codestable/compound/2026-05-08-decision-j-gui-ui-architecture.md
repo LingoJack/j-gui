@@ -11,11 +11,11 @@ title: j-gui 前端 UI 架构——三栏布局与组件层级
 
 ## 背景
 
-j-gui 需要支持两种工作模式（Chat / Agent），参考 Proma 的 Electron 三栏布局设计。Chat 模式是简单对话流，Agent 模式增加了工具调用可视化、权限审批和文件浏览器。
+j-gui 需要支持两种工作模式（Chat / Agent），并按 Proma 的 Electron 三栏布局与交互组织做 1:1 复刻。Chat 模式是简单对话流，Agent 模式增加了工具调用可视化、权限审批和文件浏览器。
 
 ## 决定
 
-采用三栏布局 + 标签页主区域，模仿 Proma 的 UI 结构：
+采用三栏布局 + 标签页主区域，按 Proma 的 UI 结构复刻：
 
 ```
 AppShell

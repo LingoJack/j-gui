@@ -1,0 +1,426 @@
+doc_type: implementation-matrix
+slug: proma-parity-matrix
+status: active
+created: 2026-05-09
+last_reviewed: 2026-05-09
+roadmap: j-gui-desktop-app
+baseline_repo: E:\Coding\AI\Proma
+baseline_commit: d1d07e7
+
+items:
+  - slug: proma-parity-shell-sidebar
+    priority: P0
+    proma_sources:
+      - apps/electron/src/renderer/components/app-shell/AppShell.tsx
+      - apps/electron/src/renderer/components/app-shell/LeftSidebar.tsx
+      - apps/electron/src/renderer/components/app-shell/ModeSwitcher.tsx
+      - apps/electron/src/renderer/components/app-shell/NavigatorPanel.tsx
+      - apps/electron/src/renderer/components/app-shell/RightSidePanel.tsx
+    j_gui_targets:
+      - src/components/app-shell/AppShell.tsx
+      - src/components/app-shell/LeftSidebar.tsx
+      - src/components/app-shell/RightSidePanel.tsx
+      - src/atoms/sidebar.ts
+      - src/atoms/tabs.ts
+    acceptance_points:
+      - id: shell-mode-session-isolation
+        must: Chat/Agent 模式切换、侧栏高亮、session list、active tab 不串
+        evidence: screenshot_or_recording
+      - id: shell-collapsed-usable
+        must: 折叠态仍可新建、搜索、设置、模式切换
+        evidence: screenshot_or_recording
+      - id: shell-agent-working-pinned
+        must: Agent Working/pinned/未查看完成状态可见
+        evidence: screenshot_or_recording
+      - id: shell-right-panel-session-state
+        must: 右侧面板按 Agent tab/session 显隐和恢复
+        evidence: screenshot_or_recording
+      - id: shell-titlebar-drag
+        must: titlebar drag/no-drag 区域不遮挡可点击控件
+        evidence: manual_record
+    exclusions:
+      - 多 workspace 管理不做，但单工作区能力提示必须保留
+
+  - slug: proma-parity-tabs-workspace
+    priority: P0
+    proma_sources:
+      - apps/electron/src/renderer/components/tabs/MainArea.tsx
+      - apps/electron/src/renderer/components/tabs/TabBar.tsx
+      - apps/electron/src/renderer/components/tabs/TabBarItem.tsx
+      - apps/electron/src/renderer/components/tabs/TabPreviewPanel.tsx
+      - apps/electron/src/renderer/components/tabs/TabCloseConfirmDialog.tsx
+      - apps/electron/src/renderer/components/tabs/TabSwitcher.tsx
+      - apps/electron/src/renderer/components/tabs/TabErrorBoundary.tsx
+    j_gui_targets:
+      - src/components/app-shell/MainArea.tsx
+      - src/atoms/tabs.ts
+      - src/components/ui/ErrorBoundary.tsx
+    acceptance_points:
+      - id: tabs-chat-agent-parallel
+        must: 多个 Chat/Agent tab 并行，消息和 mode 不串
+        evidence: recording
+      - id: tabs-preview
+        must: 非 active tab hover 延迟出现预览
+        evidence: screenshot_or_recording
+      - id: tabs-drag-reorder
+        must: 横向拖拽重排且 session 绑定不变
+        evidence: recording
+      - id: tabs-close-running-confirm
+        must: 运行中关闭先确认，确认后停止对应流/Agent
+        evidence: recording
+      - id: tabs-error-boundary
+        must: 单 tab 错误不影响其他 tab
+        evidence: manual_record
+      - id: tabs-welcome-empty
+        must: 无 tab 时显示欢迎/空态和新建入口
+        evidence: screenshot
+
+  - slug: proma-parity-chat-experience
+    priority: P0
+    proma_sources:
+      - apps/electron/src/renderer/components/chat/ChatView.tsx
+      - apps/electron/src/renderer/components/chat/ChatHeader.tsx
+      - apps/electron/src/renderer/components/chat/ChatInput.tsx
+      - apps/electron/src/renderer/components/chat/ChatMessages.tsx
+      - apps/electron/src/renderer/components/chat/ChatMessageItem.tsx
+      - apps/electron/src/renderer/components/chat/AgentRecommendBanner.tsx
+      - apps/electron/src/renderer/components/chat/MigrateToAgentButton.tsx
+      - apps/electron/src/renderer/components/ai-elements/rich-text-input.tsx
+      - apps/electron/src/renderer/components/ai-elements/reasoning.tsx
+      - apps/electron/src/renderer/components/ai-elements/context-divider.tsx
+      - apps/electron/src/renderer/components/ai-elements/scroll-minimap.tsx
+    j_gui_targets:
+      - src/components/chat/ChatView.tsx
+      - src/components/chat/ChatInput.tsx
+      - src/components/chat/ChatMessages.tsx
+      - src/components/chat/MessageBubble.tsx
+      - src/components/chat/ReasoningBlock.tsx
+      - src/atoms/sessions.ts
+    acceptance_points:
+      - id: chat-draft-per-session
+        must: 草稿按 session/tab 恢复
+        evidence: recording
+      - id: chat-stream-stop
+        must: 流式时停止按钮可见且停止后不继续写入
+        evidence: recording
+      - id: chat-reasoning-block
+        must: reasoning/thinking 历史和流式均可折叠
+        evidence: screenshot_or_recording
+      - id: chat-context-divider
+        must: 清上下文后 divider 可见且可恢复
+        evidence: screenshot_or_recording
+      - id: chat-scroll-minimap
+        must: 长对话有 minimap 或等价定位控件
+        evidence: screenshot
+      - id: chat-agent-recommend
+        must: Chat 到 Agent 推荐/迁移入口可达
+        evidence: screenshot_or_recording
+    exclusions:
+      - 聊天附件/文件拖入输入框首版排除
+
+  - slug: proma-parity-chat-tools
+    priority: P1
+    proma_sources:
+      - apps/electron/src/renderer/components/chat/ChatToolActivityIndicator.tsx
+      - apps/electron/src/renderer/components/chat/ChatToolBlock.tsx
+      - apps/electron/src/renderer/components/settings/ToolSettings.tsx
+      - apps/electron/src/renderer/atoms/chat-tool-atoms.ts
+    j_gui_targets:
+      - src/components/chat/ChatMessages.tsx
+      - src/components/chat/MessageBubble.tsx
+      - src/components/settings/SettingsDialog.tsx
+      - src/lib/tauri.ts
+      - src-tauri/src/commands/chat.rs
+    acceptance_points:
+      - id: chat-tools-settings-entry
+        must: Settings 中 Chat Tools 入口、空态、错误态可见
+        evidence: screenshot
+      - id: chat-tools-enable-disable
+        must: 工具启停和保存反馈可用
+        evidence: recording
+      - id: chat-tools-message-render
+        must: start/running/result/error 工具块分型渲染
+        evidence: screenshot_or_recording
+      - id: chat-tools-config-error
+        must: 凭证缺失/配置失败有反馈
+        evidence: screenshot_or_recording
+    exclusions:
+      - marketplace 和远程工具分发不做
+
+  - slug: proma-parity-agent-interrupts
+    priority: P0
+    proma_sources:
+      - apps/electron/src/renderer/components/agent/PermissionBanner.tsx
+      - apps/electron/src/renderer/components/agent/AskUserBanner.tsx
+      - apps/electron/src/renderer/components/agent/ExitPlanModeBanner.tsx
+      - apps/electron/src/renderer/components/agent/AgentView.tsx
+    j_gui_targets:
+      - src/components/agent/AgentView.tsx
+      - src/components/agent/PermissionBanner.tsx
+      - src/lib/tauri.ts
+      - src-tauri/src/agent_engine.rs
+      - src-tauri/src/commands/agent.rs
+    acceptance_points:
+      - id: interrupt-permission
+        must: permission 中断展示工具名/风险/输入预览并回传 approve/deny/always
+        evidence: recording
+      - id: interrupt-ask-user
+        must: ask_user 支持问题、选项、自定义输入和回传
+        evidence: recording
+      - id: interrupt-plan
+        must: plan 支持批准、手动权限、拒绝、反馈
+        evidence: recording
+      - id: interrupt-response-error
+        must: 回传失败时 UI 保留并显示错误
+        evidence: screenshot_or_recording
+
+  - slug: proma-parity-agent-tool-renderers
+    priority: P0
+    proma_sources:
+      - apps/electron/src/renderer/components/agent/SDKMessageRenderer.tsx
+      - apps/electron/src/renderer/components/agent/ContentBlock.tsx
+      - apps/electron/src/renderer/components/agent/tool-result-renderers/
+      - apps/electron/src/renderer/components/agent/tool-utils.ts
+    j_gui_targets:
+      - src/components/agent/ToolCallDisplay.tsx
+      - src/components/agent/AgentMessages.tsx
+      - src-tauri/src/agent_engine.rs
+    acceptance_points:
+      - id: tool-render-read-write-edit
+        must: read/write/edit 有文件路径、摘要、详情和错误态
+        evidence: screenshot_or_recording
+      - id: tool-render-bash
+        must: bash 显示命令、退出状态、stdout/stderr
+        evidence: screenshot_or_recording
+      - id: tool-render-search
+        must: grep/glob/search 结果按文件/行分组
+        evidence: screenshot_or_recording
+      - id: tool-render-history
+        must: 会话恢复后工具结果仍分型渲染
+        evidence: recording
+
+  - slug: proma-parity-agent-task-context
+    priority: P1
+    proma_sources:
+      - apps/electron/src/renderer/components/agent/TaskProgressCard.tsx
+      - apps/electron/src/renderer/components/agent/ActiveTasksBar.tsx
+      - apps/electron/src/renderer/components/agent/BackgroundTasksPanel.tsx
+      - apps/electron/src/renderer/components/agent/ContextUsageBadge.tsx
+      - apps/electron/src/renderer/components/agent/PermissionModeSelector.tsx
+      - apps/electron/src/renderer/components/agent/MentionList.tsx
+      - apps/electron/src/renderer/components/agent/mention-suggestions.tsx
+      - apps/electron/src/renderer/components/agent/mention-popup-utils.ts
+    j_gui_targets:
+      - src/components/agent/TaskProgressCard.tsx
+      - src/components/agent/AgentMessages.tsx
+      - src/components/agent/AgentView.tsx
+      - src/components/chat/ChatInput.tsx
+      - src/components/settings/SkillsTab.tsx
+      - src/components/settings/McpTab.tsx
+      - src/components/settings/HooksTab.tsx
+      - src-tauri/src/agent_engine.rs
+      - src-tauri/src/commands/governance.rs
+    acceptance_points:
+      - id: task-progress-aggregate
+        must: Task/Todo 工具聚合为进度卡
+        evidence: screenshot_or_recording
+      - id: background-tasks-visible
+        must: 跨 tab/session 的后台 Agent 可见
+        evidence: recording
+      - id: context-usage-real-source
+        must: ContextUsageBadge 使用真实统计或显示不可用
+        evidence: screenshot_or_recording
+      - id: permission-mode-bound
+        must: 权限模式选择与 Agent 启动参数绑定
+        evidence: recording
+      - id: slash-runtime-picker
+        must: Agent 输入区 / 打开 command/Skills/MCP/Hooks runtime picker，支持过滤、键盘选择、空态、错误态
+        evidence: recording
+      - id: slash-runtime-payload
+        must: 选择 skill/MCP 后出现 chip/token，发送 payload 携带对应 id；禁用项不可发送
+        evidence: recording
+      - id: slash-chat-boundary
+        must: Chat 输入区 / 不展示 Agent MCP/Skills，仅展示 Chat Tools 或 Chat 命令
+        evidence: recording
+
+  - slug: proma-parity-agent-file-context
+    priority: P0
+    proma_sources:
+      - apps/electron/src/renderer/components/agent/SidePanel.tsx
+      - apps/electron/src/renderer/components/file-browser/FileBrowser.tsx
+      - apps/electron/src/renderer/components/file-browser/FileDropZone.tsx
+      - apps/electron/src/renderer/components/file-browser/file-mention-suggestion.tsx
+      - apps/electron/src/renderer/components/file-browser/FileMentionList.tsx
+      - apps/electron/src/renderer/components/file-browser/FileTypeIcon.tsx
+      - apps/electron/src/renderer/components/agent/mention-suggestions.tsx
+    j_gui_targets:
+      - src/components/app-shell/RightSidePanel.tsx
+      - src/components/agent/AgentView.tsx
+      - src/components/chat/ChatInput.tsx
+      - src/atoms/sidebar.ts
+      - src/lib/tauri.ts
+    acceptance_points:
+      - id: file-tree-recursive
+        must: 递归目录、懒加载、文件图标、错误态、刷新
+        evidence: screenshot_or_recording
+      - id: add-directory-context
+        must: UI 可添加目录上下文
+        evidence: recording
+      - id: file-mention
+        must: 输入 @ 出现文件 suggestion 并可插入引用
+        evidence: recording
+      - id: slash-at-separation
+        must: / runtime picker 和 @ 文件 picker 互不抢焦点，选择结果类型明确
+        evidence: recording
+      - id: sidepanel-session-bound
+        must: SidePanel 状态按 Agent session/tab 隔离
+        evidence: recording
+    exclusions:
+      - 多 workspace 切换和 DropZone 首版排除
+
+  - slug: proma-parity-search-navigation
+    priority: P1
+    proma_sources:
+      - apps/electron/src/renderer/components/app-shell/SearchDialog.tsx
+      - apps/electron/src/renderer/atoms/search-atoms.ts
+      - apps/electron/src/renderer/hooks/useOpenSession.ts
+    j_gui_targets:
+      - src/components/app-shell/SearchDialog.tsx
+      - src/components/app-shell/LeftSidebar.tsx
+      - src/atoms/sessions.ts
+      - src/atoms/tabs.ts
+    acceptance_points:
+      - id: search-open-shortcut-and-sidebar
+        must: Ctrl+F 和侧栏入口打开同一面板
+        evidence: recording
+      - id: search-ime-safe
+        must: 中文 IME composition 不误触发跳转
+        evidence: recording
+      - id: search-chat-agent-open
+        must: Chat/Agent 结果打开正确 tab 并回填
+        evidence: recording
+      - id: search-archived-marker
+        must: 归档结果有明确标识
+        evidence: screenshot
+    exclusions:
+      - 内容全文搜索首版排除
+
+  - slug: proma-parity-settings-console
+    priority: P1
+    proma_sources:
+      - apps/electron/src/renderer/components/settings/SettingsDialog.tsx
+      - apps/electron/src/renderer/components/settings/SettingsPanel.tsx
+      - apps/electron/src/renderer/components/settings/primitives/
+      - apps/electron/src/renderer/components/settings/ChannelSettings.tsx
+      - apps/electron/src/renderer/components/settings/PromptSettings.tsx
+      - apps/electron/src/renderer/components/settings/AgentSettings.tsx
+      - apps/electron/src/renderer/components/settings/ToolSettings.tsx
+      - apps/electron/src/renderer/components/settings/McpServerForm.tsx
+    j_gui_targets:
+      - src/components/settings/SettingsDialog.tsx
+      - src/components/settings/primitives/
+      - src/components/settings/SkillsTab.tsx
+      - src/components/settings/HooksTab.tsx
+      - src/components/settings/McpTab.tsx
+      - src-tauri/src/commands/config.rs
+      - src-tauri/src/commands/governance.rs
+    acceptance_points:
+      - id: settings-shell-layout
+        must: 轻遮罩居中浮窗、header、左导航、右 ScrollArea
+        evidence: screenshot
+      - id: settings-unsaved-guard
+        must: Provider 未保存切 tab/关闭时确认
+        evidence: recording
+      - id: settings-governance-tabs
+        must: Skills/Hooks/MCP 有列表、启停、来源、空态、错误态
+        evidence: screenshot_or_recording
+      - id: settings-chat-tools-tab
+        must: Chat Tools tab 展示工具启停和配置入口
+        evidence: screenshot_or_recording
+    exclusions:
+      - Proxy/Voice/Remote/Tutorial/Update/Migration/Shortcut 自定义不做
+
+  - slug: proma-parity-core-shortcuts
+    priority: P1
+    proma_sources:
+      - apps/electron/src/renderer/lib/shortcut-defaults.ts
+      - apps/electron/src/renderer/components/shortcuts/GlobalShortcuts.tsx
+      - apps/electron/src/renderer/components/settings/ShortcutSettings.tsx
+    j_gui_targets:
+      - src/components/app-shell/AppShell.tsx
+      - src/components/app-shell/MainArea.tsx
+      - src/components/chat/ChatInput.tsx
+      - src/components/agent/AgentView.tsx
+    acceptance_points:
+      - id: shortcut-open-settings
+        must: Ctrl+, 打开设置
+        evidence: manual_record
+      - id: shortcut-new-session
+        must: Ctrl+N 当前 mode 新建对应会话/tab
+        evidence: manual_record
+      - id: shortcut-toggle-sidebar-mode-search
+        must: Ctrl+B/Ctrl+Shift+M/Ctrl+F 行为正确
+        evidence: manual_record
+      - id: shortcut-focus-clear-stop-close
+        must: Ctrl+L/Ctrl+K/Ctrl+Shift+Backspace/Ctrl+W 行为正确
+        evidence: manual_record
+    exclusions:
+      - 快捷键自定义设置页和全局 quick-task/voice/show-window 排除
+
+  - slug: proma-parity-agent-session-workbench
+    priority: P0
+    proma_sources:
+      - apps/electron/src/renderer/components/agent/AgentHeader.tsx
+      - apps/electron/src/renderer/components/agent/AgentView.tsx
+      - apps/electron/src/renderer/components/agent/AgentMessages.tsx
+      - apps/electron/src/renderer/components/app-shell/LeftSidebar.tsx
+      - apps/electron/src/renderer/components/app-shell/SearchDialog.tsx
+    j_gui_targets:
+      - src/components/agent/AgentView.tsx
+      - src/components/agent/AgentMessages.tsx
+      - src/components/app-shell/LeftSidebar.tsx
+      - src/components/app-shell/SearchDialog.tsx
+      - src-tauri/src/agent_session.rs
+      - src-tauri/src/commands/agent.rs
+      - src/lib/tauri.ts
+    acceptance_points:
+      - id: agent-session-isolation
+        must: Chat/Agent 会话列表互不串
+        evidence: recording
+      - id: agent-session-restore
+        must: 切换 Agent 会话后 timeline 完整恢复
+        evidence: recording
+      - id: agent-title-edit-sync
+        must: 标题编辑同步到 header/tab/sidebar/search
+        evidence: recording
+      - id: agent-title-topic-generated
+        must: 新会话标题来自主题/首条消息摘要而非随机 id
+        evidence: screenshot_or_recording
+      - id: agent-start-timeout
+        must: Agent start 或首包超时后显示 timeout、停止、重试
+        evidence: recording
+      - id: agent-empty-done
+        must: done 但无有效输出时显示空返回状态，不停留在 streaming
+        evidence: recording
+      - id: agent-disconnected-retry
+        must: Channel/子进程异常断开时显示 disconnected 错误并允许重试
+        evidence: recording
+
+  - slug: proma-parity-evidence-pass
+    priority: P0
+    proma_sources:
+      - all parity sources above
+    j_gui_targets:
+      - .codestable/acceptance/proma-parity/{YYYY-MM-DD}/
+      - .codestable/reference/proma-parity-acceptance.md
+      - .codestable/reference/proma-mapping.md
+    acceptance_points:
+      - id: evidence-index
+        must: 验收目录有 index.md 汇总所有 item 状态
+        evidence: file
+      - id: evidence-no-fail
+        must: #50-#61 无 Fail；Partial 必须有排除或等价替代理由
+        evidence: file
+      - id: evidence-user-seven-issues
+        must: 用户反馈 7 个问题都有 Pass 证据或明确排除依据，包含 slash skills/MCP runtime 选择和 Agent no-response 状态
+        evidence: file

@@ -1,11 +1,13 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { sidebarOpenAtom } from "@/atoms/sidebar";
 import {
-  sessionsAtom,
+  agentSessionsListAtom,
+  chatSessionsAtom,
   currentSessionIdAtom,
   chatMessagesAtom,
   agentMessagesAtom,
+  sessionTitleOverridesAtom,
   timelineToMessages,
 } from "@/atoms/sessions";
 import { tabsAtom, activeTabIdAtom, activeTabAtom, type Tab } from "@/atoms/tabs";
@@ -27,6 +29,8 @@ import {
   Settings,
   Plus,
   Trash2,
+  Star,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/atoms/toast";
@@ -66,7 +70,8 @@ interface Props {
 
 export default function LeftSidebar({ onOpenSettings }: Props) {
   const [open, setOpen] = useAtom(sidebarOpenAtom);
-  const [sessions, setSessions] = useAtom(sessionsAtom);
+  const [chatSessions, setChatSessions] = useAtom(chatSessionsAtom);
+  const [agentSessions, setAgentSessionsList] = useAtom(agentSessionsListAtom);
   const [currentId, setCurrentId] = useAtom(currentSessionIdAtom);
   const setMessages = useSetAtom(chatMessagesAtom);
   const [tabs, setTabs] = useAtom(tabsAtom);
@@ -74,20 +79,84 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
   const activeTab = useAtomValue(activeTabAtom);
 
   const setAgentMessages = useSetAtom(agentMessagesAtom);
+  const [sessionTitleOverrides, setSessionTitleOverrides] = useAtom(sessionTitleOverridesAtom);
   const activeTabType: TabType | null = activeTab?.type ?? null;
+  const sessions = activeTab?.type === "agent" ? agentSessions : chatSessions;
+
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const [showPinnedOnly, setShowPinnedOnly] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const editCommittedRef = useRef(false);
+
+  const togglePin = useCallback((id: string) => {
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const startEdit = useCallback(
+    (id: string, currentTitle: string | null | undefined, fallbackId: string) => {
+      editCommittedRef.current = false;
+      setEditingId(id);
+      setEditValue(sessionTitleOverrides[id] || currentTitle || fallbackId);
+    },
+    [sessionTitleOverrides],
+  );
+
+  const commitEdit = useCallback(
+    (id: string) => {
+      if (editCommittedRef.current) return;
+      editCommittedRef.current = true;
+      const trimmed = editValue.trim();
+      if (trimmed) {
+        setSessionTitleOverrides((prev) => ({ ...prev, [id]: trimmed }));
+        if (activeTab?.type === "agent") {
+          setAgentSessionsList((prev) =>
+            prev.map((session) =>
+              session.id === id ? { ...session, title: trimmed } : session,
+            ),
+          );
+        } else {
+          setChatSessions((prev) =>
+            prev.map((session) =>
+              session.id === id ? { ...session, title: trimmed } : session,
+            ),
+          );
+        }
+      }
+      setEditingId(null);
+      setEditValue("");
+    },
+    [activeTab?.type, editValue, setAgentSessionsList, setChatSessions, setSessionTitleOverrides],
+  );
+
+  const cancelEdit = useCallback(() => {
+    setEditingId(null);
+    setEditValue("");
+  }, []);
 
   const load = useCallback(async () => {
     try {
       if (!activeTab) {
-        setSessions([]);
+        setChatSessions([]);
+        setAgentSessionsList([]);
         return;
       }
       const list = activeTab.type === "agent" ? await listAgentSessions() : await listSessions();
-      setSessions(list.sort((a, b) => b.updatedAt - a.updatedAt));
+      const sorted = list.sort((a, b) => b.updatedAt - a.updatedAt);
+      if (activeTab.type === "agent") {
+        setAgentSessionsList(sorted);
+      } else {
+        setChatSessions(sorted);
+      }
     } catch {
       // sessions will show empty
     }
-  }, [activeTab, setSessions]);
+  }, [activeTab, setAgentSessionsList, setChatSessions]);
 
   useEffect(() => {
     load();
@@ -107,8 +176,8 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
       }
       await load();
 
-      setTabs(
-        tabs.map((tab) =>
+      setTabs((prev) =>
+        prev.map((tab) =>
           tab.id === activeTab.id ? { ...tab, sessionId: id } : tab,
         ),
       );
@@ -146,8 +215,8 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
       }
     }
 
-    setTabs(
-      tabs.map((tab) =>
+    setTabs((prev) =>
+      prev.map((tab) =>
         tab.id === activeTab.id ? { ...tab, sessionId: id } : tab,
       ),
     );
@@ -170,8 +239,14 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
         } else {
           setMessages([]);
         }
-        setTabs(
-          tabs.map((tab) =>
+        setSessionTitleOverrides((prev) => {
+          if (!(id in prev)) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setTabs((prev) =>
+          prev.map((tab) =>
             tab.id === activeTab.id ? { ...tab, sessionId: null } : tab,
           ),
         );
@@ -195,12 +270,90 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
         title: key === "chat" ? "Chat" : "Agent",
         sessionId: null,
       };
-      setTabs([...tabs, newTab]);
+      setTabs((prev) => [...prev, newTab]);
       setActiveTabId(newTab.id);
     }
   };
 
-  const groups = groupByDate(sessions);
+  const pinnedSessions = sessions.filter((s) => pinnedIds.has(s.id));
+  const unpinnedSessions = sessions.filter((s) => !pinnedIds.has(s.id));
+  const groups = groupByDate(unpinnedSessions);
+
+  const renderSessionItem = (s: SessionInfo) => {
+    const isPinned = pinnedIds.has(s.id);
+    const displayTitle = sessionTitleOverrides[s.id] || s.title || s.id.slice(0, 8);
+    const isEditing = editingId === s.id;
+
+    return (
+      <div key={s.id} className="group flex items-center gap-0.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            togglePin(s.id);
+          }}
+          className={cn(
+            "p-0.5 rounded hover:bg-muted transition-opacity shrink-0",
+            isPinned ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          )}
+        >
+          <Star
+            size={12}
+            className={isPinned ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}
+          />
+        </button>
+
+        <button
+          onClick={() => handleSwitchSession(s.id)}
+          onDoubleClick={() => startEdit(s.id, s.title, s.id)}
+          className={cn(
+            "flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5 rounded-md text-sm text-left transition-colors",
+            s.id === currentId
+              ? "bg-accent text-foreground"
+              : "hover:bg-accent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {activeTab?.type === "agent" ? (
+            <Bot size={14} className="shrink-0" />
+          ) : (
+            <MessageSquare size={14} className="shrink-0" />
+          )}
+          {isEditing ? (
+            <input
+              autoFocus
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitEdit(s.id);
+                if (e.key === "Escape") cancelEdit();
+              }}
+              onBlur={() => commitEdit(s.id)}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1 min-w-0 bg-background border border-border rounded px-1 py-0.5 text-xs outline-none"
+            />
+          ) : (
+            <span className="truncate flex-1 min-w-0">{displayTitle}</span>
+          )}
+        </button>
+
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            startEdit(s.id, s.title, s.id);
+          }}
+          className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity shrink-0"
+        >
+          <Pencil size={12} className="text-muted-foreground" />
+        </button>
+
+        <button
+          onClick={(e) => handleDeleteSession(e, s.id)}
+          className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity shrink-0"
+        >
+          <Trash2 size={12} className="text-muted-foreground" />
+        </button>
+      </div>
+    );
+  };
 
   return (
     <aside
@@ -218,7 +371,7 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
         </button>
       </div>
 
-      {open && (
+      {open ? (
         <>
           <div className="px-3 py-3">
             <div className="flex rounded-lg bg-muted p-0.5">
@@ -249,42 +402,37 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
               新建会话
             </button>
 
-            {groups.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-4">
-                暂无会话
-              </p>
+            {pinnedSessions.length > 0 && (
+              <div className="mb-4">
+                <div className="text-xs font-medium text-muted-foreground mb-1 px-2">
+                  已置顶
+                </div>
+                {pinnedSessions.map((s) => renderSessionItem(s))}
+              </div>
             )}
 
-            {groups.map((group) => (
-              <div key={group.label} className="mb-4">
-                <div className="text-xs font-medium text-muted-foreground mb-1 px-2">
-                  {group.label}
+            {!showPinnedOnly &&
+              groups.map((group) => (
+                <div key={group.label} className="mb-4">
+                  <div className="text-xs font-medium text-muted-foreground mb-1 px-2">
+                    {group.label}
+                  </div>
+                  {group.items.map((s) => renderSessionItem(s))}
                 </div>
-                {group.items.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => handleSwitchSession(s.id)}
-                    className={cn(
-                      "group flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-sm text-left transition-colors",
-                      s.id === currentId
-                        ? "bg-accent text-foreground"
-                        : "hover:bg-accent text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {activeTab?.type === "agent" ? <Bot size={14} className="shrink-0" /> : <MessageSquare size={14} className="shrink-0" />}
-                    <span className="truncate flex-1">
-                      {s.title || s.id.slice(0, 8)}
-                    </span>
-                    <button
-                      onClick={(e) => handleDeleteSession(e, s.id)}
-                      className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity shrink-0"
-                    >
-                      <Trash2 size={12} className="text-muted-foreground" />
-                    </button>
-                  </button>
-                ))}
-              </div>
-            ))}
+              ))}
+
+            {pinnedSessions.length === 0 &&
+              (showPinnedOnly || groups.length === 0) && (
+                <p className="text-xs text-muted-foreground text-center py-4">
+                  {showPinnedOnly ? "暂无置顶会话" : "暂无会话"}
+                </p>
+              )}
+
+            {!showPinnedOnly && groups.length === 0 && pinnedSessions.length > 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">
+                暂无其他会话
+              </p>
+            )}
           </div>
 
           <div className="border-t border-border px-3 py-3 space-y-2">
@@ -298,6 +446,41 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
             <div className="text-xs text-muted-foreground px-2">v0.1.0</div>
           </div>
         </>
+      ) : (
+        <div className="flex flex-col items-center gap-2 py-2 flex-1">
+          <button
+            onClick={handleNewSession}
+            className="p-1.5 rounded-md hover:bg-accent text-muted-foreground"
+            title="新建会话"
+          >
+            <Plus size={16} />
+          </button>
+          <button
+            onClick={() => setShowPinnedOnly(!showPinnedOnly)}
+            className={cn(
+              "p-1.5 rounded-md hover:bg-accent",
+              showPinnedOnly ? "text-amber-400" : "text-muted-foreground",
+            )}
+            title={showPinnedOnly ? "显示全部" : "只看置顶"}
+          >
+            <Star
+              size={16}
+              className={showPinnedOnly ? "fill-amber-400" : ""}
+            />
+          </button>
+          <button
+            onClick={onOpenSettings}
+            className="p-1.5 rounded-md hover:bg-accent text-muted-foreground"
+            title="设置"
+          >
+            <Settings size={16} />
+          </button>
+          <div className="mt-auto">
+            <div className="w-6 h-6 rounded-full bg-muted-foreground/20 flex items-center justify-center text-xs text-muted-foreground">
+              U
+            </div>
+          </div>
+        </div>
       )}
     </aside>
   );

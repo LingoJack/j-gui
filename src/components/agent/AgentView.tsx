@@ -13,9 +13,14 @@ import {
 import { agentConfigAtom } from "@/atoms/config";
 import {
   agentMessagesAtom,
+  agentMessagesByTabAtom,
   agentStreamingAtom,
+  agentStreamingByTabAtom,
   agentDraftsAtom,
   currentSessionIdAtom,
+  agentSessionsListAtom,
+  sessionTitleOverridesAtom,
+  deriveSessionTitle,
   type Message,
 } from "@/atoms/sessions";
 import { activeTabAtom, tabsAtom } from "@/atoms/tabs";
@@ -28,8 +33,12 @@ import PermissionBanner from "./PermissionBanner";
 import ChatInput from "@/components/chat/ChatInput";
 
 export default function AgentView() {
-  const [streaming, setStreaming] = useAtom(agentStreamingAtom);
+  const [streaming] = useAtom(agentStreamingAtom);
   const setMessages = useSetAtom(agentMessagesAtom);
+  const setMessagesByTab = useSetAtom(agentMessagesByTabAtom);
+  const setStreamingByTab = useSetAtom(agentStreamingByTabAtom);
+  const setAgentSessions = useSetAtom(agentSessionsListAtom);
+  const setSessionTitleOverrides = useSetAtom(sessionTitleOverridesAtom);
   const [currentSessionId, setCurrentSessionId] = useAtom(currentSessionIdAtom);
   const [config, setConfig] = useAtom(agentConfigAtom);
   const [drafts, setDrafts] = useAtom(agentDraftsAtom);
@@ -42,13 +51,22 @@ export default function AgentView() {
   const engineStartedRef = useRef(false);
   const engineRunIdRef = useRef(0);
   const boundSessionIdRef = useRef<string | null>(null);
+  const ownerTabIdRef = useRef<string | null>(activeTab?.id ?? null);
+  const activeTabIdRef = useRef<string | null>(activeTab?.id ?? null);
   const [interrupt, setInterrupt] = useState<{interruptId: string; toolName: string; toolInput: string} | null>(null);
   const [respondingInterruptId, setRespondingInterruptId] = useState<string | null>(null);
 
+  useEffect(() => {
+    activeTabIdRef.current = activeTab?.id ?? null;
+  }, [activeTab?.id]);
+
   const updateInterruptMessage = useCallback(
     (interruptId: string, allowed: boolean) => {
-      setMessages((prev) =>
-        prev.map((message) =>
+      const tabId = activeTabIdRef.current;
+      if (!tabId) return;
+      setMessagesByTab((prev) => ({
+        ...prev,
+        [tabId]: (prev[tabId] ?? []).map((message) =>
           message.toolCall?.toolId === interruptId
             ? {
                 ...message,
@@ -60,9 +78,9 @@ export default function AgentView() {
               }
             : message,
         ),
-      );
+      }));
     },
-    [setMessages],
+    [setMessagesByTab],
   );
 
   useEffect(() => {
@@ -83,10 +101,12 @@ export default function AgentView() {
   useEffect(() => {
     if (!engineStartedRef.current) {
       boundSessionIdRef.current = currentSessionId;
+      ownerTabIdRef.current = activeTab?.id ?? null;
       return;
     }
 
     if (boundSessionIdRef.current !== currentSessionId) {
+      const ownerTabId = ownerTabIdRef.current;
       engineRunIdRef.current += 1;
       stopAgent().catch(() => {});
       engineStartedRef.current = false;
@@ -94,24 +114,32 @@ export default function AgentView() {
       setAgentStarted(false);
       setInterrupt(null);
       setRespondingInterruptId(null);
-      setStreaming(false);
+      if (ownerTabId) {
+        setStreamingByTab((prev) => ({ ...prev, [ownerTabId]: false }));
+      }
       streamingRef.current = false;
+      ownerTabIdRef.current = activeTab?.id ?? null;
     }
-  }, [currentSessionId, setStreaming]);
+  }, [activeTab?.id, currentSessionId, setStreamingByTab]);
 
   const pushAgentError = useCallback(
     (message: string) => {
-      setMessages((prev) => [
+      const tabId = activeTabIdRef.current;
+      if (!tabId) return;
+      setMessagesByTab((prev) => ({
         ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: message,
-          isStreaming: false,
-        },
-      ]);
+        [tabId]: [
+          ...(prev[tabId] ?? []),
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: message,
+            isStreaming: false,
+          },
+        ],
+      }));
     },
-    [setMessages],
+    [setMessagesByTab],
   );
 
   const handleInterruptDecision = useCallback(
@@ -161,21 +189,29 @@ export default function AgentView() {
     const runId = engineRunIdRef.current + 1;
     engineRunIdRef.current = runId;
     boundSessionIdRef.current = sessionId;
+    ownerTabIdRef.current = activeTabIdRef.current;
+    const tabId = activeTabIdRef.current;
 
     const onEvent = new Channel<AgentEvent>();
     onEvent.onmessage = (msg) => {
       if (engineRunIdRef.current !== runId) return;
       if (!streamingRef.current && msg.event !== "done" && msg.event !== "error") return;
+      if (!tabId) return;
 
       switch (msg.event) {
         case "assistantContent": {
           const text = msg.data.text;
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
+          setMessagesByTab((prev) => {
+            const messages = prev[tabId] ?? [];
+            const last = messages[messages.length - 1];
             if (last && last.role === "assistant" && last.isStreaming) {
-              const updated = [...prev];
-              updated[updated.length - 1] = { ...last, content: last.content + text };
-              return updated;
+              return {
+                ...prev,
+                [tabId]: [
+                  ...messages.slice(0, -1),
+                  { ...last, content: last.content + text },
+                ],
+              };
             }
             const newMsg: Message = {
               id: crypto.randomUUID(),
@@ -184,7 +220,10 @@ export default function AgentView() {
               isStreaming: true,
               toolCall: undefined,
             };
-            return [...prev, newMsg];
+            return {
+              ...prev,
+              [tabId]: [...messages, newMsg],
+            };
           });
           break;
         }
@@ -201,30 +240,37 @@ export default function AgentView() {
               status: "running",
             },
           };
-          setMessages((prev) => [...prev, tcMsg]);
+          setMessagesByTab((prev) => ({
+            ...prev,
+            [tabId]: [...(prev[tabId] ?? []), tcMsg],
+          }));
           break;
         }
         case "interrupt":
-          setMessages((prev) => [
+          setMessagesByTab((prev) => ({
             ...prev,
-            {
-              id: crypto.randomUUID(),
-              role: "assistant",
-              content: "",
-              isStreaming: false,
-              toolCall: {
-                toolId: msg.data.interruptId,
-                toolName: msg.data.toolName,
-                toolInput: msg.data.toolInput,
-                status: "running",
+            [tabId]: [
+              ...(prev[tabId] ?? []),
+              {
+                id: crypto.randomUUID(),
+                role: "assistant",
+                content: "",
+                isStreaming: false,
+                toolCall: {
+                  toolId: msg.data.interruptId,
+                  toolName: msg.data.toolName,
+                  toolInput: msg.data.toolInput,
+                  status: "running",
+                },
               },
-            },
-          ]);
+            ],
+          }));
           setInterrupt({ interruptId: msg.data.interruptId, toolName: msg.data.toolName, toolInput: msg.data.toolInput });
           break;
         case "toolResult": {
-          setMessages((prev) =>
-            prev.map((m) =>
+          setMessagesByTab((prev) => ({
+            ...prev,
+            [tabId]: (prev[tabId] ?? []).map((m) =>
               m.toolCall?.toolId === msg.data.toolId
                 ? {
                     ...m,
@@ -236,12 +282,13 @@ export default function AgentView() {
                   }
                 : m,
             ),
-          );
+          }));
           break;
         }
         case "done":
-          setMessages((prev) =>
-            prev.map((m) =>
+          setMessagesByTab((prev) => ({
+            ...prev,
+            [tabId]: (prev[tabId] ?? []).map((m) =>
               m.toolCall?.status === "running"
                 ? {
                     ...m,
@@ -254,8 +301,8 @@ export default function AgentView() {
                   ? { ...m, isStreaming: false }
                   : m,
             ),
-          );
-          setStreaming(false);
+          }));
+          setStreamingByTab((prev) => ({ ...prev, [tabId]: false }));
           streamingRef.current = false;
           setInterrupt(null);
           setRespondingInterruptId(null);
@@ -263,7 +310,7 @@ export default function AgentView() {
         case "error":
           pushAgentError(msg.data.message);
           toast(msg.data.message, "error");
-          setStreaming(false);
+          setStreamingByTab((prev) => ({ ...prev, [tabId]: false }));
           streamingRef.current = false;
           setInterrupt(null);
           setRespondingInterruptId(null);
@@ -281,9 +328,12 @@ export default function AgentView() {
       engineStartedRef.current = false;
       boundSessionIdRef.current = null;
       setRespondingInterruptId(null);
-        toast(`启动 Agent 失败: ${String(e)}`, "error");
+      if (tabId) {
+        setStreamingByTab((prev) => ({ ...prev, [tabId]: false }));
       }
-  }, [permissionMode, pushAgentError, setMessages, setStreaming]);
+      toast(`启动 Agent 失败: ${String(e)}`, "error");
+    }
+  }, [permissionMode, pushAgentError, setMessagesByTab, setStreamingByTab]);
 
   useEffect(() => {
     return () => {
@@ -296,6 +346,8 @@ export default function AgentView() {
 
   const handleSend = useCallback(
     async (content: string) => {
+      const tabId = activeTabIdRef.current;
+      if (!tabId) return;
       let sessionId = currentSessionId;
       if (!sessionId) {
         sessionId = await createAgentSession();
@@ -314,21 +366,27 @@ export default function AgentView() {
       }
       if (!agentStarted && !engineStartedRef.current) {
         // Engine failed to start — show error in chat
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: "user",
-            content,
-            isStreaming: false,
-          },
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: "Agent 引擎启动失败。请确认已安装 Claude Code CLI，且 `claude` 命令在 PATH 中。",
-            isStreaming: false,
-          },
-        ]);
+        const tabId = activeTabIdRef.current;
+        if (tabId) {
+          setMessagesByTab((prev) => ({
+            ...prev,
+            [tabId]: [
+              ...(prev[tabId] ?? []),
+              {
+                id: crypto.randomUUID(),
+                role: "user",
+                content,
+                isStreaming: false,
+              },
+              {
+                id: crypto.randomUUID(),
+                role: "assistant",
+                content: "Agent 引擎启动失败。请确认已安装 Claude Code CLI，且 `claude` 命令在 PATH 中。",
+                isStreaming: false,
+              },
+            ],
+          }));
+        }
         return;
       }
 
@@ -338,10 +396,19 @@ export default function AgentView() {
         content,
         isStreaming: false,
       };
+      const derivedTitle = deriveSessionTitle([userMsg]);
+      if (derivedTitle) {
+        setAgentSessions((prev) =>
+          prev.map((session) =>
+            session.id === sessionId ? { ...session, title: derivedTitle } : session,
+          ),
+        );
+        setSessionTitleOverrides((prev) => ({ ...prev, [sessionId]: derivedTitle }));
+      }
       setMessages((prev) => [...prev, userMsg]);
-      setDrafts((prev) => ({ ...prev, [sessionId ?? ""]: "" }));
+      setDrafts((prev) => ({ ...prev, [tabId]: "" }));
 
-      setStreaming(true);
+      setStreamingByTab((prev) => ({ ...prev, [tabId]: true }));
       streamingRef.current = true;
 
       try {
@@ -350,7 +417,7 @@ export default function AgentView() {
         const message = `发送失败: ${String(e)}`;
         pushAgentError(message);
         toast(message, "error");
-        setStreaming(false);
+        setStreamingByTab((prev) => ({ ...prev, [tabId]: false }));
         streamingRef.current = false;
       }
     },
@@ -362,7 +429,8 @@ export default function AgentView() {
       setCurrentSessionId,
       setDrafts,
       setMessages,
-      setStreaming,
+      setMessagesByTab,
+      setStreamingByTab,
       setTabs,
       startEngine,
     ],
@@ -370,9 +438,11 @@ export default function AgentView() {
 
   const handleDraftChange = useCallback(
     (text: string) => {
-      setDrafts((prev) => ({ ...prev, [currentSessionId ?? ""]: text }));
+      const tabId = activeTabIdRef.current;
+      if (!tabId) return;
+      setDrafts((prev) => ({ ...prev, [tabId]: text }));
     },
-    [currentSessionId, setDrafts],
+    [setDrafts],
   );
 
   return (
@@ -432,7 +502,7 @@ export default function AgentView() {
         onSend={handleSend}
         sendDisabled={streaming}
         placeholder="输入消息... (@引用文件 / 调用Skills / # 调用MCP, Enter 发送)"
-        draft={drafts[currentSessionId ?? ""] ?? ""}
+        draft={drafts[activeTab?.id ?? ""] ?? ""}
         onDraftChange={handleDraftChange}
       />
     </div>

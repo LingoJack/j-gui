@@ -11,7 +11,7 @@ title: j-gui 前端技术栈选型
 
 ## 背景
 
-j-gui 前端需要一个完整的 UI 技术栈：框架、构建工具、样式方案、状态管理、Markdown 渲染、代码高亮。选型目标是与 Proma 保持一致以降低认知开销，同时适配 Tauri 的 WebView 环境。
+j-gui 前端需要一个完整的 UI 技术栈：框架、构建工具、样式方案、状态管理、Markdown 渲染、代码高亮。选型目标是跟随 Proma 当前远程版本的前端栈，作为 1:1 复刻基础，同时适配 Tauri 的 WebView 环境。
 
 ## 决定
 
@@ -31,11 +31,11 @@ j-gui 前端需要一个完整的 UI 技术栈：框架、构建工具、样式�
 
 ## 理由
 
-- **React 19**：Tauri 官方推荐前端框架，生态成熟；与 Proma 一致
+- **React 19**：Tauri 官方推荐前端框架，生态成熟；也是 Proma 当前采用的基础框架
 - **Vite 7**：Tauri v2 默认构建工具，HMR 快，与 React 集成好
-- **Tailwind CSS v4**：原子化 CSS，与 shadcn/ui 组件库原生配合；与 Proma 一致
-- **shadcn/ui**：无包依赖的组件库，复制源码到项目，可定制；与 Proma 一致
-- **Jotai**：原子化状态管理，比 Zustand 更适合事件驱动的流式更新；与 Proma 一致
+- **Tailwind CSS v4**：原子化 CSS，与 shadcn/ui 组件库原生配合；也是 Proma 当前采用的样式体系
+- **shadcn/ui**：无包依赖的组件库，复制源码到项目，可定制；也是 Proma 当前采用的组件做法
+- **Jotai**：原子化状态管理，比 Zustand 更适合事件驱动的流式更新；也是 Proma 当前采用的状态管理
 - **react-markdown**：React 原生 Markdown 渲染，支持插件扩展
 - **Shiki**：服务端语法高亮，支持 TextMate 主题，与 VS Code 一致的高亮质量
 

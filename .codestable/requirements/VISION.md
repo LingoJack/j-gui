@@ -1,7 +1,7 @@
 ---
 doc_type: index
 description: j-gui 能力需求中心索引——按 status 分组，每条带一句话 pitch
-last_updated: 2026-05-08
+last_updated: 2026-05-09
 ---
 
 # j-gui 能力需求索引
@@ -16,9 +16,7 @@ last_updated: 2026-05-08
 
 ## Draft（未来愿景 — 已定稿待实现）
 
-暂无。
-
-> j-gui-session-management 已升级为 current——后端 CRUD API 完备；前端会话列表对接待 roadmap #20 实现后升级为 current。
+| [j-gui-proma-parity](./j-gui-proma-parity.md) | 按 Proma 的界面和行为做 1:1 复刻，除明确不需要的功能外保持一致 | draft |
 
 ## Outdated（过去的痕迹）
 

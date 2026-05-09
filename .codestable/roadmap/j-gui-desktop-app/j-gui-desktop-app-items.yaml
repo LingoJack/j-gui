@@ -1,6 +1,6 @@
 roadmap: j-gui-desktop-app
 created: 2026-05-08
-last_reviewed: 2026-05-08
+last_reviewed: 2026-05-09
 
 items:
   - slug: scaffold
@@ -150,7 +150,7 @@ items:
   - slug: build-packaging
     description: 构建打包——Tauri build 配置（图标/安装包/更新），验证 cargo tauri build 产出可安装包
     depends_on: [scaffold]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
     notes: 在所有功能完成后执行，但技术上只依赖 scaffold
@@ -317,33 +317,33 @@ items:
     notes: 除 Context Divider 外均纯前端；Context Divider 需在消息流中识别 SessionEvent::Clear 标记
 
   - slug: frontend-sidebar-collapsible
-    description: 侧栏折叠增强——280px ↔ 48px 平滑动画过渡（transition-[width]）、图标模式（仅显示新建按钮+用户头像+模式图标+设置齿轮）、会话 Pin/Rename/Archive 操作（悬浮按钮 + 双击编辑标题 + Archive 独立视图 + "Back to active" 返回按钮）、会话日期分组（Today/Yesterday/Earlier）
+    description: 侧栏折叠增强——折叠态图标模式完善 + 会话 Pin 星标 + 双击/编辑重命名；Archive 独立视图后置
     depends_on: [frontend-left-sidebar, frontend-session-list]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-08-sidebar-collapsible
     minimal_loop: false
     notes: 纯前端 CSS transition + Jotai 状态管理；Archive 需后端 archive/restore 会话命令
 
   - slug: frontend-search-enhanced
-    description: 搜索增强——标题搜索体验补强（按更新时间排序、结果高亮、模式图标区分、结果回填一致性）、IME composition 处理、键盘导航与快捷键细节完善
+    description: 搜索增强——结果高亮(mark标签) + IME composition处理 + 按更新时间排序
     depends_on: [frontend-search]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-08-search-enhanced
     minimal_loop: false
     notes: 根据 requirement 边界，首版不做 transcript 全文搜索；本条只优化标题搜索体验与结果打开一致性
 
   - slug: frontend-settings-refined
-    description: 设置重构——左侧导航+右侧内容布局（导航 160px + ScrollArea 内容）、Settings UI 原语组件库（Card/Input/SecretInput/Row/Section/SegmentedControl/Select/Textarea/Toggle）、导航持久化（settingsTabAtom 记忆上次打开 tab）、未保存变更保护（AlertDialog 离开确认）
+    description: 设置重构——左侧导航+右侧内容布局 + Settings UI 原语组件 + 未保存保护
     depends_on: [settings-dialog]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-08-settings-refined
     minimal_loop: false
     notes: 新增导航项：PromptSettings（复用已有系统提示词编辑）、AppearanceSettings（已有主题/字体）、ToolSettings（依赖后端工具列表命令）
 
   - slug: frontend-right-panel-tree
     description: 右侧面板增强——递归文件树（点击目录展开时异步 readDir 子目录 + 缩进层级）、AgentHeader 内打开入口按钮（文件变更时 PanelRight 图标脉冲点）、面包屑导航（显示路径最后两段）、文件操作（Hover 显示重命名/删除/添加到聊天按钮）
     depends_on: [frontend-right-panel, frontend-agent-view]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
     notes: 递归读取依赖 Tauri fs plugin 的 readDir 递归调用；脉冲点通过 listen 文件变更 event 或轮询实现
@@ -351,15 +351,15 @@ items:
   - slug: backend-agent-governance-commands
     description: Agent 治理命令——暴露 Skills/Hooks 的列表与启停配置口径：基于 j-cli 的 load_all_skills() / HookManager::list_hooks() 返回 GUI 可消费元数据，并通过 AgentConfig.disabled_skills / disabled_hooks 持久化启停状态
     depends_on: [backend-config-commands]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
     notes: 现有 get_agent_config/set_agent_config 只覆盖 providers/active_index/theme；首版先补列表与启停，不在 GUI 内创建或编辑 skill/hook 文件
 
   - slug: backend-mcp-config-commands
-    description: MCP 配置命令——定义 j-gui 读取/写回的 MCP server 数据源、标准化结构、未知字段保留策略与保存时校验逻辑，供 Settings MCP tab 使用
+    description: MCP 配置命令——定义 j-gui 读取/写回的 MCP server 数据源、标准化结构，供 Settings MCP tab 使用
     depends_on: [backend-config-commands]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
     notes: 当前 j-cli 仓库内尚无统一 MCP 配置抽象；首版必须先拍板配置文件位置/结构，再实现 GUI；不承诺在 GUI 内完成 server 安装或 marketplace 分发
@@ -367,7 +367,7 @@ items:
   - slug: frontend-settings-skills-ui
     description: Skills UI——Settings 中新增 Skills tab，展示已加载 skill 的名称/描述/来源目录与覆盖关系，支持单项启停、全部启用、全部禁用与空态说明
     depends_on: [frontend-settings-refined, backend-agent-governance-commands]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
     notes: 交互语义参考 j-cli TUI 的 Skills tab；首版只管理启停与元数据展示，不在 GUI 内编辑 SKILL.md 正文
@@ -375,7 +375,7 @@ items:
   - slug: frontend-settings-hooks-ui
     description: Hooks UI——Settings 中新增 Hooks tab，展示 hook 的 source/event/type/label/on_error/filter 摘要，支持按 unique_id 启停、全部启用、全部禁用与空态说明
     depends_on: [frontend-settings-refined, backend-agent-governance-commands]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
     notes: 行为锚定 j-cli TUI Hooks tab 与 HookManager::list_hooks()；首版聚焦治理视图和启停，不在 GUI 内注册、编辑或删除 hook 文件
@@ -383,7 +383,121 @@ items:
   - slug: frontend-settings-mcp-ui
     description: MCP 配置 UI——Settings 中新增 MCP tab，展示 server 列表、transport/command/url/env 摘要、启停开关、详情编辑与校验错误提示
     depends_on: [frontend-settings-refined, backend-mcp-config-commands]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
     notes: 吸收 Proma 的 Settings 导航与脏状态保护经验，但不猜测 j-cli 的 MCP 模型；首版聚焦本地配置读写，不做远程 catalog、安装向导或健康探测面板
+
+  - slug: frontend-settings-chat-tools-ui
+    description: Chat 工具 UI——Settings 中新增 Chat Tools / ToolSettings 入口，展示可用 Chat 工具、启停状态、配置入口、空态与错误态
+    depends_on: [frontend-settings-refined]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: Proma parity acceptance 将 Chat 工具列为必验项；首版只做工具列表、启停与配置入口，不扩大到远程 marketplace
+
+  # ===== 2026-05-09 Proma 1:1 复刻验收拆解 =====
+
+  - slug: proma-parity-shell-sidebar
+    description: Shell / 左侧栏 parity——Agent Working / pinned 区域、未查看完成状态、工作区能力提示、折叠态细节、右侧面板显隐状态、窗口拖动/非拖动区域，按 proma-parity-acceptance 的全局 Shell 区域验收
+    depends_on: [frontend-sidebar-collapsible, frontend-right-panel-tree]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 只在验收项有截图/录屏或手测记录后才能标 done；基础 sidebar item done 不等于 Proma parity done
+
+  - slug: proma-parity-tabs-workspace
+    description: Tabs 工作区 parity——Tab 预览面板、拖拽重排、流式关闭确认、错误隔离、横向滚动体验、无 tab 欢迎页/空态，按 Proma TabBar / TabPreviewPanel / TabCloseConfirmDialog / WelcomeView 对齐
+    depends_on: [frontend-main-area, frontend-tabs-enhanced]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P0；需要证明 Chat/Agent tab 切换不会串 session/mode
+
+  - slug: proma-parity-chat-experience
+    description: Chat 体验 parity——RichText 输入、工具栏布局、Thinking、ContextDivider、ScrollMinimap、Agent 推荐入口，首版仍排除附件/拖放
+    depends_on: [frontend-chat-input-enhanced, frontend-chat-reasoning-block, frontend-chat-message-polish]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P0；不把附件入口作为失败项，但输入区和消息区的可见体验必须按 Proma 收口
+
+  - slug: proma-parity-chat-tools
+    description: Chat 工具 parity——Chat 工具活动提示、工具块渲染、Settings ToolSettings 入口、工具启停与空态/错误态
+    depends_on: [frontend-settings-chat-tools-ui]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P1；不扩大到 marketplace，只追平本地工具治理和消息区工具展示
+
+  - slug: proma-parity-agent-interrupts
+    description: Agent 审批 parity——Permission / AskUser / ExitPlanMode 三类中断 UI 和回传闭环，不能只有静态 banner
+    depends_on: [backend-agent-interrupts, frontend-agent-interrupt-ui]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P0；没有 respond_agent_interrupt 真实回传前不能标 done
+
+  - slug: proma-parity-agent-tool-renderers
+    description: Agent 工具渲染 parity——read/write/edit/bash/search 等工具结果分型渲染，避免退化成纯 JSON 文本
+    depends_on: [frontend-tool-call]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P0；需要覆盖常见 tool_result 类型的视觉状态、折叠和错误态
+
+  - slug: proma-parity-agent-task-context
+    description: Agent 任务、Context 与 runtime 选择 parity——TaskProgressCard、BackgroundTasksPanel、ContextUsageBadge、真实 token/context 来源、slash skills/MCP runtime 选择器
+    depends_on: [frontend-agent-task-progress, frontend-agent-context-tools]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P1；ContextUsageBadge 需要真实统计来源，否则只能保持 Partial；slash 选择仅作用于 Agent runtime，不扩到 Chat MCP
+
+  - slug: proma-parity-agent-file-context
+    description: Agent 单工作区文件上下文 parity——文件树、目录添加、文件 mention、slash 文件选择、SidePanel 联动；不恢复 Proma 多 Workspace 管理
+    depends_on: [frontend-right-panel-tree, frontend-agent-context-tools, frontend-chat-input-enhanced]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P0；用户明确反馈文件浏览器需要能添加文件夹/工作区，本项用单工作区模型承接
+
+  - slug: proma-parity-search-navigation
+    description: Search parity——标题搜索、高亮、IME、键盘导航、打开结果回填、归档标识；内容全文搜索首版排除
+    depends_on: [frontend-search, frontend-search-enhanced]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P1；验收时不要求 Chat/Agent 内容全文搜索，但必须证明结果能打开正确 tab 并回填内容
+
+  - slug: proma-parity-settings-console
+    description: Settings parity——Dialog 外观、左导航、脏状态保护、UI 原语、Provider/Prompt/Agent/Chat Tools tab，排除 Proxy/Voice/Remote/Tutorial/Update/Migration/Shortcut 自定义
+    depends_on: [frontend-settings-refined, frontend-settings-skills-ui, frontend-settings-hooks-ui, frontend-settings-mcp-ui, frontend-settings-chat-tools-ui]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P1；排除的 Proma tab 不要求出现，但不能影响设置页导航和视觉一致性
+
+  - slug: proma-parity-core-shortcuts
+    description: 内建快捷键 parity——打开设置、新建会话、侧栏切换、模式切换、搜索、聚焦输入、清除上下文、停止生成、关闭 tab
+    depends_on: [settings-dialog, frontend-left-sidebar, frontend-main-area, frontend-search, frontend-context-bar, backend-streaming-cancel, frontend-agent-view, frontend-chat-input-enhanced]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P1；快捷键自定义设置页排除，但内建快捷键必须可用
+
+  - slug: proma-parity-agent-session-workbench
+    description: Agent 会话工作台 parity——AgentHeader 标题编辑、右侧文件面板按钮/文件变化提示、Agent 会话保存/切换/搜索/回填，确保 Chat 会话不会串入 Agent，并覆盖 no-response/timeout/retry 状态
+    depends_on: [backend-agent-session-storage, frontend-agent-session-navigation, frontend-right-panel-tree]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P0；专门承接 AgentHeader 与会话恢复验收项，避免被文件上下文或审批项稀释
+
+  - slug: proma-parity-evidence-pass
+    description: Proma parity 证据收口——为所有 P0/P1 parity item 补 Proma 基线截图/录屏、j-gui 对照截图/录屏、逐项验收记录
+    depends_on: [proma-parity-shell-sidebar, proma-parity-tabs-workspace, proma-parity-chat-experience, proma-parity-chat-tools, proma-parity-agent-interrupts, proma-parity-agent-tool-renderers, proma-parity-agent-task-context, proma-parity-agent-file-context, proma-parity-search-navigation, proma-parity-settings-console, proma-parity-core-shortcuts, proma-parity-agent-session-workbench]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P0 收口项；证据目录为 .codestable/acceptance/proma-parity/{YYYY-MM-DD}/
