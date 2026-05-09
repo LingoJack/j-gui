@@ -36,10 +36,6 @@ export default function BackgroundTasksPanel() {
 
   const hasStreaming = activeTabs.some((t) => t.streaming);
 
-  // Don't render at all if no agent tabs have any activity
-  const hasAnyAgents = activeTabs.length > 0;
-  if (!hasAnyAgents) return null;
-
   const handleCancel = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
@@ -48,6 +44,10 @@ export default function BackgroundTasksPanel() {
       // best-effort stop
     }
   }, []);
+
+  // Don't render at all if no agent tabs have any activity
+  const hasAnyAgents = activeTabs.length > 0;
+  if (!hasAnyAgents) return null;
 
   return (
     <div
