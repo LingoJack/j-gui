@@ -24,6 +24,10 @@ export const currentSessionIdAtom = atom(
   (get, set, sessionId: string | null) => {
     const activeTabId = get(activeTabIdAtom);
     if (!activeTabId) return;
+    // Guard: skip if sessionId hasn't changed, to avoid infinite re-render
+    // when AppShell's useEffect writes the same sessionId back.
+    const current = get(activeTabAtom)?.sessionId ?? null;
+    if (current === sessionId) return;
     set(tabsAtom, (prev) =>
       prev.map((tab) =>
         tab.id === activeTabId ? { ...tab, sessionId } : tab,
