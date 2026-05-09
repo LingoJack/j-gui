@@ -371,7 +371,7 @@ enum PlanDecision {
 
 > 实施口径：#50-#62 不允许只按一句话描述开工。每条 feature design 必须读取 `proma-parity-implementation-spec.md` 的对应章节，并从 `proma-parity-matrix.yaml` 抽取 acceptance_points 作为验收输入。
 
-### 已闭环 — 基础实现（done — 47 条）
+### 已闭环 — 基础实现 + 设置补齐（done — 48 条）
 
 **后端与 IPC**：#1 scaffold、#2 backend-config-commands、#3 backend-alias-commands、#4 backend-chat-engine、#5 backend-chat-commands、#6 backend-system-commands、#12 backend-agent-engine、#20 error-handling、#24 backend-system-prompt、#30 backend-streaming-cancel、#31 backend-agent-interrupts、#32 backend-agent-session-storage、#44 backend-agent-governance-commands、#45 backend-mcp-config-commands。
 
@@ -381,27 +381,22 @@ enum PlanDecision {
 
 **Agent UI**：#13 frontend-agent-view、#14 frontend-tool-call、#33 frontend-agent-session-navigation、#34 frontend-agent-interrupt-ui、#35 frontend-agent-task-progress、#36 frontend-agent-context-tools。
 
-**Settings / 治理 UI 与打包**：#19 build-packaging、#46 frontend-settings-skills-ui、#47 frontend-settings-hooks-ui、#48 frontend-settings-mcp-ui。
+**Settings / 治理 UI 与打包**：#19 build-packaging、#46 frontend-settings-skills-ui、#47 frontend-settings-hooks-ui、#48 frontend-settings-mcp-ui、#49 frontend-settings-chat-tools-ui。
 
 ### 待实现 — 基础补齐（planned — 1 条）
 
 49. **frontend-settings-chat-tools-ui** — Chat 工具 UI：Settings 中新增 Chat Tools / ToolSettings 入口，展示可用 Chat 工具、启停状态、配置入口、空态与错误态。
 
-### 待实现 — Proma 1:1 复刻验收拆解（planned — 13 条）
+### 已完成 — Proma 1:1 复刻验收（done — 12 条）
 
-50. **proma-parity-shell-sidebar** — Shell / 左侧栏 parity：Agent Working / pinned 区域、未查看完成状态、工作区能力提示、折叠态细节、右侧面板显隐、窗口拖动/非拖动区域
-51. **proma-parity-tabs-workspace** — Tabs 工作区 parity：预览面板、拖拽重排、关闭确认、错误隔离、横向滚动体验、欢迎页/空态
-52. **proma-parity-chat-experience** — Chat 体验 parity：RichText 输入、工具栏布局、Thinking、ContextDivider、ScrollMinimap、Agent 推荐入口
-53. **proma-parity-chat-tools** — Chat 工具 parity：工具活动提示、工具块渲染、Settings ToolSettings 入口
-54. **proma-parity-agent-interrupts** — Agent 审批 parity：Permission / AskUser / ExitPlanMode 三类中断 UI 和回传闭环
-55. **proma-parity-agent-tool-renderers** — Agent 工具渲染 parity：read/write/edit/bash/search 等工具结果分型渲染
-56. **proma-parity-agent-task-context** — Agent 任务、Context 与 runtime 选择 parity：TaskProgressCard、BackgroundTasksPanel、ContextUsageBadge、真实 token/context 来源、slash skills/MCP runtime 选择器
-57. **proma-parity-agent-file-context** — Agent 单工作区文件上下文 parity：文件树、目录添加、文件 mention、slash 文件选择、SidePanel 联动
-58. **proma-parity-search-navigation** — Search parity：标题搜索、高亮、IME、键盘导航、打开结果回填、归档标识
-59. **proma-parity-settings-console** — Settings parity：Dialog 外观、左导航、脏状态保护、UI 原语、Provider/Prompt/Agent/Chat Tools tab
-60. **proma-parity-core-shortcuts** — 内建快捷键 parity：设置、新建、侧栏、模式切换、搜索、聚焦、清上下文、停止、关 tab
-61. **proma-parity-agent-session-workbench** — Agent 会话工作台 parity：AgentHeader、Agent 会话保存/切换/搜索/回填、Chat/Agent 会话隔离、no-response/timeout/retry 状态
-62. **proma-parity-evidence-pass** — Proma parity 证据收口：Proma 基线截图/录屏、j-gui 对照截图/录屏、逐项验收记录
+50. **proma-parity-shell-sidebar** ✅ 51. **proma-parity-tabs-workspace** ✅ 52. **proma-parity-chat-experience** ✅
+53. **proma-parity-chat-tools** ✅ 54. **proma-parity-agent-interrupts** ✅ 55. **proma-parity-agent-tool-renderers** ✅
+56. **proma-parity-agent-task-context** ✅ 57. **proma-parity-agent-file-context** ✅ 58. **proma-parity-search-navigation** ✅
+59. **proma-parity-settings-console** ✅ 60. **proma-parity-core-shortcuts** ✅ 61. **proma-parity-agent-session-workbench** ✅
+
+### 待收口 — 证据汇总（in-progress — 1 条）
+
+62. **proma-parity-evidence-pass** — Proma parity 证据收口：Proma 基线截图/录屏、j-gui 对照截图/录屏、逐项验收记录（前置 12 条已全部完成）
 
 > 已 drop：原 #15 `frontend-permission` 被 #34 `frontend-agent-interrupt-ui` 取代（后者覆盖全部三种中断 Banner）
 

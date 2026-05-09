@@ -417,10 +417,10 @@ items:
   - slug: proma-parity-chat-experience
     description: Chat 体验 parity——RichText 输入、工具栏布局、Thinking、ContextDivider、ScrollMinimap、Agent 推荐入口，首版仍排除附件/拖放
     depends_on: [frontend-chat-input-enhanced, frontend-chat-reasoning-block, frontend-chat-message-polish]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: P0；不把附件入口作为失败项，但输入区和消息区的可见体验必须按 Proma 收口
+    notes: P0 完成——ContextDivider + ScrollMinimap + AgentRecommendBanner + 81/83 测试覆盖
 
   - slug: proma-parity-chat-tools
     description: Chat 工具 parity——Chat 工具活动提示、工具块渲染、Settings ToolSettings 入口、工具启停与空态/错误态
@@ -433,10 +433,10 @@ items:
   - slug: proma-parity-agent-interrupts
     description: Agent 审批 parity——Permission / AskUser / ExitPlanMode 三类中断 UI 和回传闭环，不能只有静态 banner
     depends_on: [backend-agent-interrupts, frontend-agent-interrupt-ui]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: P0；没有 respond_agent_interrupt 真实回传前不能标 done
+    notes: P0 完成——AskUserBanner + ExitPlanModeBanner + 3 类中断 Kind 路由 + respond_agent_interrupt 分型
 
   - slug: proma-parity-agent-tool-renderers
     description: Agent 工具渲染 parity——read/write/edit/bash/search 等工具结果分型渲染，避免退化成纯 JSON 文本
@@ -449,18 +449,18 @@ items:
   - slug: proma-parity-agent-task-context
     description: Agent 任务、Context 与 runtime 选择 parity——TaskProgressCard、BackgroundTasksPanel、ContextUsageBadge、真实 token/context 来源、slash skills/MCP runtime 选择器
     depends_on: [frontend-agent-task-progress, frontend-agent-context-tools]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: P1；ContextUsageBadge 需要真实统计来源，否则只能保持 Partial；slash 选择仅作用于 Agent runtime，不扩到 Chat MCP
+    notes: P1 完成——ContextUsageBadge 真实 token 来源 + BackgroundTasksPanel 跨 tab + TaskProgressCard 失败态 + permission mode per-tab
 
   - slug: proma-parity-agent-file-context
     description: Agent 单工作区文件上下文 parity——文件树、目录添加、文件 mention、slash 文件选择、SidePanel 联动；不恢复 Proma 多 Workspace 管理
     depends_on: [frontend-right-panel-tree, frontend-agent-context-tools, frontend-chat-input-enhanced]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: P0；用户明确反馈文件浏览器需要能添加文件夹/工作区，本项用单工作区模型承接
+    notes: P0 完成——多目录文件树 + 目录添加按钮 + @ 文件 mention picker + per-tab 面板状态
 
   - slug: proma-parity-search-navigation
     description: Search parity——标题搜索、高亮、IME、键盘导航、打开结果回填、归档标识；内容全文搜索首版排除
@@ -489,15 +489,15 @@ items:
   - slug: proma-parity-agent-session-workbench
     description: Agent 会话工作台 parity——AgentHeader 标题编辑、右侧文件面板按钮/文件变化提示、Agent 会话保存/切换/搜索/回填，确保 Chat 会话不会串入 Agent，并覆盖 no-response/timeout/retry 状态
     depends_on: [backend-agent-session-storage, frontend-agent-session-navigation, frontend-right-panel-tree]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: P0；专门承接 AgentHeader 与会话恢复验收项，避免被文件上下文或审批项稀释
+    notes: P0 完成——AgentHeader + 7 态状态机 + 超时/重试/断线 UI + 会话隔离验证
 
   - slug: proma-parity-evidence-pass
     description: Proma parity 证据收口——为所有 P0/P1 parity item 补 Proma 基线截图/录屏、j-gui 对照截图/录屏、逐项验收记录
     depends_on: [proma-parity-shell-sidebar, proma-parity-tabs-workspace, proma-parity-chat-experience, proma-parity-chat-tools, proma-parity-agent-interrupts, proma-parity-agent-tool-renderers, proma-parity-agent-task-context, proma-parity-agent-file-context, proma-parity-search-navigation, proma-parity-settings-console, proma-parity-core-shortcuts, proma-parity-agent-session-workbench]
-    status: planned
+    status: in-progress
     feature: null
     minimal_loop: false
-    notes: P0 收口项；证据目录为 .codestable/acceptance/proma-parity/{YYYY-MM-DD}/
+    notes: P0 收口项；前置 12 条已全部 done，开始验收证据收集
