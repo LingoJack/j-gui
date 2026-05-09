@@ -11,6 +11,8 @@ import {
 import {
   agentMessagesByTabAtom,
   agentStreamingByTabAtom,
+  agentTokensByTabAtom,
+  type AgentState,
 } from "@/atoms/sessions";
 import { toast } from "@/atoms/toast";
 
@@ -21,9 +23,12 @@ export interface InterruptState {
   toolInput: string;
 }
 
-export function useAgentEngine() {
+const DEFAULT_TIMEOUT_MS = 15000;
+
+export function useAgentEngine(timeoutMs: number = DEFAULT_TIMEOUT_MS) {
   const setMessagesByTab = useSetAtom(agentMessagesByTabAtom);
   const setStreamingByTab = useSetAtom(agentStreamingByTabAtom);
+  const setTokensByTab = useSetAtom(agentTokensByTabAtom);
 
   const engineStartedRef = useRef(false);
   const engineRunIdRef = useRef(0);
@@ -32,6 +37,45 @@ export function useAgentEngine() {
   const streamingRef = useRef(false);
   const activeTabIdRef = useRef<string | null>(null);
   const onInterruptRef = useRef<((int: InterruptState | null) => void) | null>(null);
+
+  // #61 State machine refs
+  const onStateChangeRef = useRef<((state: AgentState | null) => void) | null>(null);
+  const stateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stateCycleHadContentRef = useRef(false);
+
+  const clearSendTimeout = useCallback(() => {
+    if (stateTimeoutRef.current) {
+      clearTimeout(stateTimeoutRef.current);
+      stateTimeoutRef.current = null;
+    }
+  }, []);
+
+  const resetSendCycle = useCallback(() => {
+    clearSendTimeout();
+    stateCycleHadContentRef.current = false;
+  }, [clearSendTimeout]);
+
+  /**
+   * beginSendCycle — called at the start of every user send.
+   * Resets all send-cycle tracking and transitions → `starting`.
+   */
+  const beginSendCycle = useCallback(() => {
+    resetSendCycle();
+    onStateChangeRef.current?.("starting");
+  }, [resetSendCycle]);
+
+  /**
+   * afterMessageSent — called after the engine is ready and the message
+   * has been dispatched. Transitions → `waiting_first_event` and starts
+   * the configurable timeout.
+   */
+  const afterMessageSent = useCallback(() => {
+    onStateChangeRef.current?.("waiting_first_event");
+    stateCycleHadContentRef.current = false;
+    stateTimeoutRef.current = setTimeout(() => {
+      onStateChangeRef.current?.("timeout");
+    }, timeoutMs);
+  }, [timeoutMs]);
 
   const pushError = useCallback(
     (message: string, tabId: string) => {
@@ -103,6 +147,12 @@ export function useAgentEngine() {
                 ],
               };
             });
+            // #61 State transition: first content → streaming
+            if (!stateCycleHadContentRef.current) {
+              stateCycleHadContentRef.current = true;
+              clearSendTimeout();
+              onStateChangeRef.current?.("streaming");
+            }
             break;
           }
           case "toolUse": {
@@ -124,6 +174,12 @@ export function useAgentEngine() {
                 },
               ],
             }));
+            // #61 State transition: first content → streaming
+            if (!stateCycleHadContentRef.current) {
+              stateCycleHadContentRef.current = true;
+              clearSendTimeout();
+              onStateChangeRef.current?.("streaming");
+            }
             break;
           }
           case "interrupt":
@@ -151,6 +207,12 @@ export function useAgentEngine() {
               toolName: msg.data.toolName,
               toolInput: msg.data.toolInput,
             });
+            // #61 State transition: first interrupt → streaming
+            if (!stateCycleHadContentRef.current) {
+              stateCycleHadContentRef.current = true;
+              clearSendTimeout();
+              onStateChangeRef.current?.("streaming");
+            }
             break;
           case "toolResult": {
             setMessagesByTab((prev) => ({
@@ -184,6 +246,13 @@ export function useAgentEngine() {
                     : m,
               ),
             }));
+            setTokensByTab((prev) => ({
+              ...prev,
+              [tabId]: msg.data.totalTokens,
+            }));
+            // #61 State transition: done with/without content
+            clearSendTimeout();
+            onStateChangeRef.current?.(stateCycleHadContentRef.current ? "idle_done" : "empty_done");
             setStreamingByTab((prev) => ({ ...prev, [tabId]: false }));
             streamingRef.current = false;
             onInterruptRef.current?.(null);
@@ -191,6 +260,9 @@ export function useAgentEngine() {
           case "error":
             pushError(msg.data.message, tabId);
             toast(msg.data.message, "error");
+            // #61 State transition: error → disconnected
+            clearSendTimeout();
+            onStateChangeRef.current?.("disconnected");
             setStreamingByTab((prev) => ({ ...prev, [tabId]: false }));
             streamingRef.current = false;
             onInterruptRef.current?.(null);
@@ -206,26 +278,29 @@ export function useAgentEngine() {
         }
         engineStartedRef.current = false;
         boundSessionIdRef.current = null;
+        resetSendCycle();
+        onStateChangeRef.current?.("disconnected");
         if (tabId) {
           setStreamingByTab((prev) => ({ ...prev, [tabId]: false }));
         }
         throw e;
       }
     },
-    [pushError, setMessagesByTab, setStreamingByTab],
+    [pushError, setMessagesByTab, setStreamingByTab, setTokensByTab, resetSendCycle, clearSendTimeout],
   );
 
   const stopEngine = useCallback(() => {
     engineRunIdRef.current += 1;
     const tabId = ownerTabIdRef.current;
     stopAgent().catch(() => {});
+    resetSendCycle();
     engineStartedRef.current = false;
     boundSessionIdRef.current = null;
     streamingRef.current = false;
     if (tabId) {
       setStreamingByTab((prev) => ({ ...prev, [tabId]: false }));
     }
-  }, [setStreamingByTab]);
+  }, [setStreamingByTab, resetSendCycle]);
 
   const handleInterrupt = useCallback(
     async (
@@ -279,5 +354,10 @@ export function useAgentEngine() {
     sendMessage: sendAgentMessage,
     pushError,
     onInterruptRef,
+    // #61 State machine API
+    onStateChangeRef,
+    beginSendCycle,
+    afterMessageSent,
+    resetSendCycle,
   };
 }

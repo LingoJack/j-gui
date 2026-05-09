@@ -56,6 +56,42 @@ type MessageMap = Record<string, Message[]>;
 type StreamingMap = Record<string, boolean>;
 type DraftMap = Record<string, string>;
 
+export const permissionModeByTabAtom = atom<Record<string, string>>({});
+
+export const agentTokensByTabAtom = atom<Record<string, number>>({});
+
+// #61 Agent state machine (section 1.5)
+export type AgentState =
+  | "starting"
+  | "waiting_first_event"
+  | "streaming"
+  | "idle_done"
+  | "empty_done"
+  | "timeout"
+  | "disconnected";
+
+export const agentStateByTabAtom = atom<Record<string, AgentState>>({});
+
+export const agentStateAtom = atom(
+  (get) => {
+    const activeTabId = get(activeTabIdAtom);
+    if (!activeTabId) return null;
+    return get(agentStateByTabAtom)[activeTabId] ?? null;
+  },
+  (get, set, value: AgentState | null) => {
+    const activeTabId = get(activeTabIdAtom);
+    if (!activeTabId) return;
+    set(agentStateByTabAtom, (prev) => {
+      if (value === null) {
+        const next = { ...prev };
+        delete next[activeTabId];
+        return next;
+      }
+      return { ...prev, [activeTabId]: value };
+    });
+  },
+);
+
 export const chatMessagesByTabAtom = atom<MessageMap>({});
 export const chatStreamingByTabAtom = atom<StreamingMap>({});
 

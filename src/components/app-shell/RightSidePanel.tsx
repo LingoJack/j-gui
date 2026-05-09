@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, memo } from "react";
 import { useAtom } from "jotai";
-import { rightPanelOpenAtom } from "@/atoms/sidebar";
+import { rightPanelOpenAtom, rightPanelDirsAtom } from "@/atoms/sidebar";
 import {
   FolderOpen,
   File,
@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Loader2,
   X,
+  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,16 @@ interface TreeNode {
 // --- Helpers ---
 
 const IGNORED_DIRS = new Set([".git", "node_modules", "target"]);
+
+function normalizePath(p: string): string {
+  return p.replace(/\\/g, "/");
+}
+
+function dirName(dirPath: string): string {
+  const normalized = normalizePath(dirPath).replace(/\/+$/, "");
+  const parts = normalized.split("/");
+  return parts[parts.length - 1] || dirPath;
+}
 
 function formatSize(bytes: number | undefined): string {
   if (bytes === undefined) return "";
@@ -95,24 +106,7 @@ async function loadDirEntries(dirPath: string): Promise<TreeNode[]> {
   return nodes;
 }
 
-// --- Breadcrumb ---
-
-interface BreadcrumbSegment {
-  label: string;
-  path: string;
-}
-
-function buildBreadcrumbs(currentPath: string): BreadcrumbSegment[] {
-  if (currentPath === ".") return [{ label: "~", path: "." }];
-  const parts = currentPath.split("/").filter(Boolean);
-  const segments = parts.map((part, i) => ({
-    label: part,
-    path: parts.slice(0, i + 1).join("/"),
-  }));
-  return [{ label: "~", path: "." }, ...segments];
-}
-
-// --- Tree node component (memo'd to avoid re-rendering unaffected nodes) ---
+// --- Tree node component (memo'd for performance) ---
 
 interface TreeNodeProps {
   node: TreeNode;
@@ -163,78 +157,151 @@ const TreeNodeItem = memo(function TreeNodeItem({ node, depth, onToggle }: TreeN
   );
 });
 
+// --- Root directory bar (with remove button) ---
+
+interface RootBarProps {
+  name: string;
+  path: string;
+  expanded: boolean;
+  loading: boolean;
+  onToggle: (path: string) => void;
+  onRemove: (path: string) => void;
+}
+
+const RootBar = memo(function RootBar({ name, path, expanded, loading, onToggle, onRemove }: RootBarProps) {
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium hover:bg-accent cursor-pointer select-none border-b border-border/50 group">
+      {loading ? (
+        <Loader2 size={12} className="animate-spin shrink-0" />
+      ) : expanded ? (
+        <ChevronDown size={12} className="shrink-0" onClick={() => onToggle(path)} />
+      ) : (
+        <ChevronRight size={12} className="shrink-0" onClick={() => onToggle(path)} />
+      )}
+      <Folder size={14} className="text-blue-500 shrink-0" onClick={() => onToggle(path)} />
+      <span className="truncate flex-1" onClick={() => onToggle(path)}>{name}</span>
+      <button
+        onClick={(e) => { e.stopPropagation(); onRemove(path); }}
+        className="p-0.5 rounded hover:bg-muted text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+        title="移除目录"
+      >
+        <X size={12} />
+      </button>
+    </div>
+  );
+});
+
 // --- Component ---
 
 export default function RightSidePanel() {
   const [, setOpen] = useAtom(rightPanelOpenAtom);
-  const [tree, setTree] = useState<TreeNode[]>([]);
-  const [currentPath, setCurrentPath] = useState(".");
-  const [loading, setLoading] = useState(true);
+  const [dirs, setDirs] = useAtom(rightPanelDirsAtom);
+  const [roots, setRoots] = useState<TreeNode[]>([]);
 
-  const loadRoot = useCallback(async (dirPath: string) => {
-    setLoading(true);
-    try {
-      const nodes = await loadDirEntries(dirPath);
-      setTree(nodes);
-    } catch {
-      setTree([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // Sync root tree nodes from the dirs array
   useEffect(() => {
-    loadRoot(currentPath);
-  }, [currentPath, loadRoot]);
+    setRoots(
+      dirs.map((dirPath) => {
+        const normalized = normalizePath(dirPath);
+        return {
+          name: dirName(normalized),
+          path: normalized,
+          isDir: true,
+          children: undefined,
+          expanded: false,
+          loaded: false,
+          loading: false,
+        };
+      }),
+    );
+  }, [dirs]);
 
-  const toggleNode = useCallback((nodePath: string) => {
-    setTree((prev) => {
-      const findAndToggle = (nodes: TreeNode[]): TreeNode[] =>
-        nodes.map((node) => {
-          if (node.path === nodePath) {
-            if (!node.isDir) return node;
-            const newExpanded = !node.expanded;
+  const handleAddDir = useCallback(async () => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({ directory: true, multiple: false });
+      if (!selected) return;
+      const path = normalizePath(typeof selected === "string" ? selected : selected[0]);
+      if (path && !dirs.includes(path)) {
+        setDirs((prev) => [...prev, path]);
+      }
+    } catch {
+      // dialog cancelled or unavailable
+    }
+  }, [dirs, setDirs]);
 
-            if (newExpanded && !node.loaded) {
-              // Fire async load, update via setTree when complete
-              loadDirEntries(node.path).then((children) => {
-                setTree((p) =>
-                  updateTreeNode(p, nodePath, {
-                    children,
-                    loaded: true,
-                    loading: false,
-                  }),
-                );
-              });
-              return { ...node, expanded: true, loading: true };
+  const handleRemoveDir = useCallback(
+    (path: string) => {
+      setDirs((prev) => prev.filter((d) => d !== path));
+    },
+    [setDirs],
+  );
+
+  const refreshAll = useCallback(() => {
+    // Reset all roots to unloaded state so they reload on next expand
+    setRoots((prev) =>
+      prev.map((r) => ({
+        ...r,
+        expanded: false,
+        loaded: false,
+        loading: false,
+        children: undefined,
+      })),
+    );
+  }, []);
+
+  const toggleNode = useCallback(
+    (nodePath: string) => {
+      setRoots((prev) => {
+        const findAndToggle = (nodes: TreeNode[]): TreeNode[] =>
+          nodes.map((node) => {
+            if (node.path === nodePath) {
+              if (!node.isDir) return node;
+              const newExpanded = !node.expanded;
+
+              if (newExpanded && !node.loaded) {
+                loadDirEntries(node.path).then((children) => {
+                  setRoots((p) =>
+                    updateTreeNode(p, nodePath, {
+                      children,
+                      loaded: true,
+                      loading: false,
+                    }),
+                  );
+                });
+                return { ...node, expanded: true, loading: true };
+              }
+
+              return { ...node, expanded: newExpanded };
             }
+            if (node.children) {
+              return { ...node, children: findAndToggle(node.children) };
+            }
+            return node;
+          });
 
-            return { ...node, expanded: newExpanded };
-          }
-          if (node.children) {
-            return { ...node, children: findAndToggle(node.children) };
-          }
-          return node;
-        });
-
-      return findAndToggle(prev);
-    });
-  }, []);
-
-  const navigateTo = useCallback((path: string) => {
-    setCurrentPath(path);
-  }, []);
-
-  const breadcrumbs = buildBreadcrumbs(currentPath);
+        return findAndToggle(prev);
+      });
+    },
+    [],
+  );
 
   return (
     <aside className="w-[260px] flex flex-col h-full bg-card border-l border-border shrink-0">
       {/* Header */}
       <div className="flex items-center justify-between h-10 px-3 border-b border-border">
         <span className="text-sm font-medium">文件浏览器</span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           <button
-            onClick={() => loadRoot(currentPath)}
+            onClick={handleAddDir}
+            className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-accent text-muted-foreground text-xs"
+            title="添加目录"
+          >
+            <Plus size={14} />
+            添加
+          </button>
+          <button
+            onClick={refreshAll}
             className="p-1 rounded hover:bg-accent text-muted-foreground"
             title="刷新"
           >
@@ -249,40 +316,29 @@ export default function RightSidePanel() {
         </div>
       </div>
 
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-border overflow-x-auto whitespace-nowrap">
-        {breadcrumbs.map((seg, i) => (
-          <div key={seg.path} className="flex items-center gap-0.5 shrink-0">
-            {i > 0 && <ChevronRight size={10} className="shrink-0 text-muted-foreground/50" />}
-            <button
-              onClick={() => navigateTo(seg.path)}
-              className={cn(
-                "text-xs hover:text-foreground hover:underline truncate max-w-[100px]",
-                i === breadcrumbs.length - 1
-                  ? "text-foreground font-medium"
-                  : "text-muted-foreground",
-              )}
-            >
-              {seg.label}
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* File tree */}
+      {/* Multi-root file tree */}
       <div className="flex-1 overflow-y-auto py-1">
-        {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 size={20} className="animate-spin text-muted-foreground" />
-          </div>
-        ) : tree.length === 0 ? (
+        {roots.length === 0 ? (
           <div className="flex flex-col items-center justify-center text-muted-foreground gap-2 py-8">
             <FolderOpen size={24} className="opacity-40" />
-            <p className="text-xs">空目录</p>
+            <p className="text-xs">点击"添加"添加工作区目录</p>
           </div>
         ) : (
-          tree.map((node) => (
-            <TreeNodeItem key={node.path} node={node} depth={0} onToggle={toggleNode} />
+          roots.map((root) => (
+            <div key={root.path}>
+              <RootBar
+                name={root.name}
+                path={root.path}
+                expanded={root.expanded}
+                loading={root.loading}
+                onToggle={toggleNode}
+                onRemove={handleRemoveDir}
+              />
+              {root.expanded &&
+                root.children?.map((child) => (
+                  <TreeNodeItem key={child.path} node={child} depth={0} onToggle={toggleNode} />
+                ))}
+            </div>
           ))
         )}
       </div>

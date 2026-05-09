@@ -7,6 +7,7 @@ import {
   sessionsAtom,
 } from "@/atoms/sessions";
 import { tabsAtom, activeTabIdAtom } from "@/atoms/tabs";
+import { rightPanelByTabAtom, rightPanelOpenAtom, rightPanelDirsAtom } from "@/atoms/sidebar";
 
 describe("Sidebar parity — session isolation", () => {
   let store: ReturnType<typeof createStore>;
@@ -53,18 +54,60 @@ describe("Sidebar parity — session isolation", () => {
     expect(sessions.length).toBe(1);
   });
 
-  it("right panel state is independent per tab", () => {
-    // This tests the atom isolation — right panel should be per-tab
+  it("right panel open state is independent per tab", () => {
     store.set(tabsAtom, [
       { id: "t1", type: "chat", title: "Chat", sessionId: null },
       { id: "t2", type: "agent", title: "Agent", sessionId: null },
     ]);
 
-    // Switch between tabs — panel state should not carry over
-    store.set(activeTabIdAtom, "t1");
-    expect(store.get(activeTabIdAtom)).toBe("t1");
-
+    // Open panel in agent tab
     store.set(activeTabIdAtom, "t2");
-    expect(store.get(activeTabIdAtom)).toBe("t2");
+    store.set(rightPanelOpenAtom, true);
+    expect(store.get(rightPanelOpenAtom)).toBe(true);
+
+    // Switch to chat tab — panel should appear closed (different tab)
+    store.set(activeTabIdAtom, "t1");
+    expect(store.get(rightPanelOpenAtom)).toBe(false);
+
+    // Switch back to agent tab — state preserved
+    store.set(activeTabIdAtom, "t2");
+    expect(store.get(rightPanelOpenAtom)).toBe(true);
+  });
+
+  it("right panel dirs are isolated per tab", () => {
+    store.set(tabsAtom, [
+      { id: "t1", type: "agent", title: "Agent 1", sessionId: null },
+      { id: "t2", type: "agent", title: "Agent 2", sessionId: null },
+    ]);
+
+    // Add dirs to tab t1
+    store.set(activeTabIdAtom, "t1");
+    store.set(rightPanelDirsAtom, ["/path/to/proj1", "/path/to/proj2"]);
+    expect(store.get(rightPanelDirsAtom)).toEqual(["/path/to/proj1", "/path/to/proj2"]);
+
+    // Switch to t2 — different dirs
+    store.set(activeTabIdAtom, "t2");
+    expect(store.get(rightPanelDirsAtom)).toEqual([]);
+
+    // Add dir to t2
+    store.set(rightPanelDirsAtom, ["/path/to/other"]);
+    expect(store.get(rightPanelDirsAtom)).toEqual(["/path/to/other"]);
+
+    // Switch back to t1 — dirs preserved
+    store.set(activeTabIdAtom, "t1");
+    expect(store.get(rightPanelDirsAtom)).toEqual(["/path/to/proj1", "/path/to/proj2"]);
+  });
+
+  it("rightPanelByTabAtom stores combined state per tab", () => {
+    store.set(tabsAtom, [
+      { id: "t1", type: "agent", title: "Agent 1", sessionId: null },
+    ]);
+
+    store.set(activeTabIdAtom, "t1");
+    store.set(rightPanelOpenAtom, true);
+    store.set(rightPanelDirsAtom, ["/workspace"]);
+
+    const state = store.get(rightPanelByTabAtom);
+    expect(state["t1"]).toEqual({ open: true, dirs: ["/workspace"] });
   });
 });

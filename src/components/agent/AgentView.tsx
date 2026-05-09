@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   useAgentEngine,
@@ -14,20 +14,24 @@ import {
   currentSessionIdAtom,
   agentSessionsListAtom,
   sessionTitleOverridesAtom,
+  permissionModeByTabAtom,
+  agentTokensByTabAtom,
+  agentStateAtom,
   deriveSessionTitle,
   type Message,
+  type AgentState,
 } from "@/atoms/sessions";
 import { activeTabAtom, tabsAtom } from "@/atoms/tabs";
 import { rightPanelOpenAtom } from "@/atoms/sidebar";
 import { toast } from "@/atoms/toast";
 import { createAgentSession } from "@/lib/tauri";
-import { PanelRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import AgentHeader from "./AgentHeader";
 import AgentMessages from "./AgentMessages";
 import PermissionBanner from "./PermissionBanner";
 import AskUserBanner from "./AskUserBanner";
 import ExitPlanModeBanner from "./ExitPlanModeBanner";
 import ChatInput from "@/components/chat/ChatInput";
+import ContextUsageBadge from "./ContextUsageBadge";
 
 export default function AgentView() {
   const [streaming] = useAtom(agentStreamingAtom);
@@ -43,9 +47,12 @@ export default function AgentView() {
   const activeTab = useAtomValue(activeTabAtom);
   const setTabs = useSetAtom(tabsAtom);
   const [agentStarted, setAgentStarted] = useState(false);
-  const [permissionMode, setPermissionMode] = useState("bypassPermissions");
+  const [permissionModeByTab, setPermissionModeByTab] = useAtom(permissionModeByTabAtom);
+  const tokensByTab = useAtomValue(agentTokensByTabAtom);
+  const [agentState, setAgentState] = useAtom(agentStateAtom);
   const [interrupt, setInterrupt] = useState<InterruptState | null>(null);
   const [respondingInterruptId, setRespondingInterruptId] = useState<string | null>(null);
+  const lastSentContentRef = useRef<string>("");
 
   const engine = useAgentEngine();
   const activeTabId = activeTab?.id ?? null;
@@ -54,6 +61,16 @@ export default function AgentView() {
   useEffect(() => {
     engine.activeTabIdRef.current = activeTabId;
   }, [activeTabId, engine.activeTabIdRef]);
+
+  // #61 Listen for state machine changes from engine
+  useEffect(() => {
+    engine.onStateChangeRef.current = (state: AgentState | null) => {
+      setAgentState(state);
+    };
+    return () => {
+      engine.onStateChangeRef.current = null;
+    };
+  }, [engine.onStateChangeRef, setAgentState]);
 
   // Listen for interrupts from engine
   useEffect(() => {
@@ -92,13 +109,14 @@ export default function AgentView() {
       setAgentStarted(false);
       setInterrupt(null);
       setRespondingInterruptId(null);
+      setAgentState(null);
       if (ownerTabId) {
         setStreamingByTab((prev) => ({ ...prev, [ownerTabId]: false }));
       }
       engine.streamingRef.current = false;
       engine.ownerTabIdRef.current = activeTabId;
     }
-  }, [activeTabId, currentSessionId, engine, setStreamingByTab]);
+  }, [activeTabId, currentSessionId, engine, setStreamingByTab, setAgentState]);
 
   const handleInterruptDecision = useCallback(
     async (kind: string, response: Record<string, unknown>) => {
@@ -139,25 +157,33 @@ export default function AgentView() {
   }, [handleInterruptDecision, interrupt, respondingInterruptId]);
 
   const startEngine = useCallback(async (sessionId: string) => {
+    const tabId = activeTabId;
+    const mode = tabId ? (permissionModeByTab[tabId] ?? "bypassPermissions") : "bypassPermissions";
     try {
-      await engine.startEngine(sessionId, permissionMode);
+      await engine.startEngine(sessionId, mode);
       setAgentStarted(true);
     } catch (e) {
       engine.engineStartedRef.current = false;
       engine.boundSessionIdRef.current = null;
       setRespondingInterruptId(null);
-      const tabId = engine.activeTabIdRef.current;
-      if (tabId) {
-        setStreamingByTab((prev) => ({ ...prev, [tabId]: false }));
+      const tid = engine.activeTabIdRef.current;
+      if (tid) {
+        setStreamingByTab((prev) => ({ ...prev, [tid]: false }));
       }
       toast(`启动 Agent 失败: ${String(e)}`, "error");
     }
-  }, [engine, permissionMode, setStreamingByTab]);
+  }, [activeTabId, engine, permissionModeByTab, setStreamingByTab]);
 
+  // #61 handleSend — integrates state machine via beginSendCycle/afterMessageSent
   const handleSend = useCallback(
     async (content: string) => {
       const tabId = engine.activeTabIdRef.current;
       if (!tabId) return;
+
+      // Start the state machine cycle
+      engine.beginSendCycle();
+      lastSentContentRef.current = content;
+
       let sessionId = currentSessionId;
       if (!sessionId) {
         sessionId = await createAgentSession();
@@ -213,6 +239,9 @@ export default function AgentView() {
       setStreamingByTab((prev) => ({ ...prev, [tabId]: true }));
       engine.streamingRef.current = true;
 
+      // #61 Transition to waiting_first_event, start timeout
+      engine.afterMessageSent();
+
       try {
         await engine.sendMessage(content);
       } catch (e) {
@@ -221,11 +250,59 @@ export default function AgentView() {
         toast(msg, "error");
         setStreamingByTab((prev) => ({ ...prev, [tabId]: false }));
         engine.streamingRef.current = false;
+        setAgentState("disconnected");
       }
     },
     [activeTab, agentStarted, currentSessionId, engine, setAgentSessions,
      setCurrentSessionId, setDrafts, setMessages, setMessagesByTab,
-     setSessionTitleOverrides, setStreamingByTab, setTabs, startEngine],
+     setSessionTitleOverrides, setStreamingByTab, setTabs, startEngine, setAgentState],
+  );
+
+  // #61 Retry: re-send last message content
+  const handleRetry = useCallback(() => {
+    if (!lastSentContentRef.current) return;
+    // For timeout/disconnected, clean up the engine so handleSend restarts it.
+    // For empty_done the engine is already idle.
+    if (agentState === "timeout" || agentState === "disconnected") {
+      engine.stopEngine();
+    }
+    handleSend(lastSentContentRef.current);
+  }, [agentState, engine, handleSend]);
+
+  // #61 Stop: interrupt the current engine and clear state
+  const handleStop = useCallback(() => {
+    engine.stopEngine();
+    setAgentState(null);
+  }, [engine, setAgentState]);
+
+  // #61 Resolve the title via sessionTitleOverridesAtom
+  const [titleOverrides] = useAtom(sessionTitleOverridesAtom);
+  const resolvedTitle = currentSessionId
+    ? titleOverrides[currentSessionId] || "Agent"
+    : "Agent";
+
+  const permissionMode = activeTabId
+    ? permissionModeByTab[activeTabId] ?? "bypassPermissions"
+    : "bypassPermissions";
+
+  const handlePermissionModeChange = useCallback(
+    (mode: string) => {
+      if (activeTabId) {
+        setPermissionModeByTab((prev) => ({ ...prev, [activeTabId]: mode }));
+      }
+    },
+    [activeTabId, setPermissionModeByTab],
+  );
+
+  const handleTitleChange = useCallback(
+    (newTitle: string) => {
+      if (!currentSessionId) return;
+      setSessionTitleOverrides((prev) => ({ ...prev, [currentSessionId]: newTitle }));
+      setAgentSessions((prev) =>
+        prev.map((s) => (s.id === currentSessionId ? { ...s, title: newTitle } : s)),
+      );
+    },
+    [currentSessionId, setAgentSessions, setSessionTitleOverrides],
   );
 
   const handleDraftChange = useCallback(
@@ -298,51 +375,93 @@ export default function AgentView() {
     }
   }, [interrupt, respondingInterruptId, handleInterruptDecision]);
 
+  // #61 State-dependent overlay
+  const stateOverlay = useMemo(() => {
+    switch (agentState) {
+      case "starting":
+        return (
+          <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground">
+            <div className="animate-spin w-4 h-4 border-2 border-border border-t-foreground rounded-full" />
+            <span className="text-sm">正在启动 Agent...</span>
+          </div>
+        );
+      case "waiting_first_event":
+        return (
+          <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground">
+            <div className="animate-spin w-4 h-4 border-2 border-border border-t-foreground rounded-full" />
+            <span className="text-sm">Agent 正在思考...</span>
+          </div>
+        );
+      case "timeout":
+        return (
+          <div className="flex items-center justify-center gap-2 py-4 px-4 bg-destructive/5 border-t border-border">
+            <span className="text-sm text-destructive font-medium">启动超时</span>
+            <button
+              onClick={handleRetry}
+              className="text-xs px-2 py-1 rounded bg-accent hover:bg-accent/80 text-foreground transition-colors"
+            >
+              重试
+            </button>
+            <button
+              onClick={handleStop}
+              className="text-xs px-2 py-1 rounded bg-accent hover:bg-accent/80 text-foreground transition-colors"
+            >
+              停止
+            </button>
+          </div>
+        );
+      case "empty_done":
+        return (
+          <div className="flex items-center justify-center gap-2 py-4 px-4 border-t border-border">
+            <span className="text-sm text-muted-foreground">Agent 未返回内容</span>
+            <button
+              onClick={handleRetry}
+              className="text-xs px-2 py-1 rounded bg-accent hover:bg-accent/80 text-foreground transition-colors"
+            >
+              重试
+            </button>
+          </div>
+        );
+      case "disconnected":
+        return (
+          <div className="flex items-center justify-center gap-2 py-4 px-4 bg-destructive/5 border-t border-border">
+            <span className="text-sm text-destructive font-medium">连接断开</span>
+            <button
+              onClick={handleRetry}
+              className="text-xs px-2 py-1 rounded bg-accent hover:bg-accent/80 text-foreground transition-colors"
+            >
+              重试
+            </button>
+          </div>
+        );
+      default:
+        return null;
+    }
+  }, [agentState, handleRetry, handleStop]);
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between h-10 px-4 border-b border-border shrink-0 gap-2">
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-sm font-medium">Agent</span>
-          <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            {config.providers[config.activeIndex]?.name || config.providers[config.activeIndex]?.model || "未配置"}
-          </span>
-        </div>
-        <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5">
-          {[
-            { value: "bypassPermissions", label: "Auto" },
-            { value: "default", label: "审批" },
-            { value: "plan", label: "计划" },
-          ].map(({ value, label }) => (
-            <button
-              key={value}
-              onClick={() => setPermissionMode(value)}
-              className={`px-2 py-0.5 text-[11px] rounded font-medium transition-colors ${
-                permissionMode === value
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={() => setRightPanelOpen((prev) => !prev)}
-          className={cn(
-            "p-1 rounded-md hover:bg-accent",
-            rightPanelOpen ? "text-foreground bg-accent" : "text-muted-foreground",
-          )}
-          title="切换文件浏览器"
-        >
-          <PanelRight size={14} />
-        </button>
-      </div>
+      <AgentHeader
+        sessionId={currentSessionId}
+        title={resolvedTitle}
+        providerLabel={config.providers[config.activeIndex]?.name || config.providers[config.activeIndex]?.model || "未配置"}
+        rightPanelOpen={rightPanelOpen}
+        onToggleRightPanel={() => setRightPanelOpen((prev) => !prev)}
+        onTitleChange={handleTitleChange}
+        permissionMode={permissionMode}
+        onPermissionModeChange={handlePermissionModeChange}
+      />
+      <ContextUsageBadge
+        totalTokens={activeTabId ? tokensByTab[activeTabId] : null}
+      />
       <AgentMessages />
+      {stateOverlay}
       {interruptBanner}
       <ChatInput
         onSend={handleSend}
         sendDisabled={streaming}
-        placeholder="输入消息... (@引用文件 / 调用Skills / # 调用MCP, Enter 发送)"
+        mode="agent"
+        placeholder="输入消息... (@引用文件, Enter 发送)"
         draft={drafts[activeTab?.id ?? ""] ?? ""}
         onDraftChange={handleDraftChange}
       />

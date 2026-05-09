@@ -27,6 +27,7 @@ import MainArea from "./MainArea";
 import RightSidePanel from "./RightSidePanel";
 import SearchDialog from "./SearchDialog";
 import SettingsDialog from "@/components/settings/SettingsDialog";
+import BackgroundTasksPanel from "@/components/agent/BackgroundTasksPanel";
 import ToastContainer from "@/components/ui/Toast";
 import { toast } from "@/atoms/toast";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -174,8 +175,11 @@ export default function AppShell() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background">
       <LeftSidebar onOpenSettings={() => setSettingsOpen(true)} />
-      <main className="flex-1 min-w-0">
-        <MainArea onOpenSettings={() => setSettingsOpen(true)} />
+      <main className="flex-1 min-w-0 flex flex-col">
+        <div className="flex-1 overflow-hidden">
+          <MainArea onOpenSettings={() => setSettingsOpen(true)} />
+        </div>
+        <BackgroundTasksPanel />
       </main>
       {activeTab?.type === "agent" && rightPanelOpen && <RightSidePanel />}
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
