@@ -345,7 +345,7 @@ export const listMcpServers = () =>
 export const getWorkspaceCapabilities = (workspaceSlug: string) =>
   tryInvoke<any>('get_workspace_capabilities', { workspaceSlug }, { mcpServers: [], skills: [] })
 export const getWorkspaceMcpConfig = (workspaceSlug: string) =>
-  tryInvoke<any>('get_workspace_mcp_config', { workspaceSlug }, { mcpServers: [] })
+  tryInvoke<any>('get_workspace_mcp_config', { workspaceSlug }, { servers: {} })
 export const saveWorkspaceMcpConfig = (workspaceSlug: string, config: any) =>
   tryInvoke('save_workspace_mcp_config', { workspaceSlug, config })
 export const testMcpServer = (name: string, entry: any) =>
@@ -437,8 +437,8 @@ export const getSystemPromptConfig = () => tryInvoke<any>('get_system_prompt_con
 export const createSystemPrompt = (input: any) => tryInvoke<any>('create_system_prompt', { input })
 export const updateSystemPrompt = (id: string, input: any) => tryInvoke<any>('update_system_prompt', { id, input })
 export const deleteSystemPrompt = (id: string) => tryInvoke('delete_system_prompt', { id })
-export const setDefaultPrompt = (promptId: string) => tryInvoke('set_default_prompt', { promptId })
-export const updateAppendSetting = (setting: any) => tryInvoke('update_append_setting', { setting })
+export const setDefaultPrompt = (prompt_id: string) => tryInvoke('set_default_prompt', { prompt_id })
+export const updateAppendSetting = (enabled: boolean) => tryInvoke('update_append_setting', { append_date_time_and_user_name: enabled })
 
 // ============================================================
 // Chat Tools

@@ -18,6 +18,7 @@ import { settingsTabAtom, settingsOpenAtom } from '@/atoms/settings-tab'
 import { appModeAtom } from '@/atoms/app-mode'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { AgentWorkspace } from '@proma/shared'
+import { invoke } from '@tauri-apps/api/core'
 
 // ===== Mock Data =====
 
@@ -75,16 +76,9 @@ const mockWorkspaceServers: Record<string, any> = {
 
 // ===== IPC Mock =====
 
-// We mock the full @tauri-apps/api/core module here to override the
-// global mock from setup.ts. Since vi.mock is hoisted, this takes
-// effect before any imports.
-const mockInvoke = vi.fn()
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: (...args: any[]) => mockInvoke(...args),
-  Channel: class {
-    onmessage: ((event: any) => void) | null = null
-  },
-}))
+// Use vi.mocked() on the globally mocked invoke from setup.ts
+// rather than redeclaring vi.mock, to avoid overriding the global mock.
+const mockInvoke = vi.mocked(invoke)
 
 function setupInvokeMocks(jCliServers: any[] = mockJCliServers, workspaceServers: Record<string, any> = mockWorkspaceServers): void {
   mockInvoke.mockImplementation((cmd: string, args?: any) => {

@@ -9,10 +9,8 @@
 
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { Plus, Plug, Pencil, Trash2, Sparkles, FolderOpen, MessageSquare, ShieldCheck, ChevronDown, ChevronRight, Brain, ImagePlus, Search, RefreshCw, Save, X, Globe, Terminal, Database } from 'lucide-react'
+import { Plus, Plug, Pencil, Trash2, Sparkles, FolderOpen, MessageSquare, ShieldCheck, Globe, Terminal, Database } from 'lucide-react'
 import { toast } from 'sonner'
-import Markdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -29,26 +27,34 @@ import {
   agentPendingPromptAtom,
   workspaceCapabilitiesVersionAtom,
 } from '@/atoms/agent-atoms'
-import { settingsTabAtom, settingsOpenAtom } from '@/atoms/settings-tab'
+import { settingsOpenAtom } from '@/atoms/settings-tab'
 import { appModeAtom } from '@/atoms/app-mode'
-import { chatToolsAtom } from '@/atoms/chat-tool-atoms'
 import type { McpServerEntry, SkillMeta, OtherWorkspaceSkillsGroup, WorkspaceMcpConfig } from '@proma/shared'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
 import { McpServerForm } from './McpServerForm'
+import { SkillListPanel } from './SkillListPanel'
+import { SkillDetailPanel } from './SkillDetailPanel'
+import { BuiltinAgentTools } from './BuiltinAgentTools'
+import { getSkillSourceType, getSkillSourceBadge, externalSkillSlug } from './skill-helpers'
 import * as ipc from '@/lib/ipc'
 
 // ===== Types =====
 
 type ViewMode = 'list' | 'create' | 'edit'
 
+interface JCliMcpServer {
+  name: string
+  transport: string
+  command?: string
+  args?: string[]
+  url?: string
+  env?: Record<string, string>
+  disabled: boolean
+}
+
 interface EditingServer {
   name: string
   entry: McpServerEntry
-}
-
-interface SkillGroup {
-  prefix: string
-  skills: SkillMeta[]
 }
 
 interface ExternalSkill {
@@ -56,96 +62,6 @@ interface ExternalSkill {
   description: string
   source: string
   dirPath: string
-}
-
-type SkillSourceType = 'workspace' | 'jcli' | 'global'
-
-function getSkillSourceType(source: string): SkillSourceType {
-  if (source === 'user' || source === 'project') return 'jcli'
-  if (source.startsWith('global:')) return 'global'
-  return 'workspace'
-}
-
-function getSkillSourceBadge(sourceType: SkillSourceType): { label: string; className: string } {
-  switch (sourceType) {
-    case 'jcli':
-      return { label: 'j-cli', className: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' }
-    case 'global':
-      return { label: 'global', className: 'bg-orange-500/10 text-orange-600 dark:text-orange-400' }
-    case 'workspace':
-      return { label: 'workspace', className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' }
-  }
-}
-
-function externalSkillSlug(dirPath: string): string {
-  return dirPath.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? 'unknown'
-}
-
-// ===== Helpers =====
-
-function groupSkillsByPrefix(skills: SkillMeta[]): SkillGroup[] {
-  const prefixMap = new Map<string, SkillMeta[]>()
-
-  for (const skill of skills) {
-    const dashIdx = skill.slug.indexOf('-')
-    const prefix = dashIdx > 0 ? skill.slug.slice(0, dashIdx) : ''
-    const key = prefix || skill.slug
-    const list = prefixMap.get(key) ?? []
-    list.push(skill)
-    prefixMap.set(key, list)
-  }
-
-  const groups: SkillGroup[] = []
-  const standalone: SkillMeta[] = []
-
-  for (const [prefix, list] of prefixMap) {
-    if (list.length >= 2) {
-      groups.push({ prefix, skills: list })
-    } else {
-      standalone.push(...list)
-    }
-  }
-
-  if (standalone.length > 0) {
-    groups.push({ prefix: '', skills: standalone })
-  }
-
-  return groups
-}
-
-function shortName(slug: string, prefix: string): string {
-  if (!prefix) return slug
-  return slug.startsWith(prefix + '-') ? slug.slice(prefix.length + 1) : slug
-}
-
-function extractSkillBody(content: string): string {
-  const match = content.match(/^---\s*\n[\s\S]*?\n---\s*\n([\s\S]*)$/)
-  return match?.[1] ?? content
-}
-
-function rebuildSkillMd(
-  originalContent: string,
-  updates: { name?: string; description?: string; body?: string },
-): string {
-  const fmMatch = originalContent.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/)
-  if (!fmMatch) return originalContent
-
-  let fmBlock = fmMatch[1] ?? ''
-  const currentBody = fmMatch[2] ?? ''
-
-  if (updates.name !== undefined) {
-    fmBlock = /^name:/m.test(fmBlock)
-      ? fmBlock.replace(/^name:.*$/m, `name: ${updates.name}`)
-      : `name: ${updates.name}\n${fmBlock}`
-  }
-  if (updates.description !== undefined) {
-    fmBlock = /^description:/m.test(fmBlock)
-      ? fmBlock.replace(/^description:.*$/m, `description: ${updates.description}`)
-      : `${fmBlock}\ndescription: ${updates.description}`
-  }
-
-  const newBody = updates.body !== undefined ? updates.body : currentBody
-  return `---\n${fmBlock}\n---\n${newBody}`
 }
 
 // ===== Main Component =====
@@ -174,7 +90,7 @@ export function AgentSettings(): React.ReactElement {
 
   // Data
   const [mcpConfig, setMcpConfig] = React.useState<WorkspaceMcpConfig>({ servers: {} })
-  const [jCliMcpServers, setJCliMcpServers] = React.useState<any[]>([])
+  const [jCliMcpServers, setJCliMcpServers] = React.useState<JCliMcpServer[]>([])
   const [skills, setSkills] = React.useState<SkillMeta[]>([])
   const [skillsDir, setSkillsDir] = React.useState('')
   const [jCliSkills, setJCliSkills] = React.useState<ExternalSkill[]>([])
@@ -187,6 +103,8 @@ export function AgentSettings(): React.ReactElement {
   const [updatingSkill, setUpdatingSkill] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [selectedSkillSlug, setSelectedSkillSlug] = React.useState<string | null>(null)
+
+  const importGenRef = React.useRef(0)
 
   const selectedSkill = skills.find((s) => s.slug === selectedSkillSlug) ?? null
 
@@ -215,18 +133,23 @@ export function AgentSettings(): React.ReactElement {
     }
   }, [workspaceSlug])
 
-  const loadOtherWorkspaces = React.useCallback(async () => {
-    if (!workspaceSlug) return
+  const loadOtherWorkspaces = React.useCallback(async (): Promise<OtherWorkspaceSkillsGroup[]> => {
+    if (!workspaceSlug) return []
     try {
-      const groups = await ipc.getOtherWorkspaceSkills(workspaceSlug)
-      setOtherWorkspaces(groups)
+      return await ipc.getOtherWorkspaceSkills(workspaceSlug)
     } catch (error) {
       console.error('[Agent 设置] 加载其他工作区 Skill 失败:', error)
+      return []
     }
   }, [workspaceSlug])
 
   React.useEffect(() => {
-    if (showImportDialog) void loadOtherWorkspaces()
+    if (showImportDialog) {
+      const gen = ++importGenRef.current
+      void loadOtherWorkspaces().then((result) => {
+        if (importGenRef.current === gen) setOtherWorkspaces(result)
+      })
+    }
   }, [showImportDialog, loadOtherWorkspaces])
 
   React.useEffect(() => { loadData() }, [loadData])
@@ -770,387 +693,16 @@ function McpServerRow({ name, entry, onEdit, onDelete, onToggle }: McpServerRowP
   )
 }
 
-// ===== Skill List Panel (Left) =====
+// ===== Skill List Panel — extracted to SkillListPanel.tsx =====
 
-interface SkillListPanelProps {
-  skills: SkillMeta[]
-  selectedSlug: string | null
-  onSelect: (slug: string) => void
-  onDelete: (slug: string, name: string) => void
-  onToggle: (slug: string, enabled: boolean) => void
-  onUpdate: (slug: string) => void
-  skillsDir: string
-}
+// ===== Skill Detail Panel — extracted to SkillDetailPanel.tsx =====
 
-function SkillListPanel({ skills, selectedSlug, onSelect, onDelete, onToggle, onUpdate, skillsDir }: SkillListPanelProps): React.ReactElement {
-  const groups = React.useMemo(() => groupSkillsByPrefix(skills), [skills])
-  const [expandedGroups, setExpandedGroups] = React.useState<Set<string>>(() =>
-    new Set(groups.filter((g) => g.prefix).map((g) => g.prefix)),
-  )
-
-  const toggleGroup = (prefix: string): void => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev)
-      if (next.has(prefix)) next.delete(prefix)
-      else next.add(prefix)
-      return next
-    })
-  }
-
-  const openSkillFolder = (slug: string): void => {
-    if (skillsDir) ipc.openFile(`${skillsDir}/${slug}`)
-  }
-
-  return (
-    <div className="w-56 flex-shrink-0 border-r border-border overflow-y-auto bg-muted/20">
-      {groups.map((group) =>
-        group.prefix ? (
-          <div key={group.prefix}>
-            <button
-              onClick={() => toggleGroup(group.prefix)}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors"
-            >
-              {expandedGroups.has(group.prefix)
-                ? <ChevronDown size={12} className="text-muted-foreground flex-shrink-0" />
-                : <ChevronRight size={12} className="text-muted-foreground flex-shrink-0" />}
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider truncate flex-1">{group.prefix}</span>
-              <span className="text-[10px] tabular-nums text-muted-foreground flex-shrink-0">{group.skills.length}</span>
-            </button>
-            {expandedGroups.has(group.prefix) && group.skills.map((skill) => (
-              <SkillCompactItem
-                key={skill.slug}
-                skill={skill}
-                displayName={shortName(skill.slug, group.prefix)}
-                selected={selectedSlug === skill.slug}
-                onSelect={() => onSelect(skill.slug)}
-                onDelete={() => onDelete(skill.slug, skill.name)}
-                onToggle={(enabled) => onToggle(skill.slug, enabled)}
-                onOpenFolder={() => openSkillFolder(skill.slug)}
-                onUpdate={skill.hasUpdate ? () => onUpdate(skill.slug) : undefined}
-              />
-            ))}
-          </div>
-        ) : (
-          group.skills.map((skill) => (
-            <SkillCompactItem
-              key={skill.slug}
-              skill={skill}
-              displayName={skill.name}
-              selected={selectedSlug === skill.slug}
-              onSelect={() => onSelect(skill.slug)}
-              onDelete={() => onDelete(skill.slug, skill.name)}
-              onToggle={(enabled) => onToggle(skill.slug, enabled)}
-              onOpenFolder={() => openSkillFolder(skill.slug)}
-              onUpdate={skill.hasUpdate ? () => onUpdate(skill.slug) : undefined}
-            />
-          ))
-        ),
-      )}
-    </div>
-  )
-}
-
-// ===== Skill Compact Item =====
-
-interface SkillCompactItemProps {
-  skill: SkillMeta
-  displayName: string
-  selected: boolean
-  onSelect: () => void
-  onDelete: () => void
-  onToggle: (enabled: boolean) => void
-  onOpenFolder: () => void
-  onUpdate?: () => void
-}
-
-function SkillCompactItem({ skill, displayName, selected, onSelect, onDelete, onToggle, onOpenFolder, onUpdate }: SkillCompactItemProps): React.ReactElement {
-  const sourceBadge = getSkillSourceBadge('workspace')
-  return (
-    <button
-      onClick={onSelect}
-      className={cn(
-        'group w-full flex items-center gap-2 px-3 py-2 text-left transition-colors',
-        selected ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/40',
-        !skill.enabled && 'opacity-50',
-      )}
-    >
-      <Sparkles size={14} className="text-amber-500 flex-shrink-0" />
-      <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium flex-shrink-0 ${sourceBadge.className}`}>
-        {sourceBadge.label}
-      </span>
-      <span className="text-sm truncate flex-1 min-w-0">{displayName}</span>
-      <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-        {onUpdate && (
-          <span
-            role="button"
-            onClick={(e) => { e.stopPropagation(); onUpdate() }}
-            className="p-1 rounded text-blue-500 hover:bg-blue-500/10 cursor-pointer"
-          >
-            <RefreshCw size={12} />
-          </span>
-        )}
-        <span
-          role="button"
-          onClick={(e) => { e.stopPropagation(); onOpenFolder() }}
-          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer"
-        >
-          <FolderOpen size={12} />
-        </span>
-        <span
-          role="button"
-          onClick={(e) => { e.stopPropagation(); onDelete() }}
-          className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
-        >
-          <Trash2 size={12} />
-        </span>
-      </div>
-      <Switch
-        checked={skill.enabled}
-        onCheckedChange={(checked) => { onToggle(checked) }}
-        onClick={(e) => e.stopPropagation()}
-        className="flex-shrink-0 scale-75"
-      />
-    </button>
-  )
-}
-
-// ===== Skill Detail Panel (Right) =====
-
-interface SkillDetailPanelProps {
-  skill: SkillMeta
-  workspaceSlug: string
-  onSaved: () => void
-}
-
-function SkillDetailPanel({ skill, workspaceSlug, onSaved }: SkillDetailPanelProps): React.ReactElement {
-  const [content, setContent] = React.useState<string | null>(null)
-  const [loadingContent, setLoadingContent] = React.useState(false)
-  const currentSlugRef = React.useRef(skill.slug)
-
-  const [isEditingMeta, setIsEditingMeta] = React.useState(false)
-  const [isEditingBody, setIsEditingBody] = React.useState(false)
-  const [editName, setEditName] = React.useState('')
-  const [editDescription, setEditDescription] = React.useState('')
-  const [editBody, setEditBody] = React.useState('')
-  const [saving, setSaving] = React.useState(false)
-
-  React.useEffect(() => {
-    currentSlugRef.current = skill.slug
-    setIsEditingMeta(false)
-    setIsEditingBody(false)
-    setLoadingContent(true)
-
-    ipc.readSkillContent(workspaceSlug, skill.slug)
-      .then((text) => {
-        if (currentSlugRef.current === skill.slug) setContent(text)
-      })
-      .catch((err) => {
-        console.error('[SkillDetail] 加载内容失败:', err)
-        if (currentSlugRef.current === skill.slug) setContent(null)
-      })
-      .finally(() => {
-        if (currentSlugRef.current === skill.slug) setLoadingContent(false)
-      })
-  }, [skill.slug, workspaceSlug])
-
-  const body = React.useMemo(() => extractSkillBody(content ?? ''), [content])
-
-  const startEditMeta = (): void => {
-    setEditName(skill.name)
-    setEditDescription(skill.description ?? '')
-    setIsEditingMeta(true)
-  }
-
-  const saveMeta = async (): Promise<void> => {
-    if (!content) return
-    setSaving(true)
-    try {
-      const newContent = rebuildSkillMd(content, { name: editName, description: editDescription })
-      await ipc.writeSkillContent(workspaceSlug, skill.slug, newContent)
-      setContent(newContent)
-      setIsEditingMeta(false)
-      onSaved()
-      toast.success('元数据已保存')
-    } catch (err) {
-      console.error('[SkillDetail] 保存元数据失败:', err)
-      toast.error('保存失败')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const startEditBody = (): void => {
-    setEditBody(body)
-    setIsEditingBody(true)
-  }
-
-  const saveBody = async (): Promise<void> => {
-    if (!content) return
-    setSaving(true)
-    try {
-      const newContent = rebuildSkillMd(content, { body: editBody })
-      await ipc.writeSkillContent(workspaceSlug, skill.slug, newContent)
-      setContent(newContent)
-      setIsEditingBody(false)
-      onSaved()
-      toast.success('说明已保存')
-    } catch (err) {
-      console.error('[SkillDetail] 保存说明失败:', err)
-      toast.error('保存失败')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (loadingContent) {
-    return <div className="flex items-center justify-center h-full text-sm text-muted-foreground">加载中...</div>
-  }
-
-  const sourceLabel = skill.importSource
-    ? `从 ${skill.importSource.sourceWorkspaceName} 导入`
-    : '当前工作区'
-
-  return (
-    <div className="p-5 space-y-6">
-      {/* Header */}
-      <div className="flex items-start gap-3">
-        <div className="rounded-xl bg-amber-500/12 p-2.5 text-amber-500 shrink-0">
-          <Sparkles size={20} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-base font-semibold text-foreground">{skill.name}</h3>
-          {skill.description && (
-            <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{skill.description}</p>
-          )}
-        </div>
-      </div>
-
-      {/* Metadata Section */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium text-foreground">元数据</h4>
-          {!isEditingMeta ? (
-            <button onClick={startEditMeta} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
-              <Pencil size={12} /> 编辑
-            </button>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setIsEditingMeta(false)} disabled={saving}>
-                <X size={14} /> 取消
-              </Button>
-              <Button size="sm" onClick={() => void saveMeta()} disabled={saving}>
-                <Save size={14} /> {saving ? '保存中...' : '保存'}
-              </Button>
-            </div>
-          )}
-        </div>
-
-        <SettingsCard divided>
-          <MetadataRow label="标识符" value={skill.slug} />
-          {isEditingMeta ? (
-            <>
-              <MetadataEditRow label="名称" value={editName} onChange={setEditName} />
-              <MetadataEditRow label="描述" value={editDescription} onChange={setEditDescription} multiline />
-            </>
-          ) : (
-            <>
-              <MetadataRow label="名称" value={skill.name} />
-              <MetadataRow label="描述" value={skill.description ?? '无描述'} />
-            </>
-          )}
-          <MetadataRow label="数据源" value={sourceLabel} />
-          <MetadataRow label="位置" value={`skills/${skill.slug}`} />
-          {skill.version && <MetadataRow label="版本" value={skill.version} />}
-        </SettingsCard>
-      </div>
-
-      {/* Body Section */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium text-foreground">说明</h4>
-          {!isEditingBody ? (
-            <button onClick={startEditBody} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
-              <Pencil size={12} /> 编辑
-            </button>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setIsEditingBody(false)} disabled={saving}>
-                <X size={14} /> 取消
-              </Button>
-              <Button size="sm" onClick={() => void saveBody()} disabled={saving}>
-                <Save size={14} /> {saving ? '保存中...' : '保存'}
-              </Button>
-            </div>
-          )}
-        </div>
-
-        <SettingsCard divided={false}>
-          <div className="p-4">
-            {isEditingBody ? (
-              <textarea
-                value={editBody}
-                onChange={(e) => setEditBody(e.target.value)}
-                className="w-full min-h-[300px] bg-transparent text-sm font-mono resize-y border border-border rounded-md p-3 focus:outline-none focus:ring-1 focus:ring-ring"
-                placeholder="输入 Skill 说明内容（支持 Markdown）..."
-              />
-            ) : (
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <Markdown remarkPlugins={[remarkGfm]}>{body || '暂无说明内容'}</Markdown>
-              </div>
-            )}
-          </div>
-        </SettingsCard>
-      </div>
-    </div>
-  )
-}
-
-// ===== Metadata Helpers =====
-
-function MetadataRow({ label, value }: { label: string; value: string }): React.ReactElement {
-  return (
-    <div className="flex items-start gap-4 px-4 py-2.5">
-      <span className="text-xs text-muted-foreground w-16 flex-shrink-0 pt-0.5">{label}</span>
-      <span className="text-sm text-foreground flex-1 min-w-0 break-words">{value}</span>
-    </div>
-  )
-}
-
-function MetadataEditRow({ label, value, onChange, multiline }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean }): React.ReactElement {
-  return (
-    <div className="flex items-start gap-4 px-4 py-2.5">
-      <span className="text-xs text-muted-foreground w-16 flex-shrink-0 pt-2">{label}</span>
-      {multiline ? (
-        <textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="flex-1 min-w-0 text-sm bg-transparent border border-border rounded-md px-2 py-1 resize-y focus:outline-none focus:ring-1 focus:ring-ring"
-          rows={3}
-        />
-      ) : (
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="flex-1 min-w-0 text-sm bg-transparent border border-border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
-        />
-      )}
-    </div>
-  )
-}
+// ===== Skill Detail Panel — extracted to SkillDetailPanel.tsx =====
 
 // ===== j-cli MCP View (Read-only) =====
 
 interface JCliMcpViewProps {
-  servers: Array<{
-    name: string
-    transport: string
-    command?: string | null
-    args?: string[] | null
-    url?: string | null
-    env?: Record<string, string> | null
-    disabled: boolean
-  }>
+  servers: JCliMcpServer[]
 }
 
 function JCliMcpView({ servers }: JCliMcpViewProps): React.ReactElement {
@@ -1192,91 +744,6 @@ function JCliMcpView({ servers }: JCliMcpViewProps): React.ReactElement {
         )
       })}
     </SettingsCard>
-  )
-}
-
-// ===== Built-in Agent Tools =====
-
-function BuiltinAgentTools(): React.ReactElement {
-  const tools = useAtomValue(chatToolsAtom)
-  const setSettingsTab = useSetAtom(settingsTabAtom)
-
-  const memoryTool = tools.find((t) => t.meta.id === 'memory')
-  const nanoBananaTool = tools.find((t) => t.meta.id === 'nano-banana')
-  const webSearchTool = tools.find((t) => t.meta.id === 'web-search')
-
-  interface BuiltinToolItem {
-    id: string
-    name: string
-    description: string
-    icon: React.ReactElement
-    enabled: boolean
-    available: boolean
-  }
-
-  const builtinTools: BuiltinToolItem[] = [
-    {
-      id: 'memory',
-      name: '记忆',
-      description: '长期记忆存储与检索',
-      icon: <Brain className="size-4" />,
-      enabled: memoryTool?.enabled ?? false,
-      available: memoryTool?.available ?? false,
-    },
-    {
-      id: 'nano-banana',
-      name: 'Nano Banana',
-      description: 'AI 图片生成与编辑',
-      icon: <ImagePlus className="size-4" />,
-      enabled: nanoBananaTool?.enabled ?? false,
-      available: nanoBananaTool?.available ?? false,
-    },
-    {
-      id: 'web-search',
-      name: '联网搜索',
-      description: '实时搜索互联网获取最新信息',
-      icon: <Search className="size-4" />,
-      enabled: webSearchTool?.enabled ?? false,
-      available: webSearchTool?.available ?? false,
-    },
-  ]
-
-  return (
-    <SettingsSection
-      title="内置工具"
-      description="启用后自动注入到 Agent 会话，在工具设置中配置"
-      action={
-        <Button size="sm" variant="outline" onClick={() => setSettingsTab('tools')}>
-          <Pencil size={14} />
-          <span>配置</span>
-        </Button>
-      }
-    >
-      <SettingsCard divided>
-        {builtinTools.map((tool) => {
-          const isActive = tool.enabled && tool.available
-          return (
-            <div key={tool.id} className="flex items-center justify-between p-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <span className={cn('shrink-0', !isActive && 'opacity-40')}>{tool.icon}</span>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className={cn('text-sm font-medium', !isActive && 'text-muted-foreground')}>{tool.name}</span>
-                    <span className={cn(
-                      'text-[10px] px-1.5 py-0.5 rounded-full',
-                      isActive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground',
-                    )}>
-                      {isActive ? '已启用' : !tool.available ? '需配置' : '未启用'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">{tool.description}</p>
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </SettingsCard>
-    </SettingsSection>
   )
 }
 

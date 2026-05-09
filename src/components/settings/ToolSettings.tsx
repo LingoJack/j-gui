@@ -13,6 +13,7 @@ import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { SettingsSection, SettingsCard } from './primitives'
 import { chatToolsAtom } from '@/atoms/chat-tool-atoms'
+import { useToolCredentials } from './use-tool-credentials'
 import * as ipc from '@/lib/ipc'
 
 /** 刷新全局工具列表 atom */
@@ -109,9 +110,7 @@ function WebSearchSettings(): React.ReactElement {
   const [showApiKey, setShowApiKey] = React.useState(false)
   const [enabled, setEnabled] = React.useState(false)
   const [loading, setLoading] = React.useState(true)
-  const [testing, setTesting] = React.useState(false)
-  const [testResult, setTestResult] = React.useState<{ success: boolean; message: string } | null>(null)
-  const setChatTools = useSetAtom(chatToolsAtom)
+  const { testing, testResult, handleToggle, handleTest, refreshTools } = useToolCredentials('web-search')
 
   // 已保存的 API Key（用于判断是否有变更）
   const savedApiKeyRef = React.useRef('')
@@ -145,46 +144,31 @@ function WebSearchSettings(): React.ReactElement {
       await ipc.updateChatToolCredentials('web-search', { apiKey: trimmed })
       savedApiKeyRef.current = trimmed
       // 刷新全局工具列表（available 状态可能变化）
-      await refreshChatTools(setChatTools)
+      await refreshTools()
       toast.success('联网搜索设置已保存')
     } catch (error) {
       console.error('[联网搜索设置] 保存失败:', error)
     }
-  }, [apiKey, setChatTools])
+  }, [apiKey, refreshTools])
 
-  const handleToggle = async (checked: boolean): Promise<void> => {
-    try {
-      await ipc.updateChatToolState('web-search', { enabled: checked })
-      setEnabled(checked)
-      await refreshChatTools(setChatTools)
-    } catch (error) {
-      console.error('[联网搜索设置] 切换失败:', error)
-    }
+  const handleToggleWrapper = async (checked: boolean): Promise<void> => {
+    setEnabled(checked)
+    await handleToggle(checked)
   }
 
-  const handleTest = async (): Promise<void> => {
+  const handleTestWrapper = async (): Promise<void> => {
     // 先保存可能的变更
     const trimmed = apiKey.trim()
     if (trimmed !== savedApiKeyRef.current) {
       try {
         await ipc.updateChatToolCredentials('web-search', { apiKey: trimmed })
         savedApiKeyRef.current = trimmed
-        await refreshChatTools(setChatTools)
+        await refreshTools()
       } catch (error) {
         console.error('[联网搜索设置] 保存失败:', error)
       }
     }
-
-    setTesting(true)
-    setTestResult(null)
-    try {
-      const result = await ipc.testChatTool('web-search')
-      setTestResult(result)
-    } catch (error) {
-      setTestResult({ success: false, message: error instanceof Error ? error.message : String(error) })
-    } finally {
-      setTesting(false)
-    }
+    await handleTest()
   }
 
   if (loading) {
@@ -198,7 +182,7 @@ function WebSearchSettings(): React.ReactElement {
       action={
         <Switch
           checked={enabled}
-          onCheckedChange={handleToggle}
+          onCheckedChange={handleToggleWrapper}
         />
       }
     >
@@ -234,7 +218,7 @@ function WebSearchSettings(): React.ReactElement {
                 size="sm"
                 variant="outline"
                 disabled={testing || !apiKey.trim()}
-                onClick={handleTest}
+                onClick={handleTestWrapper}
               >
                 {testing ? <><Loader2 size={14} className="animate-spin mr-1.5" />测试中...</> : '测试连接'}
               </Button>
@@ -279,9 +263,7 @@ function NanoBananaSettings(): React.ReactElement {
   const [showApiKey, setShowApiKey] = React.useState(false)
   const [enabled, setEnabled] = React.useState(false)
   const [loading, setLoading] = React.useState(true)
-  const [testing, setTesting] = React.useState(false)
-  const [testResult, setTestResult] = React.useState<{ success: boolean; message: string } | null>(null)
-  const setChatTools = useSetAtom(chatToolsAtom)
+  const { testing, testResult, handleToggle, handleTest, refreshTools } = useToolCredentials('nano-banana')
 
   const savedCredentialsRef = React.useRef({ apiKey: '', baseUrl: '', model: '' })
 
@@ -315,24 +297,19 @@ function NanoBananaSettings(): React.ReactElement {
     try {
       await ipc.updateChatToolCredentials('nano-banana', current)
       savedCredentialsRef.current = current
-      await refreshChatTools(setChatTools)
+      await refreshTools()
       toast.success('Nano Banana 设置已保存')
     } catch (error) {
       console.error('[Nano Banana 设置] 保存失败:', error)
     }
-  }, [apiKey, baseUrl, model, setChatTools])
+  }, [apiKey, baseUrl, model, refreshTools])
 
-  const handleToggle = async (checked: boolean): Promise<void> => {
-    try {
-      await ipc.updateChatToolState('nano-banana', { enabled: checked })
-      setEnabled(checked)
-      await refreshChatTools(setChatTools)
-    } catch (error) {
-      console.error('[Nano Banana 设置] 切换失败:', error)
-    }
+  const handleToggleWrapper = async (checked: boolean): Promise<void> => {
+    setEnabled(checked)
+    await handleToggle(checked)
   }
 
-  const handleTest = async (): Promise<void> => {
+  const handleTestWrapper = async (): Promise<void> => {
     // 先保存可能的变更
     const current = { apiKey: apiKey.trim(), baseUrl: baseUrl.trim(), model: model.trim() }
     const saved = savedCredentialsRef.current
@@ -340,22 +317,12 @@ function NanoBananaSettings(): React.ReactElement {
       try {
         await ipc.updateChatToolCredentials('nano-banana', current)
         savedCredentialsRef.current = current
-        await refreshChatTools(setChatTools)
+        await refreshTools()
       } catch (error) {
         console.error('[Nano Banana 设置] 保存失败:', error)
       }
     }
-
-    setTesting(true)
-    setTestResult(null)
-    try {
-      const result = await ipc.testChatTool('nano-banana')
-      setTestResult(result)
-    } catch (error) {
-      setTestResult({ success: false, message: error instanceof Error ? error.message : String(error) })
-    } finally {
-      setTesting(false)
-    }
+    await handleTest()
   }
 
   if (loading) {
@@ -369,7 +336,7 @@ function NanoBananaSettings(): React.ReactElement {
       action={
         <Switch
           checked={enabled}
-          onCheckedChange={handleToggle}
+          onCheckedChange={handleToggleWrapper}
         />
       }
     >
@@ -405,7 +372,7 @@ function NanoBananaSettings(): React.ReactElement {
                 size="sm"
                 variant="outline"
                 disabled={testing || !apiKey.trim()}
-                onClick={handleTest}
+                onClick={handleTestWrapper}
               >
                 {testing ? <><Loader2 size={14} className="animate-spin mr-1.5" />测试中...</> : '测试连接'}
               </Button>

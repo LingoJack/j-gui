@@ -2,144 +2,257 @@
 doc_type: architecture
 slug: ARCHITECTURE
 scope: j-gui 系统架构总入口
-summary: 当前总入口，覆盖 AppShell、Chat/Agent 工作台、Settings、Jotai 状态与 Tauri IPC 总线
+summary: 当前总入口，覆盖 AppShell（减薄为纯布局容器）、多标签页系统（tabs/）、新原子体系（agent-atoms/chat-atoms/tab-atoms 等）、后端命令与 governance 层、前端 ipc EventBus 与全局事件监听
 status: current
-last_reviewed: 2026-05-09
-tags: [tauri, react, desktop, chat, agent, settings]
+last_reviewed: 2026-05-10
+tags: [tauri, react, desktop, chat, agent, settings, tabs]
 depends_on: []
 implements: []
 ---
 # j-gui 架构总入口
 
-> 状态：当前不是脚手架。应用入口已经落在 `AppShell`，负责把 Chat / Agent / Settings / Search / Toast 组合成一个桌面工作台。
-> 最后更新：2026-05-09
+> 状态：前端有显著重构——AppShell 已减薄为纯布局容器，多标签页系统独立为 `tabs/` 模块，Jotai 原子体系全面拆分，Chat/Agent 视图通过 `ConversationProvider` / `AgentSessionProvider` 隔离状态，全局事件监听统一到 `useGlobalChatListeners` / `useGlobalAgentListeners`，设置面板重构为 10 标签组件体系，消息渲染基于 `@proma/shared` SDK 类型系统。
+> 最后更新：2026-05-10
 
 ## 1. 定位与受众
 
-j-gui 是 Tauri v2 桌面应用。前端是 React + TypeScript + Vite，后端是 Rust + Tauri command 层。`src/main.tsx` 只负责挂载，`src/App.tsx` 直接返回 `AppShell`，真正的总入口在 `src/components/app-shell/AppShell.tsx:32-208`。
+j-gui 是 Tauri v2 桌面应用。前端是 React + TypeScript + Vite，后端是 Rust + Tauri command 层。`src/main.tsx:1-10` 挂载 App，`AppShell` 是极简布局容器，实际业务由各子系统独立承担。
 
-这份文档只记现状，不写未来规划。它的作用是让读者先看懂当前系统长什么样，再按子文档钻到具体子系统里。
+这份文档只记现状，不写未来规划。
 
 **受众**：feature-design（理解模块边界）、issue-analyze（定位代码）、新人上手（理解当前结构）。
 
-## 2. 结构与交互
+## 2. 架构总览
 
-### 2.1 入口链路
+### 2.1 入口与组件树
 
 ```
 src/main.tsx
-  └─ App
-      └─ AppShell
-          ├─ LeftSidebar
-          ├─ MainArea
-          │   ├─ WelcomePage
-          │   ├─ ChatView
-          │   └─ AgentView
-          ├─ RightSidePanel
-          ├─ SettingsDialog
-          ├─ SearchDialog
-          └─ ToastContainer
+  └─ GlobalShortcuts (return null, 顶层挂载)
+  └─ AppShell (纯布局容器, ~57 行)
+       ├─ titlebar-drag-region (z-50, 窗口拖动)
+       ├─ LeftSidebar (~1800 行)
+       │    ├─ ModeSwitcher (agent/chat)
+       │    ├─ WorkspaceSelector (agent only)
+       │    ├─ 新对话/新会话
+       │    ├─ Chat: 置顶 + 日期分组列表
+       │    ├─ Agent: 双区可拖拽布局 (Working + 最近)
+       │    └─ 搜索/设置入口 / UserAvatar
+       ├─ MainArea (flex-1)
+       │    └─ TabBar + TabContent
+       │         ├─ TabBar (Chrome 风格多标签, 拖拽重排)
+       │         ├─ ChatView(conversationId) — wrapped in ConversationProvider
+       │         ├─ AgentView(sessionId) — wrapped in AgentSessionProvider
+       │         └─ SettingsDialog (浮窗, Radix Dialog)
+       └─ RightSidePanel (agent only)
+            └─ SidePanel (会话文件 + 工作区文件 + FileBrowser)
 ```
 
-- `src/main.tsx:1-10` 只做 React 根挂载
-- `src/App.tsx:1-5` 不再承载业务，只是把壳组件作为应用根节点
-- `src/components/app-shell/AppShell.tsx:32-208` 负责加载主题、配置、会话列表，并组合左侧栏、主区、右侧面板、设置与搜索
-- `src/components/app-shell/MainArea.tsx:1-303` 负责标签页编排、空状态、默认 chat tab、错误边界和当前内容切换
-- `src/components/app-shell/LeftSidebar.tsx:72-487` 负责 tab / 会话切换、侧边栏折叠、新建会话与设置入口
-- `src/components/app-shell/RightSidePanel.tsx:117-220` 只在 agent 标签页且面板打开时出现
-- `src/components/settings/SettingsDialog.tsx:46-483` 集中管理模型、通用、别名、Skills、Hooks、MCP
-- `src/lib/tauri.ts:1-273` 是前端唯一的 IPC façade，封装所有 `invoke()` 和 `Channel<T>`
+全局浮窗（通过原子控制渲染，不在组件树固定位置）：
+- `SearchDialog` — `searchDialogOpenAtom`，LeftSidebar 内挂载
+- `SettingsDialog` — `settingsOpenAtom`，MainArea 内挂载
+- `TabCloseConfirmDialog` — `pendingCloseTabIdAtom`，TabBar 内挂载
 
-### 2.2 前端状态
+### 2.2 前端状态（Jotai 原子体系）
 
-当前 UI 状态主要由 Jotai atoms 承载，按“布局 / 标签页 / 会话 / 配置 / 主题 / 通知”分层：
+原子已彻底拆分，不再有老的 `config.ts`/`sessions.ts`/`sidebar.ts`/`tabs.ts`/`toast.ts`/`ui.ts`。按领域拆分为：
 
-- `src/atoms/app-mode.ts:1-5` 定义当前主模式，值域是 `chat | agent`
-- `src/atoms/tabs.ts:1-17` 维护标签页数组、当前标签页和 active tab 解析
-- `src/atoms/sidebar.ts:1-4` 控制左侧栏和右侧面板是否展开
-- `src/atoms/theme.ts:1-3` 保存应用主题
-- `src/atoms/config.ts:1-26` 保存 provider 配置和当前激活 provider
-- `src/atoms/sessions.ts:1-190` 保存 chat / agent 会话列表、消息列表、流式状态、草稿、标题覆盖和 timeline 转消息映射
-- `src/atoms/toast.ts:1-19` 提供全局 toast 入口
+| 原子文件 | 核心内容 | 关键类型/atom |
+|----------|---------|---------------|
+| `src/atoms/agent-atoms.ts` | Agent 会话、消息、流式、中断、workspace、任务 | `AgentEvent`, `ToolActivity`, `AgentState`, `streamingStatesMap` |
+| `src/atoms/chat-atoms.ts` | 对话列表、消息、流式状态、并行模式 | `Conversation`, `ConversationStreamState`, `streamingStatesAtom` |
+| `src/atoms/tab-atoms.ts` | 多标签页管理 | `TabItem`, `tabsAtom`, `activeTabIdAtom`, `openTab/closeTab` |
+| `src/atoms/sidebar-atoms.ts` | 侧栏视图模式与状态 | `sidebarOpenAtom`, `sidebarViewModeAtom` |
+| `src/atoms/settings-tab.ts` | 设置标签页 | `settingsTabAtom`, `settingsOpenAtom`, `channelFormDirtyAtom` |
+| `src/atoms/search-atoms.ts` | 搜索状态 | `searchDialogOpenAtom` 等 |
+| `src/atoms/notifications.ts` | 通知系统（替换 toast） | |
+| `src/atoms/app-mode.ts` | 主模式 | `appModeAtom: 'chat' \| 'agent'` |
+| `src/atoms/theme.ts` | 主题 | `themeAtom` |
+| `src/atoms/ui-preferences.ts` | UI 偏好 | 字体大小等 |
+| `src/atoms/user-profile.ts` | 用户档案 | |
+| `src/atoms/chat-tool-atoms.ts` | Chat 工具启停 | |
+| `src/atoms/system-prompt-atoms.ts` | 系统提示词管理 | |
+| `src/atoms/draft-session-atoms.ts` | 草稿会话 | |
+| `src/atoms/working-atoms.ts` | Working 状态 | |
+| `src/atoms/shortcut-atoms.ts` | 快捷键配置 | |
+| `src/atoms/environment.ts` | 环境信息 | |
 
-`AppShell` 启动时会拉取 `agentConfigAtom`、chat 会话列表、agent 会话列表，并把主题同步到 `documentElement`；`MainArea` 在没有 tab 时会创建默认 chat tab，并在没有 provider 时回退到 `WelcomePage` (`src/components/app-shell/MainArea.tsx:19-182`)。
+关键原子设计模式：
+- **`{{type}}StatesAtom`** 为 `Map<conversationId/sessionId, State>`，支持多标签流式状态隔离
+- 消息原子为派生 atom（由 `chatMessagesRefreshAtom` / `agentMessageRefreshAtom` 版本号驱动主动刷新）
+- **per-tab 隔离**：tab 切换通过 `tabsAtom` + `activeTabIdAtom` 派生，不共享消息状态
 
 ### 2.3 后端命令与引擎
 
-后端入口在 `src-tauri/src/lib.rs:10-52`。这里只负责把命令、插件和共享状态组装进 Tauri builder，不承载业务本身。
+后端入口 `src-tauri/src/lib.rs:10-52` 注册所有命令。
 
-- `src-tauri/src/lib.rs:17-49` 注册了 chat、agent、alias、config、system、governance 这几组命令
-- `src-tauri/src/commands/mod.rs` 按领域拆分命令模块
-- `src-tauri/src/commands/chat.rs:4-50` 只是 `ChatEngine` 的命令包装
-- `src-tauri/src/chat_engine.rs:1-206` 承担 chat 会话读取、写入、流式事件和 session 管理
-- `src-tauri/src/commands/agent.rs` 与 `src-tauri/src/agent_engine.rs:1-572` 共同承担 agent 运行、Claude CLI 流、审批中断和事件转换
-- `src-tauri/src/agent_session.rs:1-250` 管理 agent timeline 与 interrupt / tool 结果的持久化
-- `src-tauri/src/commands/config.rs:1-163` 负责 agent config、provider 切换、通用配置和 system prompt
-- `src-tauri/src/commands/system.rs:1-17` 处理版本与主题
-- `src-tauri/src/commands/alias.rs:1-42` 处理 alias 读写
-- `src-tauri/src/commands/governance.rs:1-207` 处理 Skills、Hooks、MCP 配置的读取与保存
+**Chat 引擎**（`src-tauri/src/commands/chat.rs:1-84` + `src-tauri/src/chat_engine.rs:1-250`）：
+- `send_message` — 流式 LLM 调用，`std::thread::spawn + tokio::block_on` 线程模型
+- `stop_generation` — 生成中止（`STOPPED_SESSIONS` 全局标记）
+- `create_session` / `list_sessions` / `get_session_messages` / `delete_message` / `clear_session` / `delete_session`
+- 写操作通过 `SESSION_WRITE_LOCK` 串行化
+- 详见 [backend-chat-engine](./backend-chat-engine.md)
 
-`src/lib/tauri.ts:1-273` 是前端对这些命令的类型化入口。它把 chat、agent、config、alias、system、governance 的 `invoke()` 统一收口，也把 `ChatEvent` / `AgentEvent` / 各类配置结构放在一个地方定义，避免组件层到处散落后端签名。
+**Agent 引擎**（`src-tauri/src/commands/agent.rs:1-350` + `src-tauri/src/agent_engine.rs:1-730` + `src-tauri/src/agent_session.rs:1-270`）：
+- claude CLI 子进程 + stream-json 协议
+- 12 个命令（`src-tauri/src/commands/agent.rs:1-566`）：`start_agent`, `create_agent_session`, `list_agent_sessions`, `get_agent_session`, `delete_agent_session`, `respond_agent_interrupt`, `send_agent_message`, `stop_agent`, `generate_agent_title`, `update_agent_session_title`, `respond_permission`, `respond_ask_user`
+- 中断路由按 `kind` 分派（permission / ask_user / plan）
+- 会话持久化在 `~/.jdata/agent/sessions/{id}/`，使用 `AGENT_TRANSCRIPT_LOCK` 串行化
+- 详见 [backend-agent-engine](./backend-agent-engine.md)
 
-### 2.4 状态与持久化
+**Governance 命令**（`src-tauri/src/commands/governance.rs:1-514`）：
+- `list_skills`, `list_hooks`, `list_mcp_servers`, `save_mcp_servers`, `list_chat_tools`, `set_tool_enabled`
+- `scan_global_skills`, `copy_skill_to_workspace`
+- 25 个内置工具定义在 `BUILTIN_TOOLS` 静态数组
 
-当前状态分成两类：UI 内存状态和 j_cli 侧持久化状态。
+**其他命令**：
+- `channels.rs`（渠道 CRUD + 连接测试 + 模型拉取）、`files.rs`（文件对话框 + 附件读写 + 目录列表）
+- `settings.rs`（GUI 设置 + 用户档案 + Agent 工作区 + 环境检测）
+- `config.rs`（provider 配置脱敏读写）、`system.rs`（版本与主题）、`alias.rs`（别名读写）
 
-- UI 内存状态由 Jotai atoms 管理，尤其是 tabs、消息、草稿、主题、侧栏和右侧面板
-- chat 会话持久化通过 `ChatEngine` 对接 j_cli storage，实际会落到 `~/.jdata/sessions/{id}/transcript.jsonl` 一类路径（由 j_cli 管理）
-- agent 会话持久化由 `agent_session.rs` 管理，实际目录是 `~/.jdata/agent/sessions/{id}/`
-- agent provider 配置和 system prompt 走 j_cli 的 agent config 存储，`SettingsDialog` 只是编辑面
-- `src-tauri/src/commands/config.rs:27-163` 对 provider API key 做脱敏读出、保留旧值写回，并把当前 active provider 写回同一份配置
-- `src-tauri/src/commands/system.rs:11-17` 会把 theme 写回配置并发出 `theme-changed`
-- `src/components/settings/SettingsDialog.tsx:63-121` 是当前模型配置保存链路
-- `src/components/chat/ChatView.tsx:68-177` 是当前 chat 消息与流式状态的前端写入点
-- `src/components/agent/AgentView.tsx:35-220` 是当前 agent 消息、审批和面板状态的前端写入点
+**数据目录**：GUI 配置与附件存 `%APPDATA%/j-gui/` (Windows) / `~/.j-gui/` (Unix)；Chat/Agent 会话存 `~/.jdata/`（j-cli constants）
+
+### 2.4 前端 IPC 层与全局事件监听
+
+`src/lib/ipc.ts` 是 IPC façade，封装所有 `invoke()`、`Channel<T>` 创建与事件分发。与旧版 `src/lib/tauri.ts`（已移除）不同，ipc.ts 引入 EventBus 模式：
+
+- `sendMessage()` 内部创建 `Channel<T>`，流式事件（chunk/reasoning/tool-activity/done/error）通过内存 EventBus 分发
+- `useGlobalChatListeners`（`src/hooks/useGlobalChatListeners.ts`）在根级注册事件监听，写入 `streamingStatesAtom`
+- `useGlobalAgentListeners`（`src/hooks/useGlobalAgentListeners.ts`）同理处理 Agent 流式事件
+- 组件层面（ChatView/AgentView）不再直接管理 Channel 生命周期
+
+`src/lib/shortcut-registry.ts` 注册全局快捷键，`src/components/shortcuts/GlobalShortcuts.tsx` 在 `main.tsx` 顶层挂载。
+
+### 2.5 状态与持久化
+
+UI 内存状态由上述 Jotai atoms 管理。持久化分三层：
+
+1. **Chat 会话**：通过 `ChatEngine` → j_cli storage，落到 `~/.jdata/sessions/{id}/transcript.jsonl`
+2. **Agent 会话**：通过 `agent_session.rs` → meta.json + transcript.jsonl，`~/.jdata/agent/sessions/{id}/`
+3. **配置**：`agent_config.json` 由 SettingsDialog（ChannelConfig）读写
+
+**数据目录**：Chat/Agent 会话由 j_cli 管理（`~/.jdata/`），GUI 配置与附件由 `src-tauri/src/commands/settings.rs` 管理（`%APPDATA%/j-gui/` 或 `~/.jgui/`）。
+
+### 2.6 `@proma/shared` 类型系统
+
+前后端共享 `@proma/shared` 包（`node_modules/@proma/shared/`），定义核心类型：
+- `ChatMessage`, `ChatSendInput`, `FileAttachment` — Chat 消息模型
+- `AgentEvent`, `AgentSessionMeta`, `SDKMessage` — Agent 事件与消息
+- `PermissionRequest`, `AskUserRequest`, `ExitPlanModeRequest` — 中断请求类型
+- `PromaPermissionMode`, `ThinkingConfig`, `TaskUsage` — 配置类型
+
+### 2.7 Skills / MCP / Hooks 双源架构
+
+j-gui 的 Agent 治理能力（Skills、MCP Server、Hooks）来自**两个独立后端**，各自有独立的存储路径和加载机制。前端 UI 通过 Governance 命令统一访问。
+
+#### 源 A：j-cli（`src-tauri/src/commands/governance.rs`）
+
+| 资源 | 用户级路径 | 项目级路径 | 命令 |
+|------|-----------|-----------|------|
+| Skills | `~/.jdata/agent/skills/` | `.jcli/skills/` | `list_skills` |
+| MCP | `~/.jdata/agent/mcp_config.json` | — | `list_mcp_servers`, `save_mcp_servers` |
+| Hooks | `~/.jdata/agent/hooks/` | `.jcli/hooks/` | `list_hooks` |
+
+证据: `j_cli::constants::DATA_DIR = ".jdata"` → `skill.rs:52,58` `governance.rs:124-127` `hook/definition.rs:305,312`
+
+#### 源 B：CC SDK（Claude Code SDK CLI）
+
+| 资源 | 路径 | 说明 |
+|------|------|------|
+| SDK 配置 | `~/.jdata/agent/sdk-config/` (隔离自 `~/.claude/`) | `CLAUDE_CONFIG_DIR` 环境变量指向此处 |
+| Workspace MCP | `~/.jdata/agent/workspaces/{slug}/mcp.json` | 每个 Agent 工作区独立 MCP 配置 |
+| Workspace Skills | `~/.jdata/agent/workspaces/{slug}/skills/` | 工作区 Skills 目录 |
+| 默认 Skills 模板 | `~/.jdata/agent/default-skills/` | 新工作区从这里复制 Skills 种子 |
+
+证据: Proma `config-paths.ts:294-314,361-369,550-559` `agent-workspace-manager.ts:152-153`
+
+#### 全局 Agent Skills（`.agent/` 和 `.claude/` 目录）
+
+Claude Code 生态中，`npx skills add` 或 `npx @anthropic-ai/agent-skills` 会将 Skills 安装到 `~/.claude/agents/skills/` 或 `~/.agent/skills/`。这是 Vercel、Anthropic 等提供的开箱即用 Agent Skills。
+
+**Proma 当前做法**：Proma **不会**自动加载这些目录的 Skills。`agent-prompt-builder.ts:256` 明确说明：
+> "npx skills add 等外部命令安装到 .agents/skills/ 不会被加载，需手动 mv 到此目录"
+
+**j-gui 已实现**：`scan_global_skills` 命令扫描 `~/.claude/agents/skills/` 和 `~/.agent/skills/` 作为**只读的全局 Skills 源**，在 Agent 设置 UI 中列出，`copy_skill_to_workspace` 命令允许用户导入到当前工作区。j-cli 的 `SkillSource` 枚举当前只有 `User | Project`，需扩展 `Global` 变体。
+
+#### 数据同源原则
+
+- **Chat/Agent 会话数据**：走 j-cli 原生路径（`~/.jdata/sessions/`、`~/.jdata/agent/sessions/`），保证与 j-cli CLI 的数据同步
+- **Provider 配置**：读写 j-cli 的 `agent_config.json`（`load_agent_config / save_agent_config`）
+- **GUI 独有配置**（主题/窗口/快捷键）：走 `%APPDATA%/j-gui/` 独立路径
 
 ## 3. 子系统
 
 | 子系统 | 文档 | 说明 |
 |--------|------|------|
-| ChatEngine（后端） | [backend-chat-engine](./backend-chat-engine.md) | 只展开 chat 后端引擎、流式事件和会话持久化 |
-| AgentEngine（后端） | [backend-agent-engine](./backend-agent-engine.md) | 只展开 claude CLI、Agent 事件流、interrupt 和 timeline 持久化 |
-| Chat UI（前端） | [frontend-chat-ui](./frontend-chat-ui.md) | 只展开 chat 组件、流式展示和 chat atoms |
-| Agent UI（前端） | [frontend-agent-ui](./frontend-agent-ui.md) | 只展开 AgentView、审批横幅、任务进度和工具调用渲染 |
-| AppShell（前端外壳） | [frontend-app-shell](./frontend-app-shell.md) | 只展开工作台外壳、tab 编排、搜索和左右面板 |
-| Settings UI（前端） | [frontend-settings-ui](./frontend-settings-ui.md) | 只展开设置对话框、provider 配置和读写链路 |
+| ChatEngine（后端） | [backend-chat-engine](./backend-chat-engine.md) | Chat 后端引擎、流式事件和会话持久化，含生成中止机制 |
+| AgentEngine（后端） | [backend-agent-engine](./backend-agent-engine.md) | claude CLI、Agent 事件流、中断路由（3 种 kind）、timeline 持久化、governance 命令 |
+| AppShell（前端外壳） | [frontend-app-shell](./frontend-app-shell.md) | 极简布局容器、多标签页系统（tabs/）、左侧栏、右侧面板、搜索、全局快捷键 |
+| Agent UI（前端） | [frontend-agent-ui](./frontend-agent-ui.md) | AgentView、SDKMessageRenderer、3 个审批横幅、任务进度、侧面板 |
+| Chat UI（前端） | [frontend-chat-ui](./frontend-chat-ui.md) | ChatView（prop-based）、ConversationProvider、ai-elements 渲染、TipTap 输入框、附件系统 |
+| Settings UI（前端） | [frontend-settings-ui](./frontend-settings-ui.md) | 10 标签对话框、Channel CRUD、Agent 工作区、MCP 严格启用模式 |
 
-这些子文档不重复总入口层面的 AppShell、标签页、全局状态和命令总线细节；它们只负责把各自子系统展开。
+## 4. 关键架构变化（自 2026-05-09 以来）
 
-## 4. 代码锚点
+| 维度 | 旧 | 新 |
+|------|----|----|
+| AppShell | 会话加载/标题推导/快捷键都在 AppShell | 纯布局容器（57 行），功能剥离到各子模块 |
+| Atoms | 单体 `sessions.ts`/`config.ts`/`tabs.ts`/`sidebar.ts`/`toast.ts`/`ui.ts` | 按领域拆分为 ~20 个独立原子文件 |
+| Tab 系统 | 内联在 MainArea | 独立 `tabs/` 模块 + `tab-atoms.ts` 纯函数操作 |
+| IPC 层 | `src/lib/tauri.ts` 直接 invoke + Channel | `src/lib/ipc.ts` EventBus + 全局事件监听 |
+| Chat 消息 | 单体 per-tab atoms | prop-based `conversationId` + `ConversationProvider` + localStorage streamingStatesMap |
+| Agent 事件 | AgentView 内联 Channel 管理 | 全局 `useGlobalAgentListeners` + agent-atoms |
+| 设置 | 6 标签（内联 Models/General/Aliases） | 10 标签（提取组件，Alias/Hooks/YAML/Channel/MCP/Agent 配置深化） |
+| 消息渲染 | MessageBubble + 文本协议推理 | ai-elements 原语 + Reasoning 组件 + SDKMessage 渲染 |
+| 输入框 | 简单 textarea | TipTap 富文本 + 附件/语音/工具选择/快捷设置 |
+| 状态模型 | `Message { role, content, isStreaming }` | `ChatMessage`（@proma/shared）含 reasoning/attachments/toolActivities |
+
+## 5. 代码锚点
 
 | 想看什么 | 从哪看 |
 |----------|--------|
-| 应用根入口 | `src/main.tsx:1-10`、`src/App.tsx:1-5` |
-| 工作台总入口 | `src/components/app-shell/AppShell.tsx:32-208` |
-| 主区域编排 | `src/components/app-shell/MainArea.tsx:1-303` |
-| 左侧栏与会话切换 | `src/components/app-shell/LeftSidebar.tsx:72-487` |
-| 右侧面板 | `src/components/app-shell/RightSidePanel.tsx:117-220` |
-| 设置对话框 | `src/components/settings/SettingsDialog.tsx:46-483` |
-| 前端 IPC façade | `src/lib/tauri.ts:1-273` |
-| 前端状态 atoms | `src/atoms/app-mode.ts:1-5`、`src/atoms/tabs.ts:1-17`、`src/atoms/sidebar.ts:1-4`、`src/atoms/theme.ts:1-3`、`src/atoms/config.ts:1-26`、`src/atoms/sessions.ts:1-190`、`src/atoms/toast.ts:1-19` |
+| 应用根入口 | `src/main.tsx:1-10` |
+| 布局容器 | `src/components/app-shell/AppShell.tsx:24-57` |
+| 多标签页系统 | `src/atoms/tab-atoms.ts` + `src/components/tabs/` |
+| 左侧栏 | `src/components/app-shell/LeftSidebar.tsx:158-1356` |
+| 右侧面板 | `src/components/app-shell/RightSidePanel.tsx` + `SidePanel.tsx` |
+| 搜索浮窗 | `src/components/app-shell/SearchDialog.tsx` |
+| Chat 视图 | `src/components/chat/ChatView.tsx` + `src/components/chat/ChatMessages.tsx` |
+| Agent 视图 | `src/components/agent/AgentView.tsx` + `src/components/agent/AgentMessages.tsx` |
+| 设置对话框 | `src/components/settings/SettingsDialog.tsx` + `SettingsPanel.tsx` |
+| 前端 IPC | `src/lib/ipc.ts` |
+| 全局快捷键 | `src/lib/shortcut-registry.ts` + `src/components/shortcuts/GlobalShortcuts.tsx` |
+| Chat 原子 | `src/atoms/chat-atoms.ts` |
+| Agent 原子 | `src/atoms/agent-atoms.ts` |
+| 前端 ai-elements | `src/components/ai-elements/` |
 | Tauri 总注册 | `src-tauri/src/lib.rs:10-52` |
-| Chat 命令层 | `src-tauri/src/commands/chat.rs:4-50` |
-| Chat 引擎 | `src-tauri/src/chat_engine.rs:1-206` |
-| Agent 命令与引擎 | `src-tauri/src/commands/agent.rs`、`src-tauri/src/agent_engine.rs:1-572`、`src-tauri/src/agent_session.rs:1-250` |
-| Config / system / alias / governance 命令 | `src-tauri/src/commands/config.rs:1-163`、`src-tauri/src/commands/system.rs:1-17`、`src-tauri/src/commands/alias.rs:1-42`、`src-tauri/src/commands/governance.rs:1-207` |
+| Chat 命令层 | `src-tauri/src/commands/chat.rs:1-85` |
+| Chat 引擎 | `src-tauri/src/chat_engine.rs:1-250` |
+| Agent 命令与引擎 | `src-tauri/src/commands/agent.rs:1-350`、`agent_engine.rs:1-730`、`agent_session.rs:1-270` |
+| Governance 命令 | `src-tauri/src/commands/governance.rs:1-514` |
+| Config / system / alias | `src-tauri/src/commands/config.rs`、`system.rs`、`alias.rs` |
 
-## 5. 关键约束
+## 6. 变更日志
 
-- 前端的状态编排已经从单一 `useState` 演示变成多个 Jotai atoms，`tabs` / `sessions` / `theme` / `sidebar` 是当前布局与会话的核心状态面
-- chat 和 agent 共享同一套工作台，但分别使用独立的消息状态、会话持久化和事件模型
-- `src/lib/tauri.ts` 不是临时 helper，而是前端与后端命令签名的单一入口
-- `SettingsDialog` 当前已经不只是模型配置，它还承载通用配置、别名、Skills、Hooks 和 MCP
-- `backend-chat-engine.md`、`backend-agent-engine.md`、`frontend-chat-ui.md`、`frontend-agent-ui.md`、`frontend-app-shell.md`、`frontend-settings-ui.md` 已经是细化文档，`ARCHITECTURE.md` 只保留总入口与跨子系统关系
+- `2026-05-10`：全量重写——AppShell 减薄为布局容器、原子体系拆分、多标签页独立模块、ipc EventBus + 全局事件监听、设置 10 标签组件化、@proma/shared 类型系统、AiElements 渲染原语、Agent 中断三型路由。同步 6 份子文档。
 
-## 6. 相关文档
+## 7. 关键约束
 
-- `backend-chat-engine.md` — chat 后端引擎现状
-- `backend-agent-engine.md` — agent 后端引擎与 session 持久化现状
-- `frontend-chat-ui.md` — chat 前端界面现状
-- `frontend-agent-ui.md` — agent 前端界面与审批流现状
-- `frontend-app-shell.md` — 工作台外壳与 tab/search/sidepanel 现状
-- `frontend-settings-ui.md` — 设置界面与配置现状
+- **前端状态完全由 Jotai atoms 承载**，组件树无路由、无顶层 Context Provider（除 AppShellProvider），所有跨组件通信通过原子完成
+- **流式事件统一走全局监听**：ChatView/AgentView 不再自己创建 Channel，而是通过 `useGlobalChatListeners` / `useGlobalAgentListeners` 在根级接收
+- **Chat 和 Agent 共享同一套工作台**，但使用完全独立的原子文件（`chat-atoms.ts` / `agent-atoms.ts`）和事件监听器
+- **per-tab 隔离**：多标签页通过 `tabsAtom` + `activeTabIdAtom` 实现，消息/流式状态通过 `Map<tabId, State>` 派生
+- **设置面板**已从单体大文件拆分为 7 个标签组件 + 原语库，Channel 配置支持自动保存（debounce）+ 测试连接 + 拉取模型
+- **Agent 审批**有三种 kind（permission / ask_user / plan），分别由三个独立 Banner 处理
+- **后端 Agent 引擎**已移除 `-p` flag（单次模式），支持多轮 memory；`respond_interrupt` 签名改为 `content: &str`
+- **生成中止**：Chat 端新增 `stop_generation()` + `STOPPED_SESSIONS` 全局状态，当前为 TODO 半完成态
+
+## 8. 相关文档
+
+- [backend-chat-engine](./backend-chat-engine.md) — Chat 后端引擎现状
+- [backend-agent-engine](./backend-agent-engine.md) — Agent 后端引擎与 session 持久化现状
+- [frontend-chat-ui](./frontend-chat-ui.md) — Chat 前端界面现状
+- [frontend-agent-ui](./frontend-agent-ui.md) — Agent 前端界面与审批流现状
+- [frontend-app-shell](./frontend-app-shell.md) — 工作台外壳与 tab/search/sidepanel 现状
+- [frontend-settings-ui](./frontend-settings-ui.md) — 设置界面与配置现状
 - `.codestable/attention.md` — 本项目长期注意事项入口

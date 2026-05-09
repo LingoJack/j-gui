@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-static MCP_CONFIG_LOCK: Mutex<()> = Mutex::new(());
+static GOVERNANCE_CONFIG_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -149,7 +149,7 @@ pub fn list_mcp_servers() -> Result<Vec<McpServerConfig>, String> {
 
 #[tauri::command]
 pub fn save_mcp_servers(servers: Vec<McpServerConfig>) -> Result<(), String> {
-    let _lock = MCP_CONFIG_LOCK
+    let _lock = GOVERNANCE_CONFIG_LOCK
         .lock()
         .map_err(|e| format!("锁定 MCP 配置失败: {}", e))?;
     let path = mcp_config_path();
@@ -329,7 +329,7 @@ pub fn list_chat_tools() -> Result<Vec<ToolInfo>, String> {
 
 #[tauri::command]
 pub fn set_tool_enabled(name: String, enabled: bool) -> Result<(), String> {
-    let _lock = MCP_CONFIG_LOCK
+    let _lock = GOVERNANCE_CONFIG_LOCK
         .lock()
         .map_err(|e| format!("锁定配置失败: {}", e))?;
     let mut config = load_agent_config();
@@ -350,6 +350,39 @@ pub fn set_tool_enabled(name: String, enabled: bool) -> Result<(), String> {
 }
 
 // ===== Skills: Global scan & import =====
+
+const GLOBAL_SKILLS_SUBPATHS: &[&str] = &[".claude/agents/skills", ".agent/skills"];
+
+fn validate_slug(s: &str) -> Result<(), String> {
+    if s.is_empty()
+        || s.contains("..")
+        || s.contains('/')
+        || s.contains('\\')
+        || !s
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(format!("非法标识符: {}", s));
+    }
+    Ok(())
+}
+
+fn validate_source_dir(source_dir: &str) -> Result<PathBuf, String> {
+    let source_path = std::fs::canonicalize(source_dir)
+        .map_err(|e| format!("无法解析源路径 '{}': {}", source_dir, e))?;
+    let home = dirs::home_dir().ok_or_else(|| "无法获取 home 目录".to_string())?;
+    let is_allowed = GLOBAL_SKILLS_SUBPATHS.iter().any(|subpath| {
+        let base = home.join(subpath);
+        // Canonicalize the base as well to ensure consistent format
+        // (e.g. strips \\?\ prefix on Windows)
+        let base = std::fs::canonicalize(&base).unwrap_or(base);
+        source_path.starts_with(&base)
+    });
+    if !is_allowed {
+        return Err(format!("不允许的源路径: {}", source_dir));
+    }
+    Ok(source_path)
+}
 
 fn parse_skill_frontmatter(path: &Path) -> Option<(String, String)> {
     let content = fs::read_to_string(path).ok()?;
@@ -381,13 +414,30 @@ fn scan_skills_dir(home_dir: &Path, subpath: &str) -> Vec<SkillInfo> {
     let mut skills = Vec::new();
     let entries = match fs::read_dir(&dir) {
         Ok(e) => e,
-        Err(_) => return skills,
+        Err(e) => {
+            eprintln!("警告: 读取技能目录失败 {}: {}", dir.display(), e);
+            return skills;
+        }
     };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("警告: 读取目录项失败: {}", e);
+                continue;
+            }
+        };
+        let file_type = match entry.file_type() {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("警告: 无法获取文件类型: {}", e);
+                continue;
+            }
+        };
+        if !file_type.is_dir() {
             continue;
         }
+        let path = entry.path();
         let skill_md = path.join("SKILL.md");
         if !skill_md.exists() {
             continue;
@@ -413,8 +463,9 @@ fn scan_skills_dir(home_dir: &Path, subpath: &str) -> Vec<SkillInfo> {
 pub fn scan_global_skills() -> Result<Vec<SkillInfo>, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取 home 目录".to_string())?;
     let mut skills = Vec::new();
-    skills.extend(scan_skills_dir(&home, ".claude/agents/skills"));
-    skills.extend(scan_skills_dir(&home, ".agent/skills"));
+    for subpath in GLOBAL_SKILLS_SUBPATHS {
+        skills.extend(scan_skills_dir(&home, subpath));
+    }
     Ok(skills)
 }
 
@@ -424,6 +475,15 @@ pub fn copy_skill_to_workspace(
     workspace_slug: String,
     skill_slug: String,
 ) -> Result<(), String> {
+    validate_slug(&workspace_slug)?;
+    validate_slug(&skill_slug)?;
+    let source_path = validate_source_dir(&source_dir)?;
+
+    let source_skill_md = source_path.join("SKILL.md");
+    if !source_skill_md.exists() {
+        return Err(format!("源 SKILL.md 不存在: {}", source_skill_md.display()));
+    }
+
     let home = dirs::home_dir().ok_or_else(|| "无法获取 home 目录".to_string())?;
     let target_base = home
         .join(".jgui")
@@ -433,12 +493,7 @@ pub fn copy_skill_to_workspace(
         .join(&skill_slug);
     fs::create_dir_all(&target_base).map_err(|e| format!("创建目标目录失败: {}", e))?;
 
-    let source_skill_md = PathBuf::from(&source_dir).join("SKILL.md");
     let target_skill_md = target_base.join("SKILL.md");
-
-    if !source_skill_md.exists() {
-        return Err(format!("源 SKILL.md 不存在: {}", source_skill_md.display()));
-    }
 
     fs::copy(&source_skill_md, &target_skill_md)
         .map_err(|e| format!("复制 SKILL.md 失败: {}", e))?;
@@ -509,5 +564,95 @@ mod tests {
         assert!(result.is_none());
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // === validate_slug tests ===
+    #[test]
+    fn test_validate_slug_valid() {
+        assert!(validate_slug("my-skill").is_ok());
+        assert!(validate_slug("MySkill_123").is_ok());
+        assert!(validate_slug("test").is_ok());
+        assert!(validate_slug("a-b_c").is_ok());
+    }
+
+    #[test]
+    fn test_validate_slug_empty() {
+        assert!(validate_slug("").is_err());
+    }
+
+    #[test]
+    fn test_validate_slug_path_traversal() {
+        assert!(validate_slug("..").is_err());
+        assert!(validate_slug("a/b").is_err());
+        assert!(validate_slug("a\\b").is_err());
+    }
+
+    #[test]
+    fn test_validate_slug_special_chars() {
+        assert!(validate_slug("a b").is_err());
+        assert!(validate_slug("a.b").is_err());
+    }
+
+    // === scan_skills_dir tests ===
+    #[test]
+    fn test_scan_skills_dir_nonexistent() {
+        let dir = std::env::temp_dir().join("j-gui-test-nonexistent-scan");
+        let _ = fs::remove_dir_all(&dir);
+        let skills = scan_skills_dir(&std::env::temp_dir(), "j-gui-test-nonexistent-scan");
+        assert!(skills.is_empty());
+    }
+
+    #[test]
+    fn test_scan_skills_dir_skips_symlinks() {
+        let dir = std::env::temp_dir().join("j-gui-test-scan-symlink");
+        let _ = fs::remove_dir_all(&dir);
+
+        fs::create_dir_all(&dir.join("real_skill")).unwrap();
+        let mut file = fs::File::create(&dir.join("real_skill").join("SKILL.md")).unwrap();
+        writeln!(file, "---\nname: Real\n---").unwrap();
+        drop(file);
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&dir.join("real_skill"), &dir.join("link_skill")).ok();
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_dir(&dir.join("real_skill"), &dir.join("link_skill"))
+                .ok();
+        }
+
+        let skills = scan_skills_dir(&dir, "");
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].name, "Real");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // === validate_source_dir tests ===
+    #[test]
+    fn test_validate_source_dir_rejects_invalid_path() {
+        let dir = std::env::temp_dir().join("j-gui-test-validate-source");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let result = validate_source_dir(&dir.to_string_lossy());
+        assert!(result.is_err());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_validate_source_dir_accepts_skills_dir() {
+        let home = dirs::home_dir().unwrap();
+        let skill_dir = home.join(".claude/agents/skills/j-gui-test-validate-skill");
+        let _ = fs::remove_dir_all(&skill_dir);
+        fs::create_dir_all(&skill_dir).unwrap();
+
+        let result = validate_source_dir(&skill_dir.to_string_lossy());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), std::fs::canonicalize(&skill_dir).unwrap());
+
+        let _ = fs::remove_dir_all(&skill_dir);
     }
 }

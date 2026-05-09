@@ -1,32 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import * as ipc from '@/lib/ipc'
-
-// ============================================================
-// Helper functions (ported from AgentSettings for testability)
-// ============================================================
-
-type SkillSourceType = 'workspace' | 'jcli' | 'global'
-
-function getSkillSourceType(source: string): SkillSourceType {
-  if (source === 'user' || source === 'project') return 'jcli'
-  if (source.startsWith('global:')) return 'global'
-  return 'workspace'
-}
-
-function getSkillSourceBadge(sourceType: SkillSourceType): { label: string; className: string } {
-  switch (sourceType) {
-    case 'jcli':
-      return { label: 'j-cli', className: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' }
-    case 'global':
-      return { label: 'global', className: 'bg-orange-500/10 text-orange-600 dark:text-orange-400' }
-    case 'workspace':
-      return { label: 'workspace', className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' }
-  }
-}
-
-function externalSkillSlug(dirPath: string): string {
-  return dirPath.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? 'unknown'
-}
+import {
+  getSkillSourceType,
+  getSkillSourceBadge,
+  externalSkillSlug,
+} from '@/components/settings/skill-helpers'
 
 describe('Dual-source skills — helpers', () => {
   describe('getSkillSourceType', () => {

@@ -1,0 +1,218 @@
+roadmap: j-gui-v1
+created: 2026-05-10
+last_reviewed: 2026-05-10
+
+# Roadmap 进度：Phase A 9/9 ✅ | Phase B 8/8 ✅ | Phase C 0/4 | Phase D 0/5
+
+items:
+  # ===== Phase A: 可用 MVP (P0 — 全部完成) =====
+  - slug: channel-management
+    description: 渠道 CRUD + test_channel_direct + fetch_models
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: Phase A 完成
+
+  - slug: stop-generation
+    description: Chat/Agent 中断生成 (STOPPED_SESSIONS)
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: Phase A 完成
+
+  - slug: agent-title
+    description: generate_agent_title + update_agent_session_title
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: Phase A 完成
+
+  - slug: agent-permissions
+    description: respond_permission + respond_ask_user
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: Phase A 完成
+
+  - slug: file-dialog
+    description: open_file_dialog + save/read_attachment + list_directory
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: Phase A 完成
+
+  - slug: conversation-title
+    description: update_conversation_title 对接到 Rust
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: Phase A 完成
+
+  - slug: git-node-detection
+    description: Git/Node.js 环境检测
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: Phase A 完成
+
+  - slug: workspace-crud
+    description: 工作区 CRUD 管理
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: Phase A 完成
+
+  - slug: timestamp-fix
+    description: 时间戳修复
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: Phase A 完成
+
+  # ===== Phase B: j-cli 功能对齐 + 双源 Skills (P1) =====
+  - slug: alias-ui
+    description: Alias 管理 UI tab，后端已有 list/set/remove
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 2026-05-10 TDD 完成——AliasSettings.tsx + IPC wrappers + 4 tests
+
+  - slug: skills-dual-source-ui
+    description: Skills 双源管理 UI——j-cli Skills + CC SDK Workspace Skills + 全局 Skills 扫描导入
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 2026-05-10 TDD 完成——scan_global_skills + copy_skill_to_workspace 后端命令 + 双源 UI + 14 tests
+
+  - slug: hooks-ui
+    description: Hooks 管理 UI tab，后端已有 list_hooks
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 2026-05-10 TDD 完成——HooksSettings.tsx + IPC wrappers + 4 tests
+
+  - slug: mcp-dual-source-ui
+    description: MCP Server 双源配置 UI——j-cli 源 (mcp_config.json) + CC SDK 工作区源 (mcp.json)
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 2026-05-10 TDD 完成——listMcpServers IPC + source toggle + j-cli 只读视图 + 6 tests
+
+  - slug: chat-tools-ui
+    description: Chat Tools 管理 UI——基于后端 list_chat_tools (20 内置工具) 和 set_tool_enabled 的启停管理
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 2026-05-10 TDD 完成——BuiltinToolsSection + listChatTools/setToolEnabled IPC + 5 tests
+
+  - slug: system-prompt-ui
+    description: System Prompt 编辑器 + j-cli 默认内容自动加载
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: PromptSettings.tsx 已完整实现 + 后端 get_system_prompt_config 等 7 命令注册 + 首读自动加载 j-cli 默认内容 + 9 Rust tests
+
+  - slug: yaml-config-editor
+    description: 全局 YamlConfig 查看/编辑 UI，后端已有 get_config/set_config
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 2026-05-10 TDD 完成——YamlConfigSettings.tsx + IPC wrappers + 5 tests
+
+  - slug: channel-provider-ui
+    description: 渠道 Provider CRUD UI + 模型选择器 + 测试连接
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: ChannelSettings.tsx + ChannelForm.tsx 已完整实现
+
+  # ===== Phase C: 体验追平 (P2) =====
+  - slug: workspace-mcp
+    description: 工作区 MCP 读写持久化
+    depends_on: [mcp-dual-source-ui]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes:
+
+  - slug: message-persistence
+    description: Chat 消息 JSONL (对接 j-cli session)
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes:
+
+  - slug: session-archive
+    description: 会话归档/搜索
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes:
+
+  - slug: error-toast
+    description: 统一错误提示 + 边界处理
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes:
+
+  # ===== Phase D: 发布就绪 (P3) =====
+  - slug: file-browser
+    description: 文件树操作 (open/delete/rename)
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes:
+
+  - slug: branding-cleanup
+    description: @proma/* 包名重命名为 @jgui/*
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes:
+
+  - slug: readme-docs
+    description: README 完善 + 用户指南
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes:
+
+  - slug: build-packaging
+    description: Tauri bundle (Windows/macOS/Linux)
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes:
+
+  - slug: tdd-coverage
+    description: 测试覆盖达标 (前端 vitest + 后端 cargo test)
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes:
