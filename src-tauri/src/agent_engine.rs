@@ -95,6 +95,7 @@ impl AgentEngine {
         let sid = session_id.to_string();
         let stdout_thread = std::thread::spawn(move || {
             let reader = BufReader::new(stdout);
+            let mut line_count = 0u32;
             for line in reader.lines() {
                 let line = match line {
                     Ok(l) => l,
@@ -102,6 +103,10 @@ impl AgentEngine {
                 };
                 if line.is_empty() {
                     continue;
+                }
+                line_count += 1;
+                if line_count <= 5 {
+                    eprintln!("[claude-debug] raw #{}: {}", line_count, &line[..line.len().min(500)]);
                 }
                 let events = parse_sdk_line(&line);
                 for event in events {

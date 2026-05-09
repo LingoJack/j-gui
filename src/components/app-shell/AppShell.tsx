@@ -179,7 +179,7 @@ export default function AppShell() {
         <div className="flex-1 overflow-hidden">
           <MainArea onOpenSettings={() => setSettingsOpen(true)} />
         </div>
-        <BackgroundTasksPanel />
+        {activeTab?.type === "agent" && <BackgroundTasksPanel />}
       </main>
       {activeTab?.type === "agent" && rightPanelOpen && <RightSidePanel />}
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />

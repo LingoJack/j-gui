@@ -12,7 +12,7 @@ pub fn start_agent(
     permission_mode: Option<String>,
     session_id: Option<String>,
 ) -> Result<(), String> {
-    let mode = permission_mode.unwrap_or_else(|| "bypassPermissions".to_string());
+    let mode = permission_mode.unwrap_or_else(|| "default".to_string());
     let sid = match session_id {
         Some(id) => id,
         None => agent_session::create_agent_session()?,

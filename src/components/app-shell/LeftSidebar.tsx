@@ -245,8 +245,7 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
   const load = useCallback(async () => {
     try {
       if (!activeTab) {
-        setChatSessions([]);
-        setAgentSessionsList([]);
+        // Keep sessions visible without active tab
         return;
       }
       const list = activeTab.type === "agent" ? await getAgentSessionList() : await listSessions();

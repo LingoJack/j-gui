@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useAtomValue } from "jotai";
 import { chatMessagesAtom, chatStreamingAtom } from "@/atoms/sessions";
 import { activeTabAtom } from "@/atoms/tabs";
@@ -26,6 +26,24 @@ export default function ChatMessages({
   const streaming = useAtomValue(chatStreamingAtom);
   const activeTab = useAtomValue(activeTabAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const userScrolledUpRef = useRef(false);
+
+  // Auto-scroll when new messages arrive or during streaming
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Don't auto-scroll if user has scrolled up
+    if (userScrolledUpRef.current && !streaming) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length, messages[messages.length - 1]?.content, streaming]);
+
+  // Track manual scroll to not fight the user
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    userScrolledUpRef.current = !atBottom;
+  };
 
   if (messages.length === 0 && !streaming) {
     return (
@@ -49,6 +67,7 @@ export default function ChatMessages({
     <div className="flex-1 relative overflow-hidden">
       <div
         ref={scrollRef}
+        onScroll={handleScroll}
         className="absolute inset-0 overflow-y-auto px-4 py-4 space-y-4"
       >
         {messages.map((msg, i) => (
