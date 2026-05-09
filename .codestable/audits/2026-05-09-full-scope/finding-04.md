@@ -6,7 +6,7 @@ nature: bug
 severity: P2
 confidence: medium
 suggested_action: cs-issue
-status: open
+status: fixed
 ---
 
 # Finding 04：AgentEngine::Drop 无条件杀子进程，可能丢失未持久化数据

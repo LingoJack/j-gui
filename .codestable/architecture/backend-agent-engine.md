@@ -169,6 +169,7 @@ stdout 后台线程位于 `src-tauri/src/agent_engine.rs:92-200`：
 - `interrupt` 的 `kind` 当前固定是 `"permission"`，来自 `ToolUse -> Interrupt` 包装，不是更丰富的中断系统。证据：`src-tauri/src/agent_engine.rs:109-113`。
 - stderr 线程当前直接 `eprintln!` 输出，而不是写文件日志。证据：`src-tauri/src/agent_engine.rs:202-208`。
 - session title 在创建时写成 `null`，当前持久化层不会自动根据首条用户消息更新 `meta.json`。证据：`src-tauri/src/agent_session.rs:87-89`。
+- API Key 通过 `ANTHROPIC_API_KEY` 环境变量传入 Claude CLI 子进程，在同用户进程中可见 (`src-tauri/src/agent_engine.rs:73-79`)。
 
 ## 7. 相关文档
 

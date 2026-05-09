@@ -73,6 +73,10 @@ impl AgentEngine {
         if !provider.api_base.is_empty() {
             cmd.env("ANTHROPIC_BASE_URL", &provider.api_base);
         }
+        // API key is passed via env var as required by the Claude CLI.
+        // On a single-user desktop this is acceptable; on shared systems,
+        // /proc/<pid>/environ (Linux) or process environment APIs (Windows)
+        // could leak the key to same-user processes.
         if !provider.api_key.is_empty() {
             cmd.env("ANTHROPIC_API_KEY", &provider.api_key);
         }
@@ -271,11 +275,17 @@ impl AgentEngine {
         if let Some(stdin) = self.stdin.take() {
             drop(stdin);
         }
-        // Kill process before joining reader threads.
-        // If we join first, stdout_thread may block forever on a still-open pipe.
+        // Give the process a short grace period to exit naturally after stdin close,
+        // so it can flush remaining output before we force-kill.
         if let Some(mut process) = self.process.take() {
-            let _ = process.kill();
-            let _ = process.wait();
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            match process.try_wait() {
+                Ok(Some(_)) => { /* exited naturally */ }
+                Ok(None) | Err(_) => {
+                    let _ = process.kill();
+                    let _ = process.wait();
+                }
+            }
         }
         // Join reader threads — safe now because the process is dead and pipes are broken.
         if let Some(handle) = self.stdout_thread.take() {
@@ -324,6 +334,12 @@ fn parse_sdk_line(line: &str) -> Vec<AgentEvent> {
     };
 
     let msg_type = v["type"].as_str().unwrap_or("");
+    if msg_type.is_empty() {
+        eprintln!(
+            "[warn] parse_sdk_line: missing or non-string 'type' field in SDK line: {}",
+            &line[..line.len().min(200)]
+        );
+    }
 
     match msg_type {
         "assistant" => parse_assistant_event(&v),
@@ -367,6 +383,12 @@ fn parse_assistant_event(v: &serde_json::Value) -> Vec<AgentEvent> {
                     block_count += 1;
                     let tool_id = item["id"].as_str().unwrap_or("").to_string();
                     let tool_name = item["name"].as_str().unwrap_or("").to_string();
+                    if tool_id.is_empty() || tool_name.is_empty() {
+                        eprintln!(
+                            "[warn] parse_assistant_event: tool_use missing id={} name={}",
+                            tool_id.is_empty(), tool_name.is_empty()
+                        );
+                    }
                     let tool_input = item["input"].to_string();
                     events.push(AgentEvent::ToolUse {
                         tool_id,
@@ -397,6 +419,11 @@ fn parse_user_event(v: &serde_json::Value) -> Vec<AgentEvent> {
             if item["type"].as_str() == Some("tool_result") {
                 let tool_id = item["tool_use_id"].as_str().unwrap_or("").to_string();
                 let content = item["content"].as_str().unwrap_or("").to_string();
+                if tool_id.is_empty() {
+                    eprintln!(
+                        "[warn] parse_user_event: tool_result missing tool_use_id"
+                    );
+                }
                 return vec![AgentEvent::ToolResult { tool_id, content }];
             }
         }

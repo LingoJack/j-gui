@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useRef } from "react";
+import { useEffect, useCallback, useState, useRef, memo } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { sidebarOpenAtom } from "@/atoms/sidebar";
 import {
@@ -63,6 +63,109 @@ function groupByDate(sessions: SessionInfo[]) {
   if (older.length) groups.push({ label: "更早", items: older });
   return groups;
 }
+
+// --- SessionItem (memo'd to avoid re-rendering unaffected items) ---
+
+interface SessionItemProps {
+  session: SessionInfo;
+  modeType: "chat" | "agent";
+  isActive: boolean;
+  isPinned: boolean;
+  isEditing: boolean;
+  editValue: string;
+  displayTitle: string;
+  onSwitch: (id: string) => void;
+  onTogglePin: (id: string) => void;
+  onStartEdit: (id: string) => void;
+  onCommitEdit: (id: string) => void;
+  onCancelEdit: () => void;
+  onDelete: (e: React.MouseEvent, id: string) => void;
+  onEditValueChange: (value: string) => void;
+}
+
+const SessionItem = memo(function SessionItem({
+  session,
+  modeType,
+  isActive,
+  isPinned,
+  isEditing,
+  editValue,
+  displayTitle,
+  onSwitch,
+  onTogglePin,
+  onStartEdit,
+  onCommitEdit,
+  onCancelEdit,
+  onDelete,
+  onEditValueChange,
+}: SessionItemProps) {
+  const Icon = modeType === "agent" ? Bot : MessageSquare;
+  return (
+    <div className="group flex items-center gap-0.5">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onTogglePin(session.id);
+        }}
+        className={cn(
+          "p-0.5 rounded hover:bg-muted transition-opacity shrink-0",
+          isPinned ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+        )}
+      >
+        <Star
+          size={12}
+          className={isPinned ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}
+        />
+      </button>
+
+      <button
+        onClick={() => onSwitch(session.id)}
+        onDoubleClick={() => onStartEdit(session.id)}
+        className={cn(
+          "flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5 rounded-md text-sm text-left transition-colors",
+          isActive
+            ? "bg-accent text-foreground"
+            : "hover:bg-accent text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <Icon size={14} className="shrink-0" />
+        {isEditing ? (
+          <input
+            autoFocus
+            value={editValue}
+            onChange={(e) => onEditValueChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onCommitEdit(session.id);
+              if (e.key === "Escape") onCancelEdit();
+            }}
+            onBlur={() => onCommitEdit(session.id)}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 min-w-0 bg-background border border-border rounded px-1 py-0.5 text-xs outline-none"
+          />
+        ) : (
+          <span className="truncate flex-1 min-w-0">{displayTitle}</span>
+        )}
+      </button>
+
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onStartEdit(session.id);
+        }}
+        className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity shrink-0"
+      >
+        <Pencil size={12} className="text-muted-foreground" />
+      </button>
+
+      <button
+        onClick={(e) => onDelete(e, session.id)}
+        className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity shrink-0"
+      >
+        <Trash2 size={12} className="text-muted-foreground" />
+      </button>
+    </div>
+  );
+});
 
 interface Props {
   onOpenSettings: () => void;
@@ -283,75 +386,25 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
     const isPinned = pinnedIds.has(s.id);
     const displayTitle = sessionTitleOverrides[s.id] || s.title || s.id.slice(0, 8);
     const isEditing = editingId === s.id;
-
+    const modeType = activeTab?.type ?? "chat";
     return (
-      <div key={s.id} className="group flex items-center gap-0.5">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            togglePin(s.id);
-          }}
-          className={cn(
-            "p-0.5 rounded hover:bg-muted transition-opacity shrink-0",
-            isPinned ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-          )}
-        >
-          <Star
-            size={12}
-            className={isPinned ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}
-          />
-        </button>
-
-        <button
-          onClick={() => handleSwitchSession(s.id)}
-          onDoubleClick={() => startEdit(s.id, s.title, s.id)}
-          className={cn(
-            "flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5 rounded-md text-sm text-left transition-colors",
-            s.id === currentId
-              ? "bg-accent text-foreground"
-              : "hover:bg-accent text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {activeTab?.type === "agent" ? (
-            <Bot size={14} className="shrink-0" />
-          ) : (
-            <MessageSquare size={14} className="shrink-0" />
-          )}
-          {isEditing ? (
-            <input
-              autoFocus
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitEdit(s.id);
-                if (e.key === "Escape") cancelEdit();
-              }}
-              onBlur={() => commitEdit(s.id)}
-              onClick={(e) => e.stopPropagation()}
-              className="flex-1 min-w-0 bg-background border border-border rounded px-1 py-0.5 text-xs outline-none"
-            />
-          ) : (
-            <span className="truncate flex-1 min-w-0">{displayTitle}</span>
-          )}
-        </button>
-
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            startEdit(s.id, s.title, s.id);
-          }}
-          className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity shrink-0"
-        >
-          <Pencil size={12} className="text-muted-foreground" />
-        </button>
-
-        <button
-          onClick={(e) => handleDeleteSession(e, s.id)}
-          className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity shrink-0"
-        >
-          <Trash2 size={12} className="text-muted-foreground" />
-        </button>
-      </div>
+      <SessionItem
+        key={s.id}
+        session={s}
+        modeType={modeType}
+        isActive={s.id === currentId}
+        isPinned={isPinned}
+        isEditing={isEditing}
+        editValue={editValue}
+        displayTitle={displayTitle}
+        onSwitch={handleSwitchSession}
+        onTogglePin={togglePin}
+        onStartEdit={(id) => startEdit(id, s.title, s.id)}
+        onCommitEdit={commitEdit}
+        onCancelEdit={cancelEdit}
+        onDelete={handleDeleteSession}
+        onEditValueChange={setEditValue}
+      />
     );
   };
 

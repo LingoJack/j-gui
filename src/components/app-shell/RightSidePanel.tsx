@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import { useAtom } from "jotai";
 import { rightPanelOpenAtom } from "@/atoms/sidebar";
 import {
@@ -112,6 +112,57 @@ function buildBreadcrumbs(currentPath: string): BreadcrumbSegment[] {
   return [{ label: "~", path: "." }, ...segments];
 }
 
+// --- Tree node component (memo'd to avoid re-rendering unaffected nodes) ---
+
+interface TreeNodeProps {
+  node: TreeNode;
+  depth: number;
+  onToggle: (path: string) => void;
+}
+
+const TreeNodeItem = memo(function TreeNodeItem({ node, depth, onToggle }: TreeNodeProps) {
+  return (
+    <div key={node.path}>
+      <div
+        className={cn(
+          "flex items-center gap-1.5 px-3 py-1 text-xs hover:bg-accent cursor-pointer select-none",
+          node.isDir && "font-medium",
+        )}
+        style={{ paddingLeft: `${12 + depth * 16}px` }}
+        onClick={() => onToggle(node.path)}
+      >
+        {node.isDir ? (
+          <>
+            {node.loading ? (
+              <Loader2 size={12} className="animate-spin shrink-0" />
+            ) : node.expanded ? (
+              <ChevronDown size={12} className="shrink-0" />
+            ) : (
+              <ChevronRight size={12} className="shrink-0" />
+            )}
+            <Folder size={14} className="text-blue-500 shrink-0" />
+          </>
+        ) : (
+          <>
+            <span className="w-3 shrink-0" />
+            <File size={14} className="text-muted-foreground shrink-0" />
+          </>
+        )}
+        <span className="truncate flex-1">{node.name}</span>
+        {!node.isDir && node.size !== undefined && (
+          <span className="text-[10px] text-muted-foreground shrink-0">
+            {formatSize(node.size)}
+          </span>
+        )}
+      </div>
+      {node.expanded &&
+        node.children?.map((child) => (
+          <TreeNodeItem key={child.path} node={child} depth={depth + 1} onToggle={onToggle} />
+        ))}
+    </div>
+  );
+});
+
 // --- Component ---
 
 export default function RightSidePanel() {
@@ -176,47 +227,6 @@ export default function RightSidePanel() {
 
   const breadcrumbs = buildBreadcrumbs(currentPath);
 
-  const renderNode = (node: TreeNode, depth: number): React.ReactNode => {
-    return (
-      <div key={node.path}>
-        <div
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-1 text-xs hover:bg-accent cursor-pointer select-none",
-            node.isDir && "font-medium",
-          )}
-          style={{ paddingLeft: `${12 + depth * 16}px` }}
-          onClick={() => toggleNode(node.path)}
-        >
-          {node.isDir ? (
-            <>
-              {node.loading ? (
-                <Loader2 size={12} className="animate-spin shrink-0" />
-              ) : node.expanded ? (
-                <ChevronDown size={12} className="shrink-0" />
-              ) : (
-                <ChevronRight size={12} className="shrink-0" />
-              )}
-              <Folder size={14} className="text-blue-500 shrink-0" />
-            </>
-          ) : (
-            <>
-              <span className="w-3 shrink-0" />
-              <File size={14} className="text-muted-foreground shrink-0" />
-            </>
-          )}
-          <span className="truncate flex-1">{node.name}</span>
-          {!node.isDir && node.size !== undefined && (
-            <span className="text-[10px] text-muted-foreground shrink-0">
-              {formatSize(node.size)}
-            </span>
-          )}
-        </div>
-        {node.expanded &&
-          node.children?.map((child) => renderNode(child, depth + 1))}
-      </div>
-    );
-  };
-
   return (
     <aside className="w-[260px] flex flex-col h-full bg-card border-l border-border shrink-0">
       {/* Header */}
@@ -271,7 +281,9 @@ export default function RightSidePanel() {
             <p className="text-xs">空目录</p>
           </div>
         ) : (
-          tree.map((node) => renderNode(node, 0))
+          tree.map((node) => (
+            <TreeNodeItem key={node.path} node={node} depth={0} onToggle={toggleNode} />
+          ))
         )}
       </div>
     </aside>

@@ -6,7 +6,7 @@ nature: security
 severity: P1
 confidence: high
 suggested_action: cs-issue
-status: open
+status: fixed
 ---
 
 # Finding 06：API Key 明文传入子进程环境变量

@@ -6,7 +6,7 @@ nature: security
 severity: P2
 confidence: low
 suggested_action: cs-issue
-status: open
+status: fixed
 ---
 
 # Finding 08：JSON 解析失败用 unwrap_or("") 吞没错误，掩盖数据完整性问题

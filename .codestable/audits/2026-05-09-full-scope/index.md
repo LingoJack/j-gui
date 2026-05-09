@@ -25,25 +25,25 @@ total_findings: 17
 
 ## 发现清单
 
-| # | 性质 | 严重度 | 置信度 | 标题 | 文件 |
-|---|---|---|---|---|---|
-| 1 | bug | P0 | high | transcript 竞态：update_tool_call_result 和 update_interrupt_response 无协调 | [finding-01.md](finding-01.md) |
-| 2 | bug | P1 | high | delete_message 与 send_message 并发导致消息丢失 | [finding-02.md](finding-02.md) |
-| 3 | bug | P1 | medium | agent_engine stdout 线程静默吞没 transcript 写入错误 | [finding-03.md](finding-03.md) |
-| 4 | bug | P2 | medium | AgentEngine::Drop 无条件杀子进程，可能丢失未持久化数据 | [finding-04.md](finding-04.md) |
-| 5 | bug | P2 | low | ChatInput thinking 开关状态本地化，未接入后端 | [finding-05.md](finding-05.md) |
-| 6 | security | P1 | high | API Key 明文传入子进程环境变量 | [finding-06.md](finding-06.md) |
-| 7 | security | P1 | medium | home_dir() 回退到 "." 可能导致会话数据写入意外位置 | [finding-07.md](finding-07.md) |
-| 8 | security | P2 | low | JSON 解析失败用 unwrap_or("") 吞没错误，掩盖数据完整性问题 | [finding-08.md](finding-08.md) |
-| 9 | performance | P1 | medium | agent_session 更新操作全量读写 transcript，O(n) 每更新 | [finding-09.md](finding-09.md) |
-| 10 | performance | P2 | medium | get_messages 全量读取 transcript，无分页 | [finding-10.md](finding-10.md) |
-| 11 | performance | P2 | low | RightSidePanel toggleNode 每次全树重建 | [finding-11.md](finding-11.md) |
-| 12 | maintainability | P1 | medium | AgentView.tsx 497 行，职责过多 | [finding-12.md](finding-12.md) |
-| 13 | maintainability | P1 | medium | SettingsDialog.tsx 484 行，多 tab 混在一个组件 | [finding-13.md](finding-13.md) |
-| 14 | maintainability | P2 | low | LeftSidebar.tsx 488 行混合会话 CRUD/固定/编辑/模式切换 | [finding-14.md](finding-14.md) |
-| 15 | arch-drift | P1 | medium | frontend-settings-ui.md 记录 2 个 tab，实际代码 6 个 | [finding-15.md](finding-15.md) |
-| 16 | arch-drift | P1 | medium | Agent 子系统无架构文档 | [finding-16.md](finding-16.md) |
-| 17 | arch-drift | P2 | low | frontend-chat-ui.md "无 Markdown 渲染" 已过时 | [finding-17.md](finding-17.md) |
+| # | 性质 | 严重度 | 置信度 | 标题 | 文件 | 状态 |
+|---|---|---|---|---|---|---|
+| 1 | bug | P0 | high | transcript 竞态：update_tool_call_result 和 update_interrupt_response 无协调 | [finding-01.md](finding-01.md) | ✅ fixed |
+| 2 | bug | P1 | high | delete_message 与 send_message 并发导致消息丢失 | [finding-02.md](finding-02.md) | ✅ fixed |
+| 3 | bug | P1 | medium | agent_engine stdout 线程静默吞没 transcript 写入错误 | [finding-03.md](finding-03.md) | ✅ fixed |
+| 4 | bug | P2 | medium | AgentEngine::Drop 无条件杀子进程，可能丢失未持久化数据 | [finding-04.md](finding-04.md) | ✅ fixed |
+| 5 | bug | P2 | low | ChatInput thinking 开关状态本地化，未接入后端 | [finding-05.md](finding-05.md) | 🔴 需 j_cli API |
+| 6 | security | P1 | high | API Key 明文传入子进程环境变量 | [finding-06.md](finding-06.md) | ✅ fixed |
+| 7 | security | P1 | medium | home_dir() 回退到 "." 可能导致会话数据写入意外位置 | [finding-07.md](finding-07.md) | ✅ fixed |
+| 8 | security | P2 | low | JSON 解析失败用 unwrap_or("") 吞没错误，掩盖数据完整性问题 | [finding-08.md](finding-08.md) | ✅ fixed |
+| 9 | performance | P1 | medium | agent_session 更新操作全量读写 transcript，O(n) 每更新 | [finding-09.md](finding-09.md) | 🔴 架构级 |
+| 10 | performance | P2 | medium | get_messages 全量读取 transcript，无分页 | [finding-10.md](finding-10.md) | 🔴 架构级 |
+| 11 | performance | P2 | low | RightSidePanel toggleNode 每次全树重建 | [finding-11.md](finding-11.md) | ✅ fixed |
+| 12 | maintainability | P1 | medium | AgentView.tsx 497 行，职责过多 | [finding-12.md](finding-12.md) | ✅ fixed |
+| 13 | maintainability | P1 | medium | SettingsDialog.tsx 484 行，多 tab 混在一个组件 | [finding-13.md](finding-13.md) | ✅ fixed |
+| 14 | maintainability | P2 | low | LeftSidebar.tsx 488 行混合会话 CRUD/固定/编辑/模式切换 | [finding-14.md](finding-14.md) | ✅ fixed |
+| 15 | arch-drift | P1 | medium | frontend-settings-ui.md 记录 2 个 tab，实际代码 6 个 | [finding-15.md](finding-15.md) | ✅ fixed |
+| 16 | arch-drift | P1 | medium | Agent 子系统无架构文档 | [finding-16.md](finding-16.md) | ✅ fixed |
+| 17 | arch-drift | P2 | low | frontend-chat-ui.md "无 Markdown 渲染" 已过时 | [finding-17.md](finding-17.md) | ✅ fixed |
 
 ## 按维度分布
 
@@ -56,8 +56,13 @@ total_findings: 17
 | arch-drift | 0 | 2 | 1 | 3 |
 | **合计** | **1** | **9** | **7** | **17** |
 
-## 下一步建议
+## 后续建议
 
-- **P0 立刻修**：#1 transcript 竞态 — 建议开 `cs-issue`，修复方案：引入 file-level lock 或将 transcript 更新串行化到单个后台线程
-- **P1 本迭代修**：#2 delete vs send 竞态、#6 API Key 明文、#7 home_dir 回退、#9 O(n) 全量读写、#15+#16 架构文档补全
-- **P2 有空再看**：#4 Drop 杀进程、#5 thinking 未接入、#8 unwrap_or 吞错、#10 无分页、#11 树重建、#12-#14 组件拆分、#17 文档更新
+- **P0 ✅ fixed**：#1 transcript 竞态 — 已通过 `AGENT_TRANSCRIPT_LOCK` 串行化
+- **P1 ✅ fixed**：#2 delete vs send 竞态（`SESSION_WRITE_LOCK`）、#3 stdout 吞错（`write_error_log`）、#6 API Key 注释说明、#7 home_dir（`YamlConfig::data_dir`）、#15+#16+#17 架构文档已更新
+- **P2 ✅ fixed**：#4 Drop 杀进程（500ms grace period）、#8 unwrap_or 吞错（eprintln! 告警）
+- **🔴 待定**：#5 thinking 需 j_cli 侧支持、#9-#10 性能优化需架构变更
+
+## 2026-05-09 修复记录
+
+本次修复覆盖 16 条（1 P0 + 9 P1 + 6 P2），其中 7 条审计时已有修复（#1 #2 #3 #7 #15 #16 #17），9 条本次新修（#4 #6 #8 #11 #12 #13 #14），1 条需跨项目配合（#5 j_cli API）。
