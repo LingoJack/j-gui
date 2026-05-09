@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, X } from "lucide-react";
+import { AlertTriangle, Check, X, ShieldCheck } from "lucide-react";
 
 interface Props {
   toolName: string;
@@ -6,9 +6,17 @@ interface Props {
   disabled?: boolean;
   onAllow: () => void;
   onDeny: () => void;
+  onAlwaysAllow?: () => void;
 }
 
-export default function PermissionBanner({ toolName, toolInput, disabled = false, onAllow, onDeny }: Props) {
+export default function PermissionBanner({
+  toolName,
+  toolInput,
+  disabled = false,
+  onAllow,
+  onDeny,
+  onAlwaysAllow,
+}: Props) {
   let preview = toolInput;
   try {
     preview = JSON.stringify(JSON.parse(toolInput), null, 2).slice(0, 300);
@@ -26,7 +34,7 @@ export default function PermissionBanner({ toolName, toolInput, disabled = false
       <pre className="text-[11px] bg-muted rounded p-2 overflow-x-auto leading-relaxed max-h-24 overflow-y-auto text-muted-foreground">
         {preview}
       </pre>
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <button
           onClick={onAllow}
           disabled={disabled}
@@ -41,6 +49,15 @@ export default function PermissionBanner({ toolName, toolInput, disabled = false
         >
           <X size={12} /> 拒绝 (Esc)
         </button>
+        {onAlwaysAllow && (
+          <button
+            onClick={onAlwaysAllow}
+            disabled={disabled}
+            className="flex items-center gap-1 px-3 py-1 text-xs rounded-md bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ShieldCheck size={12} /> 始终允许
+          </button>
+        )}
       </div>
     </div>
   );

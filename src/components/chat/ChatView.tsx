@@ -11,6 +11,7 @@ import {
   chatDraftsAtom,
   chatSessionsAtom,
   sessionTitleOverridesAtom,
+  chatClearMarkerAtom,
   deriveSessionTitle,
   type Message,
 } from "@/atoms/sessions";
@@ -55,6 +56,8 @@ export default function ChatView() {
   const setTabs = useSetAtom(tabsAtom);
   const [theme, setThemeState] = useAtom(themeAtom);
   const [drafts, setDrafts] = useAtom(chatDraftsAtom);
+  const clearMarker = useAtomValue(chatClearMarkerAtom);
+  const setClearMarker = useSetAtom(chatClearMarkerAtom);
   const [version, setVersion] = useState("");
   const [sysPrompt, setSysPrompt] = useState<string>("");
   const [sysPromptOpen, setSysPromptOpen] = useState(false);
@@ -273,13 +276,12 @@ export default function ChatView() {
     if (!sessionId) return;
     try {
       await clearSession(sessionId);
-      setMessages([]);
-      setForkIndex(undefined);
+      setClearMarker(messages.length);
       toast("上下文已清空", "success");
     } catch (e) {
       toast(`清空失败: ${String(e)}`, "error");
     }
-  }, [sessionId, setMessages]);
+  }, [sessionId, messages.length, setClearMarker]);
 
   const handleFork = useCallback(
     async (msgIndex: number, content: string) => {
@@ -422,6 +424,7 @@ export default function ChatView() {
               streamingByTabRef.current[activeTabId] = false;
               setSessionId(null);
               setForkIndex(undefined);
+              setClearMarker(null);
               if (activeTab) {
                 setTabs((prev) =>
                   prev.map((tab) =>
@@ -469,6 +472,7 @@ export default function ChatView() {
         }}
         onFork={handleFork}
         forkIndex={forkIndex}
+        clearMarker={clearMarker}
       />
       <ChatInput
         onSend={handleSend}

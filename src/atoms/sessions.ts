@@ -123,6 +123,23 @@ export const sessionTitleOverridesAtom = atom<Record<string, string>>({});
 export const chatDraftsAtom = atom<DraftMap>({});
 export const agentDraftsAtom = atom<DraftMap>({});
 
+type ClearMarkerMap = Record<string, number | null>;
+
+export const chatClearMarkerByTabAtom = atom<ClearMarkerMap>({});
+
+export const chatClearMarkerAtom = atom(
+  (get): number | null => {
+    const activeTabId = get(activeTabIdAtom);
+    if (!activeTabId) return null;
+    return get(chatClearMarkerByTabAtom)[activeTabId] ?? null;
+  },
+  (get, set, value: number | null) => {
+    const activeTabId = get(activeTabIdAtom);
+    if (!activeTabId) return;
+    set(chatClearMarkerByTabAtom, (prev) => ({ ...prev, [activeTabId]: value }));
+  },
+);
+
 function shortenTitle(text: string): string {
   const normalized = text.replace(/\s+/g, " ").trim();
   const firstClause = normalized.split(/[。！？!?；;\n]/)[0]?.trim() ?? normalized;

@@ -47,11 +47,56 @@ pub fn delete_agent_session(session_id: String) -> Result<(), String> {
 pub fn respond_agent_interrupt(
     state: tauri::State<'_, AgentState>,
     interrupt_id: String,
-    allowed: bool,
+    kind: String,
+    response: serde_json::Value,
 ) -> Result<(), String> {
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
     let engine = guard.as_mut().ok_or("Agent 未启动")?;
-    engine.respond_interrupt(&interrupt_id, allowed)
+
+    let content = match kind.as_str() {
+        "ask_user" => {
+            let selected = response["selectedOptions"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let custom_text = response["customText"].as_str().unwrap_or("");
+            let answer = serde_json::json!({
+                "selected_options": selected,
+                "custom_text": custom_text,
+            });
+            answer.to_string()
+        }
+        "plan" => {
+            let decision = response["decision"]
+                .as_str()
+                .unwrap_or("rejected")
+                .to_string();
+            let feedback = response["feedback"].as_str().unwrap_or("");
+            let answer = serde_json::json!({
+                "decision": decision,
+                "feedback": feedback,
+            });
+            answer.to_string()
+        }
+        _ => {
+            // Permission: backward-compatible behavior
+            if response["allowed"].as_bool().unwrap_or(false) {
+                if response["alwaysAllow"].as_bool().unwrap_or(false) {
+                    "always_approved".to_string()
+                } else {
+                    "approved".to_string()
+                }
+            } else {
+                "denied".to_string()
+            }
+        }
+    };
+
+    engine.respond_interrupt(&interrupt_id, &content)
 }
 
 #[tauri::command]

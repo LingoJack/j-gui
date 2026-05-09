@@ -110,12 +110,18 @@ impl AgentEngine {
                             tool_id,
                             tool_name,
                             tool_input,
-                        } if mode != "bypassPermissions" => AgentEvent::Interrupt {
-                            interrupt_id: tool_id,
-                            kind: "permission".to_string(),
-                            tool_name,
-                            tool_input,
-                        },
+                        } if mode != "bypassPermissions" => {
+                            let kind = match tool_name.as_str() {
+                                "ask_user" | "AskUser" => "ask_user",
+                                _ => "permission",
+                            };
+                            AgentEvent::Interrupt {
+                                interrupt_id: tool_id,
+                                kind: kind.to_string(),
+                                tool_name,
+                                tool_input,
+                            }
+                        }
                         other => other,
                     };
                     // Build timeline item before send (send moves event)
@@ -251,9 +257,8 @@ impl AgentEngine {
         .map_err(|e| format!("写入 claude stdin 失败: {}", e))
     }
 
-    pub fn respond_interrupt(&mut self, interrupt_id: &str, allowed: bool) -> Result<(), String> {
+    pub fn respond_interrupt(&mut self, interrupt_id: &str, content: &str) -> Result<(), String> {
         let stdin = self.stdin.as_mut().ok_or("Agent 未启动")?;
-        let content = if allowed { "approved" } else { "denied" };
         agent_session::update_interrupt_response(&self.session_id, interrupt_id, content)?;
         let msg = serde_json::json!({
             "type": "user",
@@ -360,6 +365,7 @@ fn parse_sdk_line(line: &str) -> Vec<AgentEvent> {
         // stream-json mode emits setup/echo events that are not renderable chat content.
         "system" | "stream_event" => Vec::new(),
         "user" => parse_user_event(&v),
+        "plan" => parse_plan_event(&v),
         _ => Vec::new(),
     }
 }
@@ -430,6 +436,30 @@ fn parse_user_event(v: &serde_json::Value) -> Vec<AgentEvent> {
     }
     // User message without tool_result — not actionable
     Vec::new()
+}
+
+fn parse_plan_event(v: &serde_json::Value) -> Vec<AgentEvent> {
+    let plan_id = v["id"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("plan")
+        .to_string();
+    let plan_summary = v["plan_summary"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    let steps = v["steps"].as_array();
+    let tool_input = serde_json::json!({
+        "plan_summary": plan_summary,
+        "steps": steps,
+    })
+    .to_string();
+    vec![AgentEvent::Interrupt {
+        interrupt_id: plan_id,
+        kind: "plan".to_string(),
+        tool_name: "plan".to_string(),
+        tool_input,
+    }]
 }
 
 fn which_claude() -> Result<String, String> {
@@ -595,5 +625,71 @@ mod tests {
             }
             _ => panic!("expected ToolUse from parse_sdk_line"),
         }
+    }
+
+    #[test]
+    fn tool_use_ask_user_parsed_as_tool_use() {
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_ask1","name":"ask_user","input":{"question":"Which OS?","options":["Windows","macOS","Linux"]}}]}}"#;
+        let events = parse_sdk_line(line);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::ToolUse {
+                tool_id,
+                tool_name,
+                tool_input,
+            } => {
+                assert_eq!(tool_id, "toolu_ask1");
+                assert_eq!(tool_name, "ask_user");
+                assert!(tool_input.contains("Which OS?"));
+            }
+            _ => panic!("expected ToolUse from parse_sdk_line"),
+        }
+    }
+
+    #[test]
+    fn plan_event_parsed_as_interrupt() {
+        let line = r#"{"type":"plan","id":"plan_1","plan_summary":"I will list files","steps":[{"tool":"Bash","command":"ls"}]}"#;
+        let events = parse_sdk_line(line);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::Interrupt {
+                kind,
+                tool_name,
+                tool_input,
+                ..
+            } => {
+                assert_eq!(kind, "plan");
+                assert_eq!(tool_name, "plan");
+                assert!(tool_input.contains("plan_summary"));
+            }
+            other => panic!("expected Interrupt, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn plan_event_without_id_uses_default() {
+        let line = r#"{"type":"plan","plan_summary":"test"}"#;
+        let events = parse_sdk_line(line);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::Interrupt {
+                interrupt_id, kind, ..
+            } => {
+                assert_eq!(interrupt_id, "plan");
+                assert_eq!(kind, "plan");
+            }
+            other => panic!("expected Interrupt, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn ask_user_tool_use_routes_to_ask_user_kind() {
+        // Simulate the route logic applied by stdout thread
+        let tool_name = "ask_user";
+        let kind = match tool_name {
+            "ask_user" | "AskUser" => "ask_user",
+            _ => "permission",
+        };
+        assert_eq!(kind, "ask_user");
     }
 }

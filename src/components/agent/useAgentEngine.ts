@@ -16,6 +16,7 @@ import { toast } from "@/atoms/toast";
 
 export interface InterruptState {
   interruptId: string;
+  kind: string;
   toolName: string;
   toolInput: string;
 }
@@ -146,6 +147,7 @@ export function useAgentEngine() {
             }));
             onInterruptRef.current?.({
               interruptId: msg.data.interruptId,
+              kind: msg.data.kind,
               toolName: msg.data.toolName,
               toolInput: msg.data.toolInput,
             });
@@ -226,11 +228,20 @@ export function useAgentEngine() {
   }, [setStreamingByTab]);
 
   const handleInterrupt = useCallback(
-    async (interruptId: string, allowed: boolean) => {
+    async (
+      interruptId: string,
+      kind: string,
+      response: Record<string, unknown>,
+    ) => {
       try {
-        await respondAgentInterrupt(interruptId, allowed);
+        await respondAgentInterrupt(interruptId, kind, response);
         const tabId = activeTabIdRef.current;
         if (tabId) {
+          const responseStr = JSON.stringify(response);
+          const status =
+            kind === "permission" && response.allowed === false
+              ? ("error" as const)
+              : ("done" as const);
           setMessagesByTab((prev) => ({
             ...prev,
             [tabId]: (prev[tabId] ?? []).map((message) =>
@@ -239,8 +250,8 @@ export function useAgentEngine() {
                     ...message,
                     toolCall: {
                       ...message.toolCall,
-                      toolOutput: allowed ? "approved" : "denied",
-                      status: allowed ? ("done" as const) : ("error" as const),
+                      toolOutput: responseStr,
+                      status,
                     },
                   }
                 : message,

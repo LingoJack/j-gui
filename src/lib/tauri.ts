@@ -157,8 +157,12 @@ export async function sendAgentMessage(content: string): Promise<void> {
   return invoke("send_agent_message", { content });
 }
 
-export async function respondAgentInterrupt(interruptId: string, allowed: boolean): Promise<void> {
-  return invoke("respond_agent_interrupt", { interruptId, allowed });
+export async function respondAgentInterrupt(
+  interruptId: string,
+  kind: string,
+  response: Record<string, unknown>,
+): Promise<void> {
+  return invoke("respond_agent_interrupt", { interruptId, kind, response });
 }
 
 export async function stopAgent(): Promise<void> {

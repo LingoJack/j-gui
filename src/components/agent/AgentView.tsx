@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   useAgentEngine,
@@ -25,6 +25,8 @@ import { PanelRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import AgentMessages from "./AgentMessages";
 import PermissionBanner from "./PermissionBanner";
+import AskUserBanner from "./AskUserBanner";
+import ExitPlanModeBanner from "./ExitPlanModeBanner";
 import ChatInput from "@/components/chat/ChatInput";
 
 export default function AgentView() {
@@ -99,12 +101,12 @@ export default function AgentView() {
   }, [activeTabId, currentSessionId, engine, setStreamingByTab]);
 
   const handleInterruptDecision = useCallback(
-    async (allowed: boolean) => {
+    async (kind: string, response: Record<string, unknown>) => {
       if (!interrupt || respondingInterruptId) return;
       const interruptId = interrupt.interruptId;
       setRespondingInterruptId(interruptId);
       try {
-        await engine.handleInterrupt(interruptId, allowed);
+        await engine.handleInterrupt(interruptId, kind, response);
         setInterrupt(null);
       } catch (error) {
         const msg = `审批响应失败: ${String(error)}`;
@@ -118,13 +120,19 @@ export default function AgentView() {
     [interrupt, engine, respondingInterruptId],
   );
 
-  // Keyboard handler for interrupt
+  // Keyboard shortcut for permission interrupts only (Enter=allow, Esc=deny)
   useEffect(() => {
-    if (!interrupt) return;
+    if (!interrupt || interrupt.kind !== "permission") return;
     const onKey = (e: KeyboardEvent) => {
       if (respondingInterruptId) return;
-      if (e.key === "Enter") { e.preventDefault(); void handleInterruptDecision(true); }
-      if (e.key === "Escape") { e.preventDefault(); void handleInterruptDecision(false); }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void handleInterruptDecision("permission", { allowed: true, alwaysAllow: false });
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        void handleInterruptDecision("permission", { allowed: false, alwaysAllow: false });
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -229,6 +237,67 @@ export default function AgentView() {
     [engine.activeTabIdRef, setDrafts],
   );
 
+  const interruptBanner = useMemo(() => {
+    if (!interrupt) return null;
+
+    switch (interrupt.kind) {
+      case "ask_user": {
+        let question = "AI 向你提问";
+        let options: string[] = [];
+        try {
+          const input = JSON.parse(interrupt.toolInput);
+          question = input.question || question;
+          options = input.options || [];
+        } catch {}
+        return (
+          <AskUserBanner
+            question={question}
+            options={options}
+            disabled={respondingInterruptId === interrupt.interruptId}
+            onSubmit={(answers) =>
+              void handleInterruptDecision("ask_user", answers as Record<string, unknown>)
+            }
+          />
+        );
+      }
+      case "plan": {
+        let planSummary = "(无计划详情)";
+        try {
+          const input = JSON.parse(interrupt.toolInput);
+          planSummary = input.plan_summary || planSummary;
+        } catch {}
+        return (
+          <ExitPlanModeBanner
+            planSummary={planSummary}
+            disabled={respondingInterruptId === interrupt.interruptId}
+            onDecision={(decision, feedback) =>
+              void handleInterruptDecision("plan", { decision, feedback } as Record<string, unknown>)
+            }
+          />
+        );
+      }
+      default: {
+        // "permission" or unknown
+        return (
+          <PermissionBanner
+            toolName={interrupt.toolName}
+            toolInput={interrupt.toolInput}
+            disabled={respondingInterruptId === interrupt.interruptId}
+            onAllow={() =>
+              void handleInterruptDecision("permission", { allowed: true, alwaysAllow: false })
+            }
+            onDeny={() =>
+              void handleInterruptDecision("permission", { allowed: false, alwaysAllow: false })
+            }
+            onAlwaysAllow={() =>
+              void handleInterruptDecision("permission", { allowed: true, alwaysAllow: true })
+            }
+          />
+        );
+      }
+    }
+  }, [interrupt, respondingInterruptId, handleInterruptDecision]);
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between h-10 px-4 border-b border-border shrink-0 gap-2">
@@ -269,15 +338,7 @@ export default function AgentView() {
         </button>
       </div>
       <AgentMessages />
-      {interrupt && (
-        <PermissionBanner
-          toolName={interrupt.toolName}
-          toolInput={interrupt.toolInput}
-          disabled={respondingInterruptId === interrupt.interruptId}
-          onAllow={() => void handleInterruptDecision(true)}
-          onDeny={() => void handleInterruptDecision(false)}
-        />
-      )}
+      {interruptBanner}
       <ChatInput
         onSend={handleSend}
         sendDisabled={streaming}
