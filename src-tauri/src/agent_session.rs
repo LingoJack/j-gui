@@ -211,6 +211,25 @@ pub fn list_agent_sessions() -> Result<Vec<AgentSessionInfo>, String> {
                 created_at = v["created_at"].as_u64().unwrap_or(0);
             }
         }
+        // Auto-derive title from first user message if meta has no title stored
+        if title.is_none() {
+            let ts_path = entry.path().join("transcript.jsonl");
+            if ts_path.exists() {
+                if let Ok(file) = std::fs::File::open(&ts_path) {
+                    for line in BufReader::new(file).lines().flatten() {
+                        if let Ok(item) = serde_json::from_str::<serde_json::Value>(&line) {
+                            if item["kind"].as_str() == Some("user_message") {
+                                if let Some(c) = item["content"].as_str() {
+                                    let preview: String = c.chars().take(24).collect();
+                                    title = Some(preview);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let transcript_path = entry.path().join("transcript.jsonl");
         let message_count = if transcript_path.exists() {
             std::fs::File::open(&transcript_path)
