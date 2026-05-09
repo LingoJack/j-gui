@@ -105,8 +105,11 @@ impl AgentEngine {
                     continue;
                 }
                 line_count += 1;
-                if line_count <= 5 {
-                    eprintln!("[claude-debug] raw #{}: {}", line_count, &line[..line.len().min(500)]);
+                if line_count <= 10 {
+                    eprintln!("[claude-debug] raw #{} (len={}): {}", line_count, line.len(), &line[..line.len().min(1000)]);
+                }
+                if line.contains("tool_use") {
+                    eprintln!("[claude-debug] TOOL_USE (len={}): {}", line.len(), &line[..line.len().min(2000)]);
                 }
                 let events = parse_sdk_line(&line);
                 for event in events {
