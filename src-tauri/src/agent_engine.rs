@@ -304,7 +304,8 @@ impl AgentEngine {
 
 fn build_claude_args(model: &str, permission_mode: &str) -> Vec<String> {
     let mut args = vec![
-        "-p".to_string(),
+        // NOTE: do NOT use -p — it's one-shot mode and prevents the CLI from
+        // maintaining conversation state across send_message calls.
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--input-format".to_string(),
