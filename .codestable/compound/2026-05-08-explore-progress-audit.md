@@ -2,7 +2,7 @@
 doc_type: explore
 type: module-overview
 slug: progress-audit
-status: active
+status: outdated
 created: 2026-05-08
 confidence: high
 tags: [progress, audit, roadmap, overview]

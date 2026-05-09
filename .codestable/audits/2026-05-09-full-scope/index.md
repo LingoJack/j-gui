@@ -3,7 +3,8 @@ doc_type: audit-index
 audit: 2026-05-09-full-scope
 scope: Agent 子系统 + Chat 流式链路 + App Shell/设置，共约 30 文件，覆盖 bug/security/performance/maintainability/arch-drift 五维
 created: 2026-05-09
-status: active
+status: superseded
+superseded-by: ../2026-05-09-post-parity-regression
 total_findings: 17
 ---
 

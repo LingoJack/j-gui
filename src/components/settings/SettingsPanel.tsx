@@ -8,7 +8,7 @@
 import * as React from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { cn } from "@/lib/utils";
-import { Settings, Radio, Palette, Info, Plug, BookOpen, Wrench, Link, Webhook, X } from "lucide-react";
+import { Settings, Radio, Palette, Info, Plug, BookOpen, Wrench, Link, Webhook, FileCode, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { settingsTabAtom, channelFormDirtyAtom, settingsCloseRequestedAtom } from "@/atoms/settings-tab";
 import type { SettingsTab } from "@/atoms/settings-tab";
@@ -28,6 +28,7 @@ import { PromptSettings } from "./PromptSettings";
 import { ToolSettings } from "./ToolSettings";
 import { AliasSettings } from "./AliasSettings";
 import { HooksSettings } from "./HooksSettings";
+import { YamlConfigSettings } from "./YamlConfigSettings";
 
 interface TabItem { id: SettingsTab; label: string; icon: React.ReactNode }
 
@@ -37,6 +38,7 @@ const BASE_TABS: TabItem[] = [
   { id: "prompts", label: "提示词管理", icon: <BookOpen size={16} /> },
   { id: "alias", label: "别名管理", icon: <Link size={16} /> },
   { id: "hooks", label: "钩子管理", icon: <Webhook size={16} /> },
+  { id: "yaml", label: "YAML 配置", icon: <FileCode size={16} /> },
 ];
 
 const AGENT_TAB: TabItem = { id: "agent", label: "Agent 配置", icon: <Plug size={16} /> };
@@ -74,6 +76,7 @@ function renderTabContent(tab: SettingsTab): React.ReactElement {
     case "tools": content = <ToolSettings />; break;
     case "alias": content = <AliasSettings />; break;
     case "hooks": content = <HooksSettings />; break;
+    case "yaml": content = <YamlConfigSettings />; break;
     case "appearance": content = <AppearanceSettings />; break;
     case "about": content = <AboutSettings />; break;
     default: content = <GeneralSettings />;

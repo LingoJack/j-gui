@@ -1,5 +1,13 @@
-import { atom } from "jotai";
+/**
+ * App Mode Atom - 应用模式状态
+ *
+ * - chat: 对话模式
+ * - agent: Agent 模式（原 Flow）
+ */
 
-export type AppMode = "chat" | "agent";
+import { atomWithStorage } from 'jotai/utils'
 
-export const appModeAtom = atom<AppMode>("chat");
+export type AppMode = 'chat' | 'agent'
+
+/** App 模式，自动持久化到 localStorage */
+export const appModeAtom = atomWithStorage<AppMode>('jgui-app-mode', 'agent')

@@ -1,28 +1,48 @@
-import { cn } from "@/lib/utils";
+/**
+ * SettingsToggle - 设置开关控件
+ *
+ * 封装 ShadcnUI Switch，集成标签和描述。
+ * 用于布尔值设置项。
+ */
+
+import * as React from 'react'
+import { Switch } from '@/components/ui/switch'
+import { LABEL_CLASS, DESCRIPTION_CLASS, ROW_CLASS } from './SettingsUIConstants'
+import { cn } from '@/lib/utils'
 
 interface SettingsToggleProps {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
+  /** 标签文本 */
+  label: string
+  /** 描述文本（可选） */
+  description?: string
+  /** 是否选中 */
+  checked: boolean
+  /** 变更回调 */
+  onCheckedChange: (checked: boolean) => void
+  /** 是否禁用 */
+  disabled?: boolean
 }
 
-export default function SettingsToggle({ checked, onChange }: SettingsToggleProps) {
+export function SettingsToggle({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  disabled,
+}: SettingsToggleProps): React.ReactElement {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "w-9 h-5 rounded-full transition-colors relative shrink-0",
-        checked ? "bg-primary" : "bg-muted"
-      )}
-    >
-      <div
-        className={cn(
-          "w-4 h-4 rounded-full bg-white shadow-sm absolute top-0.5 transition-transform",
-          checked ? "translate-x-[16px]" : "translate-x-0.5"
+    <div className={ROW_CLASS}>
+      <div className="flex-1 min-w-0 mr-4">
+        <div className={LABEL_CLASS}>{label}</div>
+        {description && (
+          <div className={cn(DESCRIPTION_CLASS, 'mt-0.5')}>{description}</div>
         )}
+      </div>
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled}
       />
-    </button>
-  );
+    </div>
+  )
 }

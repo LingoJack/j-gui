@@ -32,16 +32,17 @@ src-tauri/              Rust 后端（commands/ + chat_engine.rs）
 ## 关键约束
 
 - **启动开发环境**：`bun run tauri dev`（非 `cargo tauri dev` — CLI 未安装，用 bun 自带的 `@tauri-apps/cli`）
-- **Rust 检查**：`cargo fmt` + `cargo clippy -- -D warnings`
+- **Rust 检查**：`cargo check`（**零警告零错误**，`#![deny(warnings)]`）+ `cargo fmt` + `cargo clippy -- -D warnings`
 - **TypeScript 检查**：`bunx tsc --noEmit`
-- **测试（TDD 强制）**：`bun run test` + `cargo test` — 前端测试必须通过 vitest（`bun test` 不支持 jsdom，组件测试会失败）
-- **j-cli 源码**：`E:\Coding\AI\j`，j-gui 通过相对路径依赖
+- **测试（TDD 强制）**：`bun run test` + `cargo test` — 前端测试必须通过 vitest（`bun test` 不支持 jsdom，组件测试会失败）。实现前先写测试，任何新功能/修复必须有对应测试覆盖
+- **j-cli 源码**：`E:\Coding\AI\jcli`，j-gui 通过相对路径依赖 `j-cli = { path = "../../jcli" }`
 - **j-cli 数据目录**：`~/.jdata/`（由 `j_cli::constants` 定义）
 - **Agent 配置路径**：`~/.jdata/agent/data/agent_config.json`
 - **Rust 编码规约**：见 `.codestable/compound/2026-05-08-decision-rust-coding-conventions.md`
 - **流式 IPC**：Chat 流式必须用 `Channel<T>`（非 Tauri Events — Events 不适合低延迟高频场景）
-- **Agent 模式**：首版用 Claude Agent SDK CLI 子进程，预留 `AgentBackend` trait 给 j-cli Agent Loop（见 decision `agent-sdk-strategy`）
-- **Channel send 错误**：当前被 `let _ =` 吞掉，取消请求通过 Channel drop 实现
+- **Agent 模式**：Claude Agent SDK CLI 子进程 + j-agent crate 并行，预留 `AgentBackend` trait
+- **Channel send 错误**：取消请求通过 Channel drop 实现
+- **Git 排除**：`.codestable/` `.claude/` 不提交
 
 ---
 

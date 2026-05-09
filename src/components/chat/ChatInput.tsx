@@ -1,265 +1,364 @@
-import { useState, useRef, useCallback, useEffect } from "react";
-import { useAtomValue } from "jotai";
-import { Send, Square, Brain } from "lucide-react";
-import { rightPanelDirsAtom } from "@/atoms/sidebar";
-import FileMentionPopup, { type FileSuggestion } from "@/components/agent/FileMentionPopup";
+/**
+ * ChatInput - 输入区域
+ *
+ * 完整输入体验，包含：
+ * - RichTextInput (TipTap 编辑器) 替代原生 textarea
+ * - 附件预览区域（pendingAttachments 缩略图列表）
+ * - Footer 工具栏（左右分布）：
+ *   左侧：Paperclip 附件按钮、ModelSelector、ThinkingButton、SpeechButton、ContextSettingsPopover、ClearContextButton
+ *   右侧：Send/Stop 按钮
+ * - 拖放文件支持（onDragOver/onDragLeave/onDrop）
+ * - 监听 proma:clear-context 和 proma:focus-input 自定义事件
+ * - 卡片式容器样式
+ */
 
-interface Props {
-  onSend: (content: string) => void;
-  onStop?: () => void;
-  disabled?: boolean;
-  sendDisabled?: boolean;
-  placeholder?: string;
-  draft?: string;
-  onDraftChange?: (text: string) => void;
-  mode?: "chat" | "agent";
+import * as React from 'react'
+import { useAtomValue, useSetAtom } from 'jotai'
+import { CornerDownLeft, Square, Brain, Paperclip } from 'lucide-react'
+import { ModelSelector } from './ModelSelector'
+import { ClearContextButton } from './ClearContextButton'
+import { ContextSettingsPopover } from './ContextSettingsPopover'
+import { ToolSelectorPopover } from './ToolSelectorPopover'
+import { AttachmentPreviewItem } from './AttachmentPreviewItem'
+import { RichTextInput } from '@/components/ai-elements/rich-text-input'
+import { SpeechButton } from '@/components/ai-elements/speech-button'
+import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { getActiveAccelerator, getAcceleratorDisplay } from '@/lib/shortcut-registry'
+import {
+  conversationDraftsAtom,
+} from '@/atoms/chat-atoms'
+import type { PendingAttachment } from '@/atoms/chat-atoms'
+import {
+  useConversationModel,
+  useConversationThinkingEnabled,
+} from '@/hooks/useConversationSettings'
+import { cn } from '@/lib/utils'
+import { fileToBase64 } from '@/lib/file-utils'
+import { sendWithCmdEnterAtom } from '@/atoms/shortcut-atoms'
+import * as ipc from '@/lib/ipc'
+
+interface ChatInputProps {
+  /** 当前对话 ID */
+  conversationId: string
+  /** 是否正在流式生成 */
+  streaming: boolean
+  /** 待发送附件列表 */
+  pendingAttachments: PendingAttachment[]
+  /** 设置待发送附件 */
+  onSetPendingAttachments: React.Dispatch<React.SetStateAction<PendingAttachment[]>>
+  /** 发送消息回调 */
+  onSend: (content: string) => void
+  /** 停止生成回调 */
+  onStop: () => void
+  /** 清除上下文回调 */
+  onClearContext?: () => void
 }
 
-export default function ChatInput({
-  onSend,
-  onStop,
-  disabled,
-  sendDisabled,
-  placeholder,
-  draft,
-  onDraftChange,
-  mode = "chat",
-}: Props) {
-  const [text, setText] = useState(draft ?? "");
-  const [thinking, setThinking] = useState(false);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  // @mention state
-  const [mentionOpen, setMentionOpen] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState("");
-  const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
-  const [mentionSuggestions, setMentionSuggestions] = useState<FileSuggestion[]>([]);
-  const dirs = useAtomValue(rightPanelDirsAtom);
-
-  // Sync text from draft when it changes externally (e.g., session switch)
-  useEffect(() => {
-    if (draft !== undefined) {
-      setText(draft ?? "");
-    }
-  }, [draft]);
-
-  // Close mention on mode switch
-  useEffect(() => {
-    setMentionOpen(false);
-  }, [mode]);
-
-  // Fetch file suggestions when mention is open and query or dirs change
-  useEffect(() => {
-    if (!mentionOpen || dirs.length === 0) {
-      setMentionSuggestions([]);
-      return;
-    }
-    let cancelled = false;
-    const fetchSuggestions = async () => {
-      try {
-        const { readDir } = await import("@tauri-apps/plugin-fs");
-        const results: FileSuggestion[] = [];
-        for (const dir of dirs) {
-          try {
-            const entries = await readDir(dir);
-            for (const e of entries) {
-              const fullPath = `${dir}/${e.name}`;
-              results.push({ name: e.name, path: fullPath, isDir: e.isDirectory });
-            }
-          } catch {
-            // Skip directories that can't be read
-          }
-        }
-        if (cancelled) return;
-        const q = mentionQuery.toLowerCase();
-        const filtered = q
-          ? results.filter((r) => r.name.toLowerCase().includes(q) || r.path.toLowerCase().includes(q))
-          : results;
-        filtered.sort((a, b) => {
-          if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-          return a.name.localeCompare(b.name);
-        });
-        setMentionSuggestions(filtered);
-        setMentionSelectedIndex(0);
-      } catch {
-        if (!cancelled) setMentionSuggestions([]);
-      }
-    };
-    fetchSuggestions();
-    return () => { cancelled = true; };
-  }, [mentionOpen, mentionQuery, dirs]);
-
-  const handleSend = useCallback(() => {
-    const trimmed = text.trim();
-    if (!trimmed || disabled || sendDisabled) return;
-    onSend(trimmed);
-    setText("");
-    setMentionOpen(false);
-    inputRef.current?.focus();
-  }, [text, disabled, sendDisabled, onSend]);
-
-  const insertMention = useCallback(
-    (file: FileSuggestion) => {
-      const ta = inputRef.current;
-      if (!ta) return;
-      const cursorPos = ta.selectionStart;
-      // Find last @ before cursor
-      let atPos = text.lastIndexOf("@", cursorPos - 1);
-      if (atPos < 0) {
-        // Fallback: scan from end of text
-        atPos = text.lastIndexOf("@");
-      }
-      if (atPos < 0) {
-        // No @ found — append at cursor
-        atPos = cursorPos;
-      }
-
-      const before = text.slice(0, atPos);
-      const after = text.slice(cursorPos);
-      const ref = `[@${file.name}](${file.path}) `;
-      const newText = before + ref + after;
-      setText(newText);
-      onDraftChange?.(newText);
-      setMentionOpen(false);
-
-      // Restore cursor position after ref
-      requestAnimationFrame(() => {
-        const newCursorPos = before.length + ref.length;
-        ta.setSelectionRange(newCursorPos, newCursorPos);
-        ta.focus();
-      });
-    },
-    [text, onDraftChange],
-  );
-
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const val = e.target.value;
-      const cursorPos = e.target.selectionStart;
-
-      // Auto-resize
-      const ta = e.target;
-      ta.style.height = "auto";
-      ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`;
-
-      // Handle @ mention trigger (only in agent mode with workspace dirs)
-      if (mode === "agent" && dirs.length > 0) {
-        const lastAtIndex = val.lastIndexOf("@", cursorPos - 1);
-        if (lastAtIndex >= 0) {
-          const textAfterAt = val.slice(lastAtIndex + 1, cursorPos);
-          // Only trigger if text after @ has no spaces, newlines, or other @
-          if (!/\s/.test(textAfterAt) && !textAfterAt.includes("@")) {
-            setMentionQuery(textAfterAt);
-            setMentionOpen(true);
-          } else {
-            setMentionOpen(false);
-          }
-        } else {
-          setMentionOpen(false);
-        }
+export function ChatInput({ conversationId, streaming, pendingAttachments, onSetPendingAttachments, onSend, onStop, onClearContext }: ChatInputProps): React.ReactElement {
+  const sendWithCmdEnter = useAtomValue(sendWithCmdEnterAtom)
+  // 从 Map atom 读写草稿
+  const draftsMap = useAtomValue(conversationDraftsAtom)
+  const setDraftsMap = useSetAtom(conversationDraftsAtom)
+  const content = draftsMap.get(conversationId) ?? ''
+  const setContent = React.useCallback((value: string) => {
+    setDraftsMap((prev) => {
+      const map = new Map(prev)
+      if (value.trim() === '') {
+        map.delete(conversationId)
       } else {
-        setMentionOpen(false);
+        map.set(conversationId, value)
       }
+      return map
+    })
+  }, [conversationId, setDraftsMap])
 
-      setText(val);
-      onDraftChange?.(val);
-    },
-    [mode, onDraftChange],
-  );
+  const [selectedModel] = useConversationModel()
+  const [thinkingEnabled, setThinkingEnabled] = useConversationThinkingEnabled()
+  const setPendingAttachments = onSetPendingAttachments
+  const [isDragOver, setIsDragOver] = React.useState(false)
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      // IME composition guard
-      if (e.nativeEvent.isComposing) return;
+  const canSend = (content.trim().length > 0 || pendingAttachments.length > 0)
+    && selectedModel !== null
+    && !streaming
 
-      if (mentionOpen) {
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setMentionSelectedIndex((prev) => Math.min(mentionSuggestions.length - 1, prev + 1));
-          return;
+  /**
+   * 将文件列表添加为附件
+   *
+   * File → base64 → saveAttachment IPC → 创建 blob URL → 添加到 atom
+   */
+  const addFilesAsAttachments = React.useCallback(async (files: File[]): Promise<void> => {
+    for (const file of files) {
+      try {
+        const base64 = await fileToBase64(file)
+
+        // 通过 IPC 保存到本地（需要当前对话 ID，但附件保存时可能还没对话）
+        // 这里先不保存到磁盘，等发送时再保存
+        // 创建 blob URL 用于预览
+        const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
+
+        const pendingAttachment: PendingAttachment = {
+          id: `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          filename: file.name,
+          mediaType: file.type || 'application/octet-stream',
+          localPath: '', // 发送时填充
+          size: file.size,
+          previewUrl,
+          // 临时存储 base64 数据（通过扩展字段）
         }
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          setMentionSelectedIndex((prev) => Math.max(0, prev - 1));
-          return;
+
+        // 将 base64 数据存储在 window 临时缓存中
+        if (!window.__pendingAttachmentData) {
+          window.__pendingAttachmentData = new Map<string, string>()
         }
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const selected = mentionSuggestions[mentionSelectedIndex];
-          if (selected) {
-            insertMention(selected);
-          }
-          return;
-        }
-        if (e.key === "Escape") {
-          e.preventDefault();
-          setMentionOpen(false);
-          return;
-        }
+        window.__pendingAttachmentData.set(pendingAttachment.id, base64)
+
+        setPendingAttachments((prev) => [...prev, pendingAttachment])
+      } catch (error) {
+        console.error('[ChatInput] 添加附件失败:', error)
       }
+    }
+  }, [setPendingAttachments])
 
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        handleSend();
+  /** 通过 IPC 打开文件选择对话框 */
+  const handleOpenFileDialog = React.useCallback(async (): Promise<void> => {
+    try {
+      const result = await ipc.openFileDialog()
+      if (result.files.length === 0) return
+
+      for (const fileInfo of result.files) {
+        const previewUrl = fileInfo.mediaType.startsWith('image/')
+          ? `data:${fileInfo.mediaType};base64,${fileInfo.data}`
+          : undefined
+
+        const pendingAttachment: PendingAttachment = {
+          id: `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          filename: fileInfo.filename,
+          mediaType: fileInfo.mediaType,
+          localPath: '',
+          size: fileInfo.size,
+          previewUrl,
+        }
+
+        if (!window.__pendingAttachmentData) {
+          window.__pendingAttachmentData = new Map<string, string>()
+        }
+        window.__pendingAttachmentData.set(pendingAttachment.id, fileInfo.data)
+
+        setPendingAttachments((prev) => [...prev, pendingAttachment])
       }
-    },
-    [handleSend, insertMention, mentionOpen, mentionSuggestions, mentionSelectedIndex],
-  );
+    } catch (error) {
+      console.error('[ChatInput] 文件选择对话框失败:', error)
+    }
+  }, [setPendingAttachments])
 
-  const handleSelect = useCallback(
-    (file: FileSuggestion) => {
-      insertMention(file);
-    },
-    [insertMention],
-  );
+  /** 移除待发送附件 */
+  const handleRemoveAttachment = React.useCallback((id: string): void => {
+    setPendingAttachments((prev) => {
+      const attachment = prev.find((a) => a.id === id)
+      // 回收 blob URL
+      if (attachment?.previewUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(attachment.previewUrl)
+      }
+      // 清理临时 base64 缓存
+      window.__pendingAttachmentData?.delete(id)
+      return prev.filter((a) => a.id !== id)
+    })
+  }, [setPendingAttachments])
+
+  /** 发送消息 */
+  const handleSend = React.useCallback((): void => {
+    if (!canSend) return
+    onSend(content.trim())
+    setContent('')
+    // 附件清理由 ChatView 的 handleSend 负责
+  }, [canSend, content, onSend])
+
+  /** 粘贴文件回调 */
+  const handlePasteFiles = React.useCallback((files: File[]): void => {
+    addFilesAsAttachments(files)
+  }, [addFilesAsAttachments])
+
+  // 拖放处理
+  const handleDragOver = React.useCallback((e: React.DragEvent): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = React.useCallback((e: React.DragEvent): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+  }, [])
+
+  const handleDrop = React.useCallback((e: React.DragEvent): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) {
+      addFilesAsAttachments(files)
+    }
+  }, [addFilesAsAttachments])
+
+  // 监听快捷键系统分发的 clear-context 事件（Cmd+K）
+  React.useEffect(() => {
+    const handler = (): void => {
+      onClearContext?.()
+    }
+    window.addEventListener('jgui:clear-context', handler)
+    return () => window.removeEventListener('jgui:clear-context', handler)
+  }, [onClearContext])
+
+  // 监听快捷键系统分发的 focus-input 事件（Cmd+L）
+  React.useEffect(() => {
+    const handler = (): void => {
+      // 聚焦 TipTap 编辑器：查找 Chat 输入框内的 ProseMirror 元素
+      const proseMirror = document.querySelector('[data-input-mode="chat"] .ProseMirror') as HTMLElement | null
+      proseMirror?.focus()
+    }
+    window.addEventListener('jgui:focus-input', handler)
+    return () => window.removeEventListener('jgui:focus-input', handler)
+  }, [])
 
   return (
-    <div className="border-t border-border p-3">
-      <div className="flex items-end gap-2 relative">
-        <div className="flex-1 relative">
-          <FileMentionPopup
-            open={mentionOpen}
-            suggestions={mentionSuggestions}
-            selectedIndex={mentionSelectedIndex}
-            onSelect={handleSelect}
-          />
-          <textarea
-            ref={inputRef}
-            value={text}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder={placeholder ?? (mode === "agent" ? "输入消息... (@引用文件, Enter 发送, Shift+Enter 换行)" : "输入消息... (Enter 发送, Shift+Enter 换行)")}
-            rows={1}
-            disabled={disabled}
-            className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring w-full"
-          />
-        </div>
-        <button
-          onClick={() => setThinking((v) => !v)}
-          className={`p-2 rounded-md transition-colors ${thinking ? "text-emerald-500 bg-emerald-500/10" : "text-muted-foreground hover:bg-accent"}`}
-          title="Thinking 模式"
+    <div className="px-2.5 pb-2.5 md:px-[18px] md:pb-[18px]" data-input-mode="chat">
+        {/* 卡片式输入容器 — 对标 Cherry Studio: border-radius 17px, 0.5px border */}
+        <div
+          className={cn(
+            'rounded-[17px] border-[0.5px] border-border bg-background/70 backdrop-blur-sm transition-all duration-200',
+            'focus-within:border-foreground/20',
+            isDragOver && 'border-[2px] border-dashed border-[#2ecc71] bg-[#2ecc71]/[0.03]'
+          )}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
         >
-          <Brain size={16} />
-        </button>
-        {sendDisabled && onStop ? (
-          <button
-            onClick={onStop}
-            className="p-2 rounded-md bg-destructive text-destructive-foreground hover:opacity-90 shrink-0"
-            aria-label="停止生成"
-          >
-            <Square size={16} />
-          </button>
-        ) : (
-          <button
-            onClick={handleSend}
-            disabled={disabled || sendDisabled || !text.trim()}
-            className="p-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 shrink-0"
-            aria-label="发送"
-          >
-            <Send size={16} />
-          </button>
-        )}
-      </div>
+          {/* 附件预览区域 — Cherry Studio: padding 5px 15px, flex-wrap, gap 4px */}
+          {pendingAttachments.length > 0 && (
+            <div className="flex flex-wrap gap-1 px-[15px] pt-[10px] pb-[15px]">
+              {pendingAttachments.map((att) => (
+                <AttachmentPreviewItem
+                  key={att.id}
+                  filename={att.filename}
+                  mediaType={att.mediaType}
+                  previewUrl={att.previewUrl}
+                  onRemove={() => handleRemoveAttachment(att.id)}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* TipTap 富文本编辑器 */}
+          <RichTextInput
+            value={content}
+            onChange={setContent}
+            onSubmit={handleSend}
+            onPasteFiles={handlePasteFiles}
+            placeholder={sendWithCmdEnter ? '输入消息... (⌘/Ctrl+Enter 发送，Enter 换行)' : '输入消息... (Enter 发送，Shift+Enter 换行)'}
+            autoFocusTrigger={conversationId}
+            sendWithCmdEnter={sendWithCmdEnter}
+          />
+
+          {/* Footer 工具栏 — Cherry Studio: padding 5px 8px, height 40px, gap 16px */}
+          <div className="flex items-center justify-between px-2 py-1 h-[48px] gap-4">
+            {/* 左侧工具按钮 */}
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              {/* 附件按钮 */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-[36px] rounded-full text-foreground/60 hover:text-foreground"
+                    onClick={handleOpenFileDialog}
+                  >
+                    <Paperclip className="size-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p>添加附件</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <ModelSelector />
+
+              {/* 思考模式切换 */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'size-[36px] rounded-full',
+                      thinkingEnabled ? 'text-green-500' : 'text-foreground/60 hover:text-foreground'
+                    )}
+                    onClick={() => setThinkingEnabled(!thinkingEnabled)}
+                  >
+                    <Brain className="size-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p>{thinkingEnabled ? '关闭思考模式' : '开启思考模式'}</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <SpeechButton className="size-[36px] rounded-full" />
+
+              <ToolSelectorPopover />
+
+              <ContextSettingsPopover />
+
+              <ClearContextButton onClick={onClearContext} />
+            </div>
+
+            {/* 右侧：发送 / 停止按钮 */}
+            <div className="flex items-center gap-1.5">
+              {streaming ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-[36px] rounded-full text-destructive hover:!text-[hsl(0,75%,55%)] hover:!bg-[var(--stop-hover-bg)]"
+                      onClick={onStop}
+                    >
+                      <Square className="size-[16px]" fill="currentColor" strokeWidth={0} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>停止 Agent ({getAcceleratorDisplay(getActiveAccelerator('stop-generation'))})</p>
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    'size-[36px] rounded-full',
+                    canSend
+                      ? 'text-primary hover:bg-primary/10'
+                      : 'text-foreground/30 cursor-not-allowed'
+                  )}
+                  onClick={handleSend}
+                  disabled={!canSend}
+                >
+                  <CornerDownLeft className="size-[22px]" />
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
     </div>
-  );
+  )
 }

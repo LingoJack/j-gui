@@ -2,7 +2,7 @@
 doc_type: explore
 type: question
 slug: j-cli-agent-coupling
-status: active
+status: outdated
 created: 2026-05-08
 confidence: high
 tags: [j-cli, agent, coupling, refactor, architecture]

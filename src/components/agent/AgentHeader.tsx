@@ -1,132 +1,154 @@
-import { useState, useEffect, useCallback } from "react";
-import { PanelRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+/**
+ * AgentHeader — Agent 会话头部
+ *
+ * 显示会话标题（可点击编辑）。
+ * 参照 ChatHeader 的编辑模式。
+ */
 
+import * as React from 'react'
+import { useAtomValue, useSetAtom } from 'jotai'
+import { Pencil, Check, X, PanelRight } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { agentSessionsAtom, agentSidePanelOpenMapAtom, workspaceFilesVersionAtom } from '@/atoms/agent-atoms'
+import * as ipc from '@/lib/ipc'
+
+/** AgentHeader 属性接口 */
 interface AgentHeaderProps {
-  sessionId: string | null;
-  title: string;
-  providerLabel: string;
-  rightPanelOpen: boolean;
-  onToggleRightPanel: () => void;
-  onTitleChange: (title: string) => void;
-  permissionMode: string;
-  onPermissionModeChange: (mode: string) => void;
+  sessionId: string
 }
 
-const PERMISSION_MODES = [
-  { value: "bypassPermissions", label: "Auto" },
-  { value: "default", label: "审批" },
-  { value: "plan", label: "计划" },
-];
+export function AgentHeader({ sessionId }: AgentHeaderProps): React.ReactElement | null {
+  const sessions = useAtomValue(agentSessionsAtom)
+  const session = sessions.find((s) => s.id === sessionId) ?? null
+  const setAgentSessions = useSetAtom(agentSessionsAtom)
+  const [editing, setEditing] = React.useState(false)
+  const [editTitle, setEditTitle] = React.useState('')
+  const inputRef = React.useRef<HTMLInputElement>(null)
 
-export default function AgentHeader({
-  sessionId,
-  title,
-  providerLabel,
-  rightPanelOpen,
-  onToggleRightPanel,
-  onTitleChange,
-  permissionMode,
-  onPermissionModeChange,
-}: AgentHeaderProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(title);
+  // 文件面板切换状态
+  const sidePanelOpenMap = useAtomValue(agentSidePanelOpenMapAtom)
+  const setSidePanelOpenMap = useSetAtom(agentSidePanelOpenMapAtom)
+  const filesVersion = useAtomValue(workspaceFilesVersionAtom)
+  const isPanelOpen = sidePanelOpenMap.get(sessionId) ?? true
+  const hasFileChanges = filesVersion > 0
 
-  useEffect(() => {
-    if (!isEditing) {
-      setEditValue(title);
+  const togglePanel = React.useCallback(() => {
+    setSidePanelOpenMap((prev) => {
+      const map = new Map(prev)
+      map.set(sessionId, !(map.get(sessionId) ?? true))
+      return map
+    })
+  }, [sessionId, setSidePanelOpenMap])
+
+  if (!session) return null
+
+  /** 进入编辑模式 */
+  const startEdit = (): void => {
+    setEditTitle(session.title)
+    setEditing(true)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }
+
+  /** 保存标题 */
+  const saveTitle = async (): Promise<void> => {
+    const trimmed = editTitle.trim()
+    if (!trimmed || trimmed === session.title) {
+      setEditing(false)
+      return
     }
-  }, [title, isEditing]);
 
-  const handleStartEdit = useCallback(() => {
-    setEditValue(title);
-    setIsEditing(true);
-  }, [title]);
-
-  const handleCommitEdit = useCallback(() => {
-    const trimmed = editValue.trim();
-    if (trimmed && sessionId) {
-      onTitleChange(trimmed);
+    try {
+      await ipc.updateAgentSessionTitle(session.id, trimmed)
+      // 刷新会话列表以同步侧边栏
+      const sessions = await ipc.listAgentSessions()
+      setAgentSessions(sessions)
+    } catch (error) {
+      console.error('[AgentHeader] 更新标题失败:', error)
     }
-    setIsEditing(false);
-  }, [editValue, sessionId, onTitleChange]);
+    setEditing(false)
+  }
 
-  const handleCancelEdit = useCallback(() => {
-    setIsEditing(false);
-    setEditValue(title);
-  }, [title]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleCommitEdit();
-      }
-      if (e.key === "Escape") {
-        handleCancelEdit();
-      }
-    },
-    [handleCommitEdit, handleCancelEdit],
-  );
+  /** 键盘事件 */
+  const handleKeyDown = (e: React.KeyboardEvent): void => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      saveTitle()
+    } else if (e.key === 'Escape') {
+      setEditing(false)
+    }
+  }
 
   return (
-    <div className="flex items-center justify-between h-10 px-4 border-b border-border shrink-0 gap-2">
-      <div className="flex items-center gap-2 shrink-0 min-w-0">
-        {isEditing ? (
+    <div className="relative z-[51] flex items-center gap-2 px-4 h-[48px] titlebar-drag-region">
+      {editing ? (
+        <div className="flex items-center gap-1.5 flex-1 min-w-0 titlebar-no-drag">
           <input
-            autoFocus
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onBlur={handleCommitEdit}
+            ref={inputRef}
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="text-sm font-medium bg-background border border-border rounded px-1 py-0.5 outline-none max-w-[200px]"
+            onBlur={saveTitle}
+            className="flex-1 bg-transparent text-sm font-medium border-b border-primary/50 outline-none px-0 py-0.5 min-w-0"
+            maxLength={100}
           />
-        ) : (
           <button
-            onClick={handleStartEdit}
-            className="text-sm font-medium truncate max-w-[200px] hover:bg-accent rounded px-1 py-0.5 text-left"
-            title="点击编辑标题"
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={saveTitle}
+            className="p-1 text-muted-foreground hover:text-foreground transition-colors"
           >
-            {title}
+            <Check className="size-3.5" />
           </button>
-        )}
-        <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
-          {providerLabel}
-        </span>
-      </div>
-
-      <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5">
-        {PERMISSION_MODES.map(({ value, label }) => (
           <button
-            key={value}
-            onClick={() => onPermissionModeChange(value)}
-            className={cn(
-              "px-2 py-0.5 text-[11px] rounded font-medium transition-colors",
-              permissionMode === value
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setEditing(false)}
+            className="p-1 text-muted-foreground hover:text-foreground transition-colors"
           >
-            {label}
+            <X className="size-3.5" />
           </button>
-        ))}
-      </div>
-
-      {/* ContextUsageBadge placeholder (#56) */}
-      <div className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
-        --/--
-      </div>
-
-      <button
-        onClick={onToggleRightPanel}
-        className={cn(
-          "p-1 rounded-md hover:bg-accent",
-          rightPanelOpen ? "text-foreground bg-accent" : "text-muted-foreground",
-        )}
-        title="切换文件浏览器"
-      >
-        <PanelRight size={14} />
-      </button>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <span className="truncate text-sm font-medium text-foreground">
+              {session.title}
+            </span>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={startEdit}
+              className="titlebar-no-drag p-1 text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="编辑标题"
+            >
+              <Pencil className="size-3.5" />
+            </button>
+          </div>
+          {/* 文件面板打开按钮（仅面板关闭时显示） */}
+          {!isPanelOpen && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="relative titlebar-no-drag h-7 w-7 flex-shrink-0"
+                  onClick={togglePanel}
+                >
+                  <PanelRight className="size-3.5" />
+                  {hasFileChanges && (
+                    <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary animate-pulse" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>打开文件面板</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </>
+      )}
     </div>
-  );
+  )
 }

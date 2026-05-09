@@ -1,9 +1,10 @@
 ---
 doc_type: roadmap
 slug: j-gui-desktop-app
-status: active
+status: superseded
+superseded_by: j-gui-v1
 created: 2026-05-08
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-10
 tags: [tauri, desktop, ai-chat, agent]
 related_requirements:
   - j-gui-ai-interaction
@@ -13,7 +14,10 @@ related_architecture:
   - ARCHITECTURE
 ---
 
-# j-gui Tauri 桌面应用开发
+> **此 roadmap 已废弃，由 [j-gui-v1](../j-gui-v1/j-gui-v1-roadmap.md) 取代。**
+> 所有新工作请参考 j-gui-v1 roadmap。本文档仅保留作为历史参考。
+
+# j-gui Tauri 桌面应用开发 (已废弃)
 
 ## 1. 背景
 

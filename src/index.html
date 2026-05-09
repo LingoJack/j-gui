@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>j-gui</title>
+    <script>
+      // 全局错误捕获（诊断黑屏用）
+      window.__errors = []
+      window.onerror = function(msg, src, line, col, err) {
+        window.__errors.push({ msg, src, line, col, stack: err?.stack })
+        console.error('[j-gui]', msg, err)
+      }
+      window.addEventListener('unhandledrejection', function(e) {
+        window.__errors.push({ msg: e.reason?.message || String(e.reason), stack: e.reason?.stack })
+        console.error('[j-gui] unhandled rejection:', e.reason)
+      })
+
+      // 主题初始化
+      ;(function() {
+        var mode = localStorage.getItem('jgui-theme-mode') || 'dark'
+        var style = localStorage.getItem('jgui-theme-style')
+        var html = document.documentElement
+
+        if (mode === 'special' && style && style !== 'default') {
+          html.classList.add('theme-' + style)
+          if (style.endsWith('-dark')) {
+            html.classList.add('dark')
+          }
+        } else if (mode === 'dark') {
+          html.classList.add('dark')
+        } else if (mode === 'system') {
+          if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            html.classList.add('dark')
+          }
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root">
+      <!-- 占位文字：如果 React 挂了至少能看到这个 -->
+      <div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#888;font-family:sans-serif">
+        <p>Loading j-gui...</p>
+      </div>
+    </div>
+    <script type="module" src="/main.tsx"></script>
+  </body>
+</html>

@@ -1,93 +1,68 @@
-import { useState } from "react";
-import { X } from "lucide-react";
-import ModelsTab from "@/components/settings/ModelsTab";
-import GeneralTab from "@/components/settings/GeneralTab";
-import AliasTab from "@/components/settings/AliasTab";
-import SkillsTab from "@/components/settings/SkillsTab";
-import HooksTab from "@/components/settings/HooksTab";
-import McpTab from "@/components/settings/McpTab";
-import ToolsTab from "@/components/settings/ToolsTab";
-import { cn } from "@/lib/utils";
+/**
+ * SettingsDialog - 设置浮窗 (with ErrorBoundary for debugging)
+ */
 
-interface Props {
-  open: boolean;
-  onClose: () => void;
+import * as React from 'react'
+import { useAtom } from 'jotai'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { settingsOpenAtom } from '@/atoms/settings-tab'
+import { SettingsPanel } from './SettingsPanel'
+
+class SettingsErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props)
+    this.state = { error: null }
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[SettingsDialog] Render crash:', error.message)
+    console.error('[SettingsDialog] Component stack:', info.componentStack)
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-6 text-sm">
+          <h3 className="text-red-500 font-medium mb-2">Settings Error</h3>
+          <pre className="text-muted-foreground text-xs whitespace-pre-wrap">
+            {this.state.error.message}
+          </pre>
+        </div>
+      )
+    }
+    return this.props.children
+  }
 }
 
-type TabId = "models" | "general" | "aliases" | "skills" | "hooks" | "mcp" | "tools";
+export function SettingsDialog(): React.ReactElement {
+  const [open, setOpen] = useAtom(settingsOpenAtom)
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: "models", label: "模型" },
-  { id: "general", label: "通用" },
-  { id: "aliases", label: "别名" },
-  { id: "skills", label: "Skills" },
-  { id: "hooks", label: "Hooks" },
-  { id: "mcp", label: "MCP" },
-  { id: "tools", label: "工具" },
-];
-
-export default function SettingsDialog({ open, onClose }: Props) {
-  const [tab, setTab] = useState<TabId>("models");
-
-  if (!open) return null;
+  React.useEffect(() => {
+    console.log('[SettingsDialog] open =', open)
+  }, [open])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-[600px] max-h-[80vh] flex flex-col bg-card rounded-xl border border-border shadow-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-          <h2 className="text-base font-semibold">设置</h2>
-          <button onClick={onClose} className="p-1 rounded-md hover:bg-accent">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="flex flex-1 overflow-hidden">
-          {/* Left nav */}
-          <div className="w-40 border-r border-border shrink-0 py-2">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={cn(
-                  "w-full text-left px-3 py-2 text-sm transition-colors",
-                  tab === t.id
-                    ? "bg-accent text-foreground font-medium"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Right content */}
-          <div className="flex-1 overflow-y-auto p-4">
-            {tab === "models" && <ModelsTab />}
-            {tab === "general" && <GeneralTab />}
-            {tab === "aliases" && <AliasTab />}
-            {tab === "skills" && <SkillsTab />}
-            {tab === "hooks" && <HooksTab />}
-            {tab === "mcp" && <McpTab />}
-            {tab === "tools" && <ToolsTab />}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-3 border-t border-border">
-          <p className="text-xs text-muted-foreground">
-            配置保存到 ~/.jdata/
-          </p>
-          <div className="flex gap-2">
-            <button
-              onClick={onClose}
-              className="px-3 py-1.5 text-sm rounded-md hover:bg-accent transition-colors"
-            >
-              关闭
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+    <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay
+          className="fixed inset-0 z-[100] bg-black/20 titlebar-no-drag transition-opacity duration-100 data-[state=open]:opacity-100 data-[state=closed]:opacity-0"
+        />
+        <DialogPrimitive.Content
+          className="fixed left-[50%] top-[50%] z-[100] translate-x-[-50%] translate-y-[-50%] w-[85vw] max-w-[992px] h-[85vh] max-h-[752px] bg-dialog text-dialog-foreground shadow-2xl rounded-xl overflow-hidden titlebar-no-drag transition-all duration-100 data-[state=open]:opacity-100 data-[state=open]:scale-100 data-[state=closed]:opacity-0 data-[state=closed]:scale-[0.98]"
+        >
+          <DialogPrimitive.Title className="sr-only">设置</DialogPrimitive.Title>
+          <SettingsErrorBoundary>
+            <SettingsPanel onClose={() => setOpen(false)} />
+          </SettingsErrorBoundary>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
+  )
 }

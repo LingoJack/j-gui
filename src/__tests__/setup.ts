@@ -1,10 +1,16 @@
-import "@testing-library/jest-dom/vitest";
+import '@testing-library/jest-dom/vitest'
 
-// Polyfill ResizeObserver for jsdom (used by ScrollMinimap)
-if (typeof globalThis.ResizeObserver === "undefined") {
-  globalThis.ResizeObserver = class ResizeObserver {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
+// Mock Tauri APIs for test environment
+class MockChannel {
+  onmessage: ((event: any) => void) | null = null
 }
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn().mockRejectedValue(new Error('Tauri not available in test')),
+  Channel: MockChannel,
+}))
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
+  emit: vi.fn(),
+}))

@@ -1,115 +1,85 @@
-import { useState, useCallback } from "react";
-import { useAtomValue } from "jotai";
-import { tabsAtom } from "@/atoms/tabs";
-import { agentMessagesByTabAtom, agentStreamingByTabAtom } from "@/atoms/sessions";
-import { stopAgent } from "@/lib/tauri";
-import {
-  ChevronDown,
-  ChevronUp,
-  Bot,
-  Loader2,
-  X,
-  Square,
-} from "lucide-react";
+/**
+ * BackgroundTasksPanel — 后台任务面板
+ *
+ * 显示在助手消息的工具执行区域下方，展示运行中的后台任务。
+ * 参考 Craft-agent-oss 的表格样式设计。
+ */
 
-interface ActiveAgentTab {
-  tabId: string;
-  title: string;
-  streaming: boolean;
-  messageCount: number;
+import * as React from 'react'
+import { Loader2, Terminal, GitBranch } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import type { BackgroundTask } from '@/atoms/agent-atoms'
+
+export interface BackgroundTasksPanelProps {
+  tasks: BackgroundTask[]
+  className?: string
 }
 
-export default function BackgroundTasksPanel() {
-  const [collapsed, setCollapsed] = useState(false);
-  const tabs = useAtomValue(tabsAtom);
-  const streamingByTab = useAtomValue(agentStreamingByTabAtom);
-  const messagesByTab = useAtomValue(agentMessagesByTabAtom);
-
-  const activeTabs: ActiveAgentTab[] = tabs
-    .filter((tab) => tab.type === "agent")
-    .map((tab) => ({
-      tabId: tab.id,
-      title: tab.title,
-      streaming: streamingByTab[tab.id] ?? false,
-      messageCount: (messagesByTab[tab.id] ?? []).length,
-    }));
-
-  const hasStreaming = activeTabs.some((t) => t.streaming);
-
-  const handleCancel = useCallback(async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await stopAgent();
-    } catch {
-      // best-effort stop
-    }
-  }, []);
-
-  // Don't render at all if no agent tabs have any activity
-  const hasAnyAgents = activeTabs.length > 0;
-  if (!hasAnyAgents) return null;
+/**
+ * BackgroundTasksPanel 组件
+ *
+ * 以表格形式展示运行中的后台任务。
+ */
+export function BackgroundTasksPanel({
+  tasks,
+  className,
+}: BackgroundTasksPanelProps): React.ReactElement | null {
+  // 无任务时不渲染
+  if (tasks.length === 0) return null
 
   return (
-    <div
-      className={`border-t border-border bg-card transition-all ${
-        hasStreaming || !collapsed ? "" : "hidden"
-      }`}
-    >
-      {/* Header */}
-      <button
-        onClick={() => setCollapsed((v) => !v)}
-        className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent transition-colors"
-      >
-        {collapsed ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-        <Bot size={12} className="text-primary" />
-        <span className="font-medium">Agent 任务</span>
-        {hasStreaming && (
-          <Loader2 size={12} className="animate-spin text-primary" />
-        )}
-        <span className="ml-auto">{activeTabs.length} 标签页</span>
-      </button>
+    <div className={cn('mt-2', className)}>
+      {/* 标题 */}
+      <div className="text-xs text-foreground/60 mb-1.5 px-0.5">
+        {tasks.length} 个后台任务：
+      </div>
 
-      {/* Body */}
-      {!collapsed && (
-        <div className="px-3 py-1.5 space-y-1 max-h-32 overflow-y-auto">
-          {activeTabs.length === 0 ? (
-            <p className="text-[11px] text-muted-foreground py-1">无 Agent 标签页</p>
-          ) : (
-            activeTabs.map((agentTab) => (
-              <div
-                key={agentTab.tabId}
-                className="flex items-center gap-2 text-xs py-1"
-              >
-                <Bot size={12} className="text-muted-foreground shrink-0" />
-                <span className="truncate max-w-[160px]">{agentTab.title}</span>
-                <span className="text-[10px] text-muted-foreground">
-                  {agentTab.messageCount} 条消息
-                </span>
-                {agentTab.streaming && (
-                  <>
-                    <span className="text-[10px] text-primary flex items-center gap-1">
-                      <Loader2 size={10} className="animate-spin" />
-                      运行中
-                    </span>
-                    <button
-                      onClick={handleCancel}
-                      className="ml-auto p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                      title="取消"
-                    >
-                      <Square size={10} />
-                    </button>
-                  </>
-                )}
-                {!agentTab.streaming && (
-                  <span className="ml-auto text-[10px] text-muted-foreground">
-                    <X size={10} className="inline" /> 已停止
-                  </span>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      )}
+      {/* 任务表格 */}
+      <div className="rounded-md border border-border/50 overflow-hidden bg-muted/20">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-border/50 bg-muted/30">
+              <th className="text-left py-1.5 px-2 font-medium text-foreground/50 w-8 text-[11px]">#</th>
+              <th className="text-left py-1.5 px-2 font-medium text-foreground/50 text-[11px]">任务描述</th>
+              <th className="text-left py-1.5 px-2 font-medium text-foreground/50 w-20 text-[11px]">状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tasks.map((task, index) => {
+              const Icon = task.type === 'shell' ? Terminal : GitBranch
+              const description = task.intent || `${task.type === 'shell' ? 'Shell' : 'Task'} 任务`
+
+              return (
+                <tr
+                  key={task.toolUseId}
+                  className="border-b border-border/30 last:border-b-0 hover:bg-muted/30 transition-colors"
+                >
+                  {/* 序号 */}
+                  <td className="py-1.5 px-2 text-foreground/40 font-mono text-[10px]">
+                    {index + 1}
+                  </td>
+
+                  {/* 任务描述 */}
+                  <td className="py-1.5 px-2">
+                    <div className="flex items-center gap-1.5">
+                      <Icon className="size-3 text-muted-foreground shrink-0" />
+                      <span className="text-foreground/70 text-[11px]">{description}</span>
+                    </div>
+                  </td>
+
+                  {/* 状态 */}
+                  <td className="py-1.5 px-2">
+                    <div className="flex items-center gap-1">
+                      <Loader2 className="size-2.5 animate-spin text-primary" />
+                      <span className="text-primary font-medium text-[11px]">运行中</span>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
-  );
+  )
 }
