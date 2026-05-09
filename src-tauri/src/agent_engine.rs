@@ -95,7 +95,6 @@ impl AgentEngine {
         let sid = session_id.to_string();
         let stdout_thread = std::thread::spawn(move || {
             let reader = BufReader::new(stdout);
-            let mut line_count = 0u32;
             for line in reader.lines() {
                 let line = match line {
                     Ok(l) => l,
@@ -103,14 +102,6 @@ impl AgentEngine {
                 };
                 if line.is_empty() {
                     continue;
-                }
-                line_count += 1;
-                if line.contains("tool_use") {
-                    // Write to temp file (stderr truncated by terminal)
-                    let debug_path = std::env::temp_dir().join("jgui-agent-tooluse.json");
-                    let _ = std::fs::write(&debug_path, &line);
-                    eprintln!("[claude-debug] tool_use ({} chars) -> {}",
-                        line.len(), debug_path.display());
                 }
                 let events = parse_sdk_line(&line);
                 for event in events {
@@ -404,27 +395,33 @@ fn parse_assistant_event(v: &serde_json::Value) -> Vec<AgentEvent> {
                 Some("tool_use") => {
                     block_count += 1;
                     // Try multiple key variants for tool ID and name
-                    let tool_id = item["id"]
+                    let mut tool_id = item["id"]
                         .as_str()
                         .or_else(|| item["tool_use_id"].as_str())
                         .or_else(|| item["tool_use"]["id"].as_str())
                         .unwrap_or("")
                         .to_string();
-                    let tool_name = item["name"]
+                    let mut tool_name = item["name"]
                         .as_str()
                         .or_else(|| item["tool_name"].as_str())
                         .or_else(|| item["tool_use"]["name"].as_str())
                         .unwrap_or("")
                         .to_string();
-                    if tool_id.is_empty() || tool_name.is_empty() {
-                        let dump = serde_json::to_string(item).unwrap_or_default();
-                        eprintln!(
-                            "[warn] parse_assistant_event: tool_use missing id/name. \
-                             Keys: {:?}. Item: {}",
-                            item.as_object().map(|m| m.keys().collect::<Vec<_>>()),
-                            &dump[..dump.len().min(200)]
-                        );
+                    // Fallback: generate synthetic ID + infer name
+                    if tool_id.is_empty() {
+                        let raw = serde_json::to_string(item).unwrap_or_default();
+                        let hash: String = raw.bytes().take(8)
+                            .map(|b| format!("{:02x}", b)).collect();
+                        tool_id = format!("tool_{}", hash);
                     }
+                    if tool_name.is_empty() {
+                        tool_name = "Tool".to_string();
+                    }
+                    // Write item to temp for debugging
+                    let _ = std::fs::write(
+                        std::env::temp_dir().join("jgui-agent-tooluse.json"),
+                        serde_json::to_string(item).unwrap_or_default(),
+                    );
                     let tool_input = item["input"].to_string();
                     events.push(AgentEvent::ToolUse {
                         tool_id,
