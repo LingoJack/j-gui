@@ -336,6 +336,7 @@ export function useGlobalAgentListeners(): void {
 
     // ===== 1. 流式事件 =====
     const cleanupEvent = ipc.onAgentStreamEvent((payload: AgentStreamPayload) => {
+        const sessionId = payload.sessionId
         // Phase 1 兼容：将新 AgentStreamPayload 转换为旧 AgentEvent[]
         const legacyEvents = payloadToLegacyEvents(payload)
 
