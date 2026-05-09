@@ -11,6 +11,7 @@
 - 前端包管理用 **bun**（非 npm/yarn/pnpm）
 - Rust 代码（`src-tauri/`）必须通过 `cargo fmt` 格式化 + `cargo clippy -- -D warnings` 零告警
 - 前端 TypeScript 检查：`bunx tsc --noEmit`
+- 前端测试必须用 `bun run test`（即 vitest run）——`bun test` 不走 vitest 配置，组件测试因缺 jsdom 会失败
 
 ### 运行与本地起服务
 
@@ -25,3 +26,4 @@
 ### 其他
 
 - Rust 编码规约详见 `compound/2026-05-08-decision-rust-coding-conventions.md`
+- **Roadmap 进度报告**：每完成一个 roadmap item 并提交后，必须输出量化进度（已完成/总数、P0 完成数、当前解锁的下游项）

@@ -391,10 +391,10 @@ items:
   - slug: frontend-settings-chat-tools-ui
     description: Chat 工具 UI——Settings 中新增 Chat Tools / ToolSettings 入口，展示可用 Chat 工具、启停状态、配置入口、空态与错误态
     depends_on: [frontend-settings-refined]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-09-chat-tools-ui
     minimal_loop: false
-    notes: Proma parity acceptance 将 Chat 工具列为必验项；首版只做工具列表、启停与配置入口，不扩大到远程 marketplace
+    notes: TDD 实现——list_chat_tools/set_tool_enabled 后端命令 + ToolsTab 前端组件 + 5/5 测试通过
 
   # ===== 2026-05-09 Proma 1:1 复刻验收拆解 =====
 

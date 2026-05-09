@@ -258,6 +258,22 @@ export async function saveMcpServers(servers: McpServerConfig[]): Promise<void> 
   return invoke("save_mcp_servers", { servers });
 }
 
+// ===== Chat Tools =====
+
+export interface ToolInfo {
+  name: string;
+  description: string;
+  enabled: boolean;
+}
+
+export async function listChatTools(): Promise<ToolInfo[]> {
+  return invoke("list_chat_tools");
+}
+
+export async function setToolEnabled(name: string, enabled: boolean): Promise<void> {
+  return invoke("set_tool_enabled", { name, enabled });
+}
+
 // ===== System =====
 
 export async function setTheme(theme: string): Promise<void> {

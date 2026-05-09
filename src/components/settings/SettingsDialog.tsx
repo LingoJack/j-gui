@@ -11,13 +11,14 @@ import SettingsSection from "@/components/settings/primitives/SettingsSection";
 import SkillsTab from "@/components/settings/SkillsTab";
 import HooksTab from "@/components/settings/HooksTab";
 import McpTab from "@/components/settings/McpTab";
+import ToolsTab from "@/components/settings/ToolsTab";
 
 interface Props {
   open: boolean;
   onClose: () => void;
 }
 
-type Tab = "models" | "general" | "aliases" | "skills" | "hooks" | "mcp";
+type Tab = "models" | "general" | "aliases" | "skills" | "hooks" | "mcp" | "tools";
 
 const TABS = [
   { id: "models" as const, label: "模型" },
@@ -26,6 +27,7 @@ const TABS = [
   { id: "skills" as const, label: "Skills" },
   { id: "hooks" as const, label: "Hooks" },
   { id: "mcp" as const, label: "MCP" },
+  { id: "tools" as const, label: "工具" },
 ];
 
 const emptyProvider = (): ProviderInfo => ({
@@ -451,6 +453,9 @@ export default function SettingsDialog({ open, onClose }: Props) {
 
             {/* ===== MCP Tab ===== */}
             {tab === "mcp" && <McpTab />}
+
+            {/* ===== Tools Tab ===== */}
+            {tab === "tools" && <ToolsTab />}
           </div>
         </div>
 

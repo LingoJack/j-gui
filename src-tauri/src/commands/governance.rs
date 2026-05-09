@@ -1,6 +1,7 @@
 use j_cli::command::chat::infra::hook::manager::HookManager;
 use j_cli::command::chat::infra::hook::types::HookEvent;
 use j_cli::command::chat::infra::skill::{load_all_skills, Skill, SkillSource};
+use j_cli::command::chat::storage::{load_agent_config, save_agent_config};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -211,4 +212,139 @@ pub fn save_mcp_servers(servers: Vec<McpServerConfig>) -> Result<(), String> {
     let content =
         serde_json::to_string_pretty(&merged_items?).map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(&path, content).map_err(|e| format!("写入 MCP 配置失败: {}", e))
+}
+
+// ===== Chat Tools =====
+
+/// 内置工具目录 — 名称和描述与 j-cli ToolRegistry 中注册的工具一一对应
+static BUILTIN_TOOLS: &[(&str, &str)] = &[
+    (
+        "PowerShell",
+        "Execute PowerShell commands on the current Windows system, returning stdout and stderr.",
+    ),
+    (
+        "Read",
+        "Read a file from the local filesystem. Supports line range, pagination, and image files.",
+    ),
+    (
+        "Write",
+        "Write content to a file. Creates the file and parent directories if they don't exist.",
+    ),
+    (
+        "Edit",
+        "Perform exact string replacements in files. Supports bulk replacement with two-step confirmation.",
+    ),
+    (
+        "Glob",
+        "Fast file pattern matching tool using glob syntax to find files by name.",
+    ),
+    (
+        "Grep",
+        "Regex-based search tool for searching within file contents.",
+    ),
+    (
+        "WebFetch",
+        "Fetch content from a URL and convert HTML to Markdown or plain text.",
+    ),
+    (
+        "WebSearch",
+        "Search the web for up-to-date information using the Exa Search API.",
+    ),
+    (
+        "Browser",
+        "Browser automation tool for web browsing, interaction, and content extraction via CDP.",
+    ),
+    (
+        "Ask",
+        "Present structured questions to the user with single-select or multi-select options.",
+    ),
+    (
+        "TaskOutput",
+        "Retrieve output from a running or completed background task.",
+    ),
+    (
+        "Task",
+        "Manage tasks with create, get, list, and update operations.",
+    ),
+    (
+        "TodoWrite",
+        "Create and manage a structured todo list to maintain state across long turns.",
+    ),
+    (
+        "TodoRead",
+        "Read and list all current todo items with their id, content, and status.",
+    ),
+    (
+        "Compact",
+        "Trigger conversation compression to free up context window.",
+    ),
+    (
+        "RegisterHook",
+        "Register, list, or remove session-level hooks.",
+    ),
+    (
+        "EnterPlanMode",
+        "Enter plan mode to explore the codebase and design an implementation approach before writing code.",
+    ),
+    (
+        "ExitPlanMode",
+        "Exit plan mode and submit the plan for user approval.",
+    ),
+    (
+        "EnterWorktree",
+        "Create an isolated git worktree and switch the session into it.",
+    ),
+    (
+        "ExitWorktree",
+        "Exit the current worktree session, keeping or removing it.",
+    ),
+    (
+        "LoadSkill",
+        "Load the full content of a specified skill into context.",
+    ),
+];
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolInfo {
+    pub name: String,
+    pub description: String,
+    pub enabled: bool,
+}
+
+#[tauri::command]
+pub fn list_chat_tools() -> Result<Vec<ToolInfo>, String> {
+    let config = load_agent_config();
+    let disabled = &config.disabled_tools;
+    let tools: Vec<ToolInfo> = BUILTIN_TOOLS
+        .iter()
+        .map(|&(name, desc)| ToolInfo {
+            name: name.to_string(),
+            description: desc.to_string(),
+            enabled: !disabled.iter().any(|d| d == name),
+        })
+        .collect();
+    Ok(tools)
+}
+
+#[tauri::command]
+pub fn set_tool_enabled(name: String, enabled: bool) -> Result<(), String> {
+    let _lock = MCP_CONFIG_LOCK
+        .lock()
+        .map_err(|e| format!("锁定配置失败: {}", e))?;
+    let mut config = load_agent_config();
+    let exists = BUILTIN_TOOLS.iter().any(|&(n, _)| n == name);
+    if !exists {
+        return Err(format!("未知工具: {}", name));
+    }
+    if enabled {
+        config.disabled_tools.retain(|d| d != &name);
+    } else if !config.disabled_tools.iter().any(|d| d == &name) {
+        config.disabled_tools.push(name);
+    }
+    if save_agent_config(&config) {
+        Ok(())
+    } else {
+        Err("保存配置失败".to_string())
+    }
 }

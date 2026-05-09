@@ -46,6 +46,8 @@ pub fn run() {
             commands::governance::list_hooks,
             commands::governance::list_mcp_servers,
             commands::governance::save_mcp_servers,
+            commands::governance::list_chat_tools,
+            commands::governance::set_tool_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
