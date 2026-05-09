@@ -441,10 +441,10 @@ items:
   - slug: proma-parity-agent-tool-renderers
     description: Agent 工具渲染 parity——read/write/edit/bash/search 等工具结果分型渲染，避免退化成纯 JSON 文本
     depends_on: [frontend-tool-call]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: P0；需要覆盖常见 tool_result 类型的视觉状态、折叠和错误态
+    notes: P0 完成——ToolCallDisplay 分型渲染 7 类工具 + 错误态 + 折叠 + TDD 7/7
 
   - slug: proma-parity-agent-task-context
     description: Agent 任务、Context 与 runtime 选择 parity——TaskProgressCard、BackgroundTasksPanel、ContextUsageBadge、真实 token/context 来源、slash skills/MCP runtime 选择器
@@ -481,10 +481,10 @@ items:
   - slug: proma-parity-core-shortcuts
     description: 内建快捷键 parity——打开设置、新建会话、侧栏切换、模式切换、搜索、聚焦输入、清除上下文、停止生成、关闭 tab
     depends_on: [settings-dialog, frontend-left-sidebar, frontend-main-area, frontend-search, frontend-context-bar, backend-streaming-cancel, frontend-agent-view, frontend-chat-input-enhanced]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: P1；快捷键自定义设置页排除，但内建快捷键必须可用
+    notes: P1 完成——useKeyboardShortcuts hook + 9 个快捷键 + Ctrl+W 流式确认 + TDD 5/5
 
   - slug: proma-parity-agent-session-workbench
     description: Agent 会话工作台 parity——AgentHeader 标题编辑、右侧文件面板按钮/文件变化提示、Agent 会话保存/切换/搜索/回填，确保 Chat 会话不会串入 Agent，并覆盖 no-response/timeout/retry 状态

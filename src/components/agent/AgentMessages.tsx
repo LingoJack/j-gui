@@ -22,7 +22,13 @@ export default function AgentMessages() {
       {messages.map((msg, i) => (
         <div key={msg.id}>
           {msg.toolCall ? (
-            <ToolCallDisplay toolCall={msg.toolCall} />
+            <ToolCallDisplay
+              toolId={msg.toolCall.toolId}
+              toolName={msg.toolCall.toolName}
+              toolInput={msg.toolCall.toolInput}
+              toolOutput={msg.toolCall.toolOutput}
+              status={msg.toolCall.status}
+            />
           ) : (
             <MessageBubble message={msg} index={i} />
           )}

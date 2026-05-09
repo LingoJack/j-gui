@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { themeAtom } from "@/atoms/theme";
 import { activeTabAtom, activeTabIdAtom, tabsAtom, type Tab } from "@/atoms/tabs";
@@ -14,6 +14,7 @@ import {
   timelineToMessages,
 } from "@/atoms/sessions";
 import { rightPanelOpenAtom } from "@/atoms/sidebar";
+import { settingsOpenAtom, searchOpenAtom } from "@/atoms/ui";
 import {
   getAgentConfig,
   getSessionMessages,
@@ -28,8 +29,10 @@ import SearchDialog from "./SearchDialog";
 import SettingsDialog from "@/components/settings/SettingsDialog";
 import ToastContainer from "@/components/ui/Toast";
 import { toast } from "@/atoms/toast";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 
 export default function AppShell() {
+  useKeyboardShortcuts();
   const rightPanelOpen = useAtomValue(rightPanelOpenAtom);
   const theme = useAtomValue(themeAtom);
   const setTheme = useSetAtom(themeAtom);
@@ -45,8 +48,10 @@ export default function AppShell() {
   const tabs = useAtomValue(tabsAtom);
   const setTabs = useSetAtom(tabsAtom);
   const setActiveTabId = useSetAtom(activeTabIdAtom);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
+  const settingsOpen = useAtomValue(settingsOpenAtom);
+  const setSettingsOpen = useSetAtom(settingsOpenAtom);
+  const searchOpen = useAtomValue(searchOpenAtom);
+  const setSearchOpen = useSetAtom(searchOpenAtom);
   const setAgentMessages = useSetAtom(agentMessagesAtom);
   const titleOverrides = useAtomValue(sessionTitleOverridesAtom);
   const loadRequestRef = useRef(0);
@@ -151,18 +156,6 @@ export default function AppShell() {
       }
     })();
   }, [activeTab, setAgentMessages, setMessages, setSessionId]);
-
-  // Ctrl+K global shortcut
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        e.preventDefault();
-        setSearchOpen(true);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
 
   const handleSelectSession = useCallback((id: string, type: "chat" | "agent") => {
     const existingTab = tabs.find((tab) => tab.type === type && tab.sessionId === id);
