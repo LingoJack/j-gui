@@ -335,10 +335,11 @@ export function useGlobalAgentListeners(): void {
     }).catch(console.error)
 
     // ===== 1. 流式事件 =====
-
+    const cleanupEvent = ipc.onAgentStreamEvent((payload: AgentStreamPayload) => {
         // Phase 1 兼容：将新 AgentStreamPayload 转换为旧 AgentEvent[]
         const legacyEvents = payloadToLegacyEvents(payload)
 
+      unstable_batchedUpdates(() => {
         for (const event of legacyEvents) {
           // 会话首次进入 running 时，从 Working Done 集合移除（它会出现在 Running 组）
           if (event.type !== 'prompt_suggestion') {
