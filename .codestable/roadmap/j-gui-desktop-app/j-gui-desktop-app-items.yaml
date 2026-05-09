@@ -501,3 +501,69 @@ items:
     feature: null
     minimal_loop: false
     notes: P0 收口项；前置 12 条已全部 done，开始验收证据收集
+
+  # ===== 2026-05-09 Phase Q: Quality & Bug Fix =====
+
+  - slug: fix-agent-cli-integration
+    description: Claude CLI stream-json 解析修复 — tool_id/tool_name 匹配 CLI 实际输出格式、增量流式输出、stderr 错误传播到前端
+    depends_on: [backend-config-commands, backend-agent-engine]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P0 阻塞——当前 tool_id/tool_name 解析为空字符串，审批链路不可用
+
+  - slug: fix-agent-tool-approval
+    description: 工具审批链路修复 — 中断 ID 正确传递 CLI、approve/deny/always 回传协议对齐、审批后工具不自动执行
+    depends_on: [backend-agent-interrupts, fix-agent-cli-integration]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P0——respond_agent_interrupt missing required key interruptId
+
+  - slug: fix-agent-streaming-ui
+    description: Agent 流式 UI 修复 — 自动滚动、工具调用标题/类型/状态显示、批量输出改增量展现
+    depends_on: [frontend-agent-view, fix-agent-cli-integration]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P0——工具调用刷屏、无标题、批量输出
+
+  - slug: proma-quality-shell
+    description: Shell 质量追平 — tab hover 预览、Agent Working/pinned、未查看完成标记、折叠态增强、欢迎页
+    depends_on: [proma-parity-shell-sidebar, fix-agent-cli-integration]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P1——验收 Shell 区域多项 Partial/Fail
+
+  - slug: proma-quality-agent-ux
+    description: Agent UX 追平 — 工作区目录配置、文件变化提示、任务进度聚合、Context 用量效果、/ 命令选择器
+    depends_on: [proma-parity-agent-interrupts, proma-parity-agent-task-context, proma-parity-agent-file-context, fix-agent-cli-integration]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P1——Agent 验收清单多项 Partial
+
+  - slug: proma-quality-chat-ux
+    description: Chat UX 追平 — ScrollMinimap 优化、ContextDivider 样式、RecommendBanner 逻辑、输入区 toolbar
+    depends_on: [proma-parity-chat-experience]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P1——Chat 验收 Partial 项追平
+
+  - slug: proma-quality-settings
+    description: Settings 质量追平 — 全 tab 脏保护、Skills/Hooks/MCP 错误态、Provider 校验、Chat Tools 入口
+    depends_on: [proma-parity-settings-console]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P1——Settings 验收 Partial 项追平
+
+  - slug: proma-quality-shortcuts-help
+    description: 快捷键帮助面板 — Ctrl+? 呼出浮窗、分组展示可用快捷键及说明、Esc 关闭
+    depends_on: [proma-parity-core-shortcuts]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: P1——提升快捷键可发现性

@@ -400,7 +400,21 @@ enum PlanDecision {
 
 > 已 drop：原 #15 `frontend-permission` 被 #34 `frontend-agent-interrupt-ui` 取代（后者覆盖全部三种中断 Banner）
 
-## 7. 排期与依赖图
+### 待实现 — Quality & Bug Fix 轮次（planned — 8 条）
+
+**Agent SDK 集成修复（P0 阻塞）：**
+63. **fix-agent-cli-integration** — Claude CLI stream-json 解析修复：tool_id/tool_name 匹配 CLI 实际输出格式、增量流式输出、stderr 错误传播到前端
+64. **fix-agent-tool-approval** — 工具审批链路：中断 ID 正确传递 CLI、approve/deny/always 回传协议对齐、审批后工具不自动执行
+65. **fix-agent-streaming-ui** — Agent 流式 UI：消息列表自动滚动、工具调用标题/类型/状态可视化、批量输出改为增量展现
+
+**Proma UI 追平（P1）：**
+66. **proma-quality-shell** — Shell 质量：tab 预览面板、Agent Working/pinned、未查看完成标记、编辑/重命名、欢迎页
+67. **proma-quality-agent-ux** — Agent UX：工作区目录配置、文件变化提示、任务进度聚合、Context 用量效果、空态/错误态
+68. **proma-quality-chat-ux** — Chat UX：ScrollMinimap 优化、ContextDivider 样式、RecommendBanner 逻辑、输入区 toolbar
+69. **proma-quality-settings** — Settings 质量：全 tab 脏保护、Skills/Hooks/MCP 错误态、Provider 校验、Chat Tools 入口
+70. **proma-quality-shortcuts-help** — 快捷键帮助：Ctrl+? 唤起帮助面板、分组展示可用快捷键
+
+## 7. 排期与依赖图（更新）
 
 ```
 Phase A: 基础补齐
@@ -426,7 +440,17 @@ Phase P: Proma parity 追平（按验收清单收口；依赖的基础 item 已�
 
 **P0 执行顺序**：先做 #50、#51、#52、#54、#55、#57、#61，覆盖用户当前反馈的会话隔离、Agent 无回应、标题/会话工作台、UI 完整度、Agent 审批、工具渲染和文件上下文问题；#53、#56、#58、#59、#60 随后补齐 P1；#62 只做最终证据收口，不替代任何前置实现。
 
-**最小闭环**：#49 完成后，Settings 不再缺 Chat Tools 入口。P0 第一轮完成后，用户反馈的七个核心差距必须都有实现和行为证据。Phase P 完成后，Proma 对齐从“基础实现可用”升级为“逐屏验收有证据的 1:1 复刻”。
+Phase Q: Quality & Bug Fix 轮次（P0 优先 — 先修 Agent 集成再追 UI）
+  63 fix-agent-cli-integration      ── 依赖 2+12
+  64 fix-agent-tool-approval        ── 依赖 31+63
+  65 fix-agent-streaming-ui         ── 依赖 13+63
+  66 proma-quality-shell            ── 依赖 50+63
+  67 proma-quality-agent-ux         ── 依赖 54+56+57+63
+  68 proma-quality-chat-ux          ── 依赖 52
+  69 proma-quality-settings         ── 依赖 59
+  70 proma-quality-shortcuts-help   ── 依赖 60
+
+**最小闭环**：#63 Claude CLI 集成修复（解锁全部 Agent 功能）→ #64+#65 并行 → #66+#67 并行追 UI → #68+#69+#70 补齐
 
 ## 8. 接口契约要点（新 feature 的跨模块约束）
 
@@ -469,3 +493,4 @@ Phase P: Proma parity 追平（按验收清单收口；依赖的基础 item 已�
 - 2026-05-09（本次修正）：同步 `items.yaml` 当前状态，明确 47 条基础实现已闭环、#49 与 13 条 Proma parity item 待完成；补入 AgentHeader/会话恢复、右侧面板/窗口拖动、欢迎页、文件树和快捷键依赖覆盖
 - 2026-05-09（实施规格）：新增 `proma-parity-implementation-spec.md` 与 `proma-parity-matrix.yaml`，把 #50-#62 拆到源文件、承接点、必须实现状态/交互和证据要求
 - 2026-05-09（实施规格审查修正）：补齐 slash skills/MCP runtime 选择路径和 Agent no-response/timeout/retry 验收，避免用户反馈项只停留在最终证据摘要
+- 2026-05-09（Phase Q）：新增 8 条 Quality & Bug Fix 条目（#63-#70）——基于用户反馈和 acceptance.md 逐屏验收结果，P0 先修 Claude CLI 集成阻塞项，P1 追 UI 质量
