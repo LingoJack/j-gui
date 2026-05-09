@@ -105,11 +105,12 @@ impl AgentEngine {
                     continue;
                 }
                 line_count += 1;
-                if line_count <= 10 {
-                    eprintln!("[claude-debug] raw #{} (len={}): {}", line_count, line.len(), &line[..line.len().min(1000)]);
-                }
                 if line.contains("tool_use") {
-                    eprintln!("[claude-debug] TOOL_USE (len={}): {}", line.len(), &line[..line.len().min(2000)]);
+                    // Write to temp file (stderr truncated by terminal)
+                    let debug_path = std::env::temp_dir().join("jgui-agent-tooluse.json");
+                    let _ = std::fs::write(&debug_path, &line);
+                    eprintln!("[claude-debug] tool_use ({} chars) -> {}",
+                        line.len(), debug_path.display());
                 }
                 let events = parse_sdk_line(&line);
                 for event in events {
