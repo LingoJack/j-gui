@@ -216,7 +216,7 @@ pub fn list_agent_sessions() -> Result<Vec<AgentSessionInfo>, String> {
             let ts_path = entry.path().join("transcript.jsonl");
             if ts_path.exists() {
                 if let Ok(file) = std::fs::File::open(&ts_path) {
-                    for line in BufReader::new(file).lines().flatten() {
+                    for line in BufReader::new(file).lines().map_while(Result::ok) {
                         if let Ok(item) = serde_json::from_str::<serde_json::Value>(&line) {
                             if item["kind"].as_str() == Some("user_message") {
                                 if let Some(c) = item["content"].as_str() {

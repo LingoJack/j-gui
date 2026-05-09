@@ -122,6 +122,10 @@ export default function AgentView() {
     async (kind: string, response: Record<string, unknown>) => {
       if (!interrupt || respondingInterruptId) return;
       const interruptId = interrupt.interruptId;
+      if (!interruptId) {
+        toast("审批响应失败: 中断 ID 为空（可能是 CLI 输出格式不匹配，检查终端日志 [claude-debug]）", "error");
+        return;
+      }
       setRespondingInterruptId(interruptId);
       try {
         await engine.handleInterrupt(interruptId, kind, response);

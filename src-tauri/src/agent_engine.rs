@@ -399,12 +399,26 @@ fn parse_assistant_event(v: &serde_json::Value) -> Vec<AgentEvent> {
                 }
                 Some("tool_use") => {
                     block_count += 1;
-                    let tool_id = item["id"].as_str().unwrap_or("").to_string();
-                    let tool_name = item["name"].as_str().unwrap_or("").to_string();
+                    // Try multiple key variants for tool ID and name
+                    let tool_id = item["id"]
+                        .as_str()
+                        .or_else(|| item["tool_use_id"].as_str())
+                        .or_else(|| item["tool_use"]["id"].as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let tool_name = item["name"]
+                        .as_str()
+                        .or_else(|| item["tool_name"].as_str())
+                        .or_else(|| item["tool_use"]["name"].as_str())
+                        .unwrap_or("")
+                        .to_string();
                     if tool_id.is_empty() || tool_name.is_empty() {
+                        let dump = serde_json::to_string(item).unwrap_or_default();
                         eprintln!(
-                            "[warn] parse_assistant_event: tool_use missing id={} name={}",
-                            tool_id.is_empty(), tool_name.is_empty()
+                            "[warn] parse_assistant_event: tool_use missing id/name. \
+                             Keys: {:?}. Item: {}",
+                            item.as_object().map(|m| m.keys().collect::<Vec<_>>()),
+                            &dump[..dump.len().min(200)]
                         );
                     }
                     let tool_input = item["input"].to_string();

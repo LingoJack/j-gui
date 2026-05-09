@@ -250,7 +250,7 @@ export default function ToolCallDisplay(props: Props) {
           <ChevronRight size={14} />
         )}
         <Wrench size={14} className="text-muted-foreground" />
-        <span className="font-medium text-xs">{toolName}</span>
+        <span className="font-medium text-xs">{toolName || "工具"}</span>
         {renderHeaderChip()}
         <span className="flex-1" />
         {statusIcon()}
