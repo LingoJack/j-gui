@@ -154,6 +154,58 @@ export default function ChatView() {
               ),
             }));
             break;
+          case "toolStart":
+            setMessagesByTab((prev) => ({
+              ...prev,
+              [activeTabId]: [
+                ...(prev[activeTabId] ?? []),
+                {
+                  id: msg.data.toolId,
+                  role: "assistant" as const,
+                  content: "",
+                  isStreaming: true,
+                  toolCall: {
+                    toolId: msg.data.toolId,
+                    toolName: msg.data.toolName,
+                    toolInput: msg.data.toolInput,
+                    status: "running" as const,
+                  },
+                },
+              ],
+            }));
+            break;
+          case "toolResult":
+            setMessagesByTab((prev) => ({
+              ...prev,
+              [activeTabId]: (prev[activeTabId] ?? []).map((m) =>
+                m.id === msg.data.toolId
+                  ? {
+                      ...m,
+                      isStreaming: false,
+                      toolCall: m.toolCall
+                        ? { ...m.toolCall, toolOutput: msg.data.content, status: "done" as const }
+                        : undefined,
+                    }
+                  : m,
+              ),
+            }));
+            break;
+          case "toolError":
+            setMessagesByTab((prev) => ({
+              ...prev,
+              [activeTabId]: (prev[activeTabId] ?? []).map((m) =>
+                m.id === msg.data.toolId
+                  ? {
+                      ...m,
+                      isStreaming: false,
+                      toolCall: m.toolCall
+                        ? { ...m.toolCall, toolOutput: msg.data.message, status: "error" as const }
+                        : undefined,
+                    }
+                  : m,
+              ),
+            }));
+            break;
           case "done":
             setMessagesByTab((prev) => ({
               ...prev,

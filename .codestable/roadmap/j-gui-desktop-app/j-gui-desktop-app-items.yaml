@@ -409,10 +409,10 @@ items:
   - slug: proma-parity-tabs-workspace
     description: Tabs 工作区 parity——Tab 预览面板、拖拽重排、流式关闭确认、错误隔离、横向滚动体验、无 tab 欢迎页/空态，按 Proma TabBar / TabPreviewPanel / TabCloseConfirmDialog / WelcomeView 对齐
     depends_on: [frontend-main-area, frontend-tabs-enhanced]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: P0；需要证明 Chat/Agent tab 切换不会串 session/mode
+    notes: P0 完成——流式关闭确认 + 欢迎空态 + overflow-x-auto + per-tab ErrorBoundary + Ctrl+Tab
 
   - slug: proma-parity-chat-experience
     description: Chat 体验 parity——RichText 输入、工具栏布局、Thinking、ContextDivider、ScrollMinimap、Agent 推荐入口，首版仍排除附件/拖放
@@ -425,10 +425,10 @@ items:
   - slug: proma-parity-chat-tools
     description: Chat 工具 parity——Chat 工具活动提示、工具块渲染、Settings ToolSettings 入口、工具启停与空态/错误态
     depends_on: [frontend-settings-chat-tools-ui]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: P1；不扩大到 marketplace，只追平本地工具治理和消息区工具展示
+    notes: P1 完成——ChatView Channel toolStart/toolResult/toolError + ChatToolBlock 组件 + MessageBubble 条件渲染
 
   - slug: proma-parity-agent-interrupts
     description: Agent 审批 parity——Permission / AskUser / ExitPlanMode 三类中断 UI 和回传闭环，不能只有静态 banner
@@ -473,10 +473,10 @@ items:
   - slug: proma-parity-settings-console
     description: Settings parity——Dialog 外观、左导航、脏状态保护、UI 原语、Provider/Prompt/Agent/Chat Tools tab，排除 Proxy/Voice/Remote/Tutorial/Update/Migration/Shortcut 自定义
     depends_on: [frontend-settings-refined, frontend-settings-skills-ui, frontend-settings-hooks-ui, frontend-settings-mcp-ui, frontend-settings-chat-tools-ui]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: P1；排除的 Proma tab 不要求出现，但不能影响设置页导航和视觉一致性
+    notes: P1 完成——7 tab 全覆盖 + 模态布局 + dirty 保护 + 空/错态 + SkillsTab/HooksTab/ToolsTab 错误态
 
   - slug: proma-parity-core-shortcuts
     description: 内建快捷键 parity——打开设置、新建会话、侧栏切换、模式切换、搜索、聚焦输入、清除上下文、停止生成、关闭 tab

@@ -5,6 +5,9 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type ChatEvent =
   | { event: "chunk"; data: { index: number; content: string } }
+  | { event: "toolStart"; data: { toolId: string; toolName: string; toolInput: string } }
+  | { event: "toolResult"; data: { toolId: string; content: string } }
+  | { event: "toolError"; data: { toolId: string; message: string } }
   | { event: "done"; data: { totalTokens: number } }
   | { event: "error"; data: { message: string } };
 

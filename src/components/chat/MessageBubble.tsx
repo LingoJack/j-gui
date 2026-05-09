@@ -6,6 +6,7 @@ import { Copy, Check, Trash2, RefreshCw, GitFork } from "lucide-react";
 import type { Message } from "@/atoms/sessions";
 import { toast } from "@/atoms/toast";
 import ReasoningBlock from "./ReasoningBlock";
+import ChatToolBlock from "./ChatToolBlock";
 
 interface Props {
   message: Message;
@@ -130,6 +131,14 @@ export default function MessageBubble({ message, index, onDelete, onResend, onFo
           <div className="prose prose-sm dark:prose-invert max-w-none">...</div>
         ) : (
           content
+        )}
+        {message.toolCall && (
+          <ChatToolBlock
+            name={message.toolCall.toolName}
+            status={message.toolCall.status}
+            input={message.toolCall.toolInput}
+            output={message.toolCall.toolOutput}
+          />
         )}
         {message.isStreaming && (
           <span className="inline-block w-1.5 h-4 bg-primary ml-0.5 animate-pulse align-middle" />

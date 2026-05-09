@@ -24,11 +24,12 @@ const EVENT_LABELS: Record<string, string> = {
 export default function HooksTab() {
   const [hooks, setHooks] = useState<HookInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     listHooks()
       .then(setHooks)
-      .catch(() => {})
+      .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -37,6 +38,15 @@ export default function HooksTab() {
       <div className="flex items-center justify-center py-8">
         <Loader2 className="animate-spin" size={20} />
       </div>
+    );
+
+  if (error)
+    return (
+      <SettingsSection title="已加载的 Hooks">
+        <p className="text-sm text-destructive py-4">
+          加载 Hooks 失败: {error}
+        </p>
+      </SettingsSection>
     );
 
   return (

@@ -9,11 +9,12 @@ import { toast } from "@/atoms/toast";
 export default function ToolsTab() {
   const [tools, setTools] = useState<tauri.ToolInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     tauri.listChatTools()
       .then(setTools)
-      .catch(() => {})
+      .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -27,6 +28,15 @@ export default function ToolsTab() {
       <div className="flex items-center justify-center py-8">
         <Loader2 className="animate-spin" size={20} />
       </div>
+    );
+
+  if (error)
+    return (
+      <SettingsSection title="Chat 工具">
+        <p className="text-sm text-destructive py-4">
+          加载工具列表失败: {error}
+        </p>
+      </SettingsSection>
     );
 
   return (

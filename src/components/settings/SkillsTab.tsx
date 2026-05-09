@@ -7,11 +7,12 @@ import { BookOpen, Loader2 } from "lucide-react";
 export default function SkillsTab() {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     listSkills()
       .then(setSkills)
-      .catch(() => {})
+      .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -20,6 +21,15 @@ export default function SkillsTab() {
       <div className="flex items-center justify-center py-8">
         <Loader2 className="animate-spin" size={20} />
       </div>
+    );
+
+  if (error)
+    return (
+      <SettingsSection title="已加载的 Skills">
+        <p className="text-sm text-destructive py-4">
+          加载 Skills 失败: {error}
+        </p>
+      </SettingsSection>
     );
 
   return (

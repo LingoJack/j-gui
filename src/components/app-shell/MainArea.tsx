@@ -111,40 +111,35 @@ export default function MainArea({ onOpenSettings }: Props) {
   };
 
   const executeCloseTab = async (tabId: string) => {
-    const tab = tabs.find((item) => item.id === tabId);
-    if (!tab) return;
-    // 防御：流式中的 agent tab 应先通过 confirm 流程，不应直接关闭
-    if (tab.type === "agent" && (agentStreamingByTab[tab.id] ?? false)) {
-      console.warn("[MainArea] executeCloseTab called on streaming agent tab without confirm");
-    }
-    if (tab.type === "agent") {
+    // Check tab type from current state for stopAgent decision
+    const tab = tabs.find((t) => t.id === tabId);
+    if (tab?.type === "agent") {
       await stopAgent().catch(() => {});
     }
 
-    const remaining = tabs.filter((t) => t.id !== tabId);
-
-    if (remaining.length === 0) {
-      if (!hasProviders) {
-        setTabs([]);
-        setActiveTabId(null);
-      } else {
+    setTabs((prev) => {
+      const remaining = prev.filter((t) => t.id !== tabId);
+      if (remaining.length === 0) {
+        if (!hasProviders) {
+          setActiveTabId(null);
+          return [];
+        }
         const newTab: Tab = {
           id: crypto.randomUUID(),
           type: "chat",
           title: "Chat",
           sessionId: null,
         };
-        setTabs([newTab]);
         setActiveTabId(newTab.id);
+        return [newTab];
       }
-    } else {
-      setTabs(remaining);
+      const closedIdx = prev.findIndex((t) => t.id === tabId);
       if (activeTabId === tabId) {
-        const closedIdx = tabs.findIndex((t) => t.id === tabId);
         const newActiveIdx = Math.min(closedIdx, remaining.length - 1);
         setActiveTabId(remaining[newActiveIdx].id);
       }
-    }
+      return remaining;
+    });
   };
 
   const handleCloseTab = (tabId: string) => {
@@ -159,14 +154,14 @@ export default function MainArea({ onOpenSettings }: Props) {
     void executeCloseTab(tabId);
   };
 
-  const handleCreateTab = () => {
+  const handleCreateTab = (type: "chat" | "agent") => {
     const newTab: Tab = {
       id: crypto.randomUUID(),
-      type: "chat",
-      title: "Chat",
+      type,
+      title: type === "agent" ? "Agent" : "Chat",
       sessionId: null,
     };
-    setTabs([newTab]);
+    setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
   };
 
@@ -184,7 +179,7 @@ export default function MainArea({ onOpenSettings }: Props) {
             <div className="text-center space-y-4">
               <p className="text-sm text-muted-foreground">暂无打开的标签页</p>
               <button
-                onClick={handleCreateTab}
+                onClick={() => handleCreateTab("chat")}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:opacity-90 transition-opacity"
               >
                 <Plus size={16} />

@@ -164,7 +164,6 @@ export function useKeyboardShortcuts() {
   }
 
   function handleCloseTab() {
-    if (tabs.length <= 1) return;
     if (!activeTabId) return;
 
     const isStreaming = activeTab?.type === "agent" ? agentStreaming : chatStreaming;
@@ -174,16 +173,18 @@ export function useKeyboardShortcuts() {
       handleStopGeneration();
     }
 
-    const currentIndex = tabs.findIndex((t) => t.id === activeTabId);
-    const newTabs = tabs.filter((t) => t.id !== activeTabId);
-    setTabs(newTabs);
-
-    if (newTabs.length > 0) {
-      const nextIndex = Math.min(currentIndex, newTabs.length - 1);
-      setActiveTabId(newTabs[nextIndex].id);
-    } else {
-      setActiveTabId(null);
-    }
+    setTabs((prev) => {
+      if (prev.length <= 1) return prev;
+      const newTabs = prev.filter((t) => t.id !== activeTabId);
+      if (newTabs.length > 0) {
+        const closedIdx = prev.findIndex((t) => t.id === activeTabId);
+        const nextIndex = Math.min(closedIdx, newTabs.length - 1);
+        setActiveTabId(newTabs[nextIndex].id);
+      } else {
+        setActiveTabId(null);
+      }
+      return newTabs;
+    });
   }
 
   function focusCurrentInput() {
