@@ -446,6 +446,18 @@ export const getChatTools = () => tryInvoke<any[]>('get_chat_tools', undefined, 
 export const listChatTools = () =>
   invoke<Array<{ name: string; description: string; enabled: boolean }>>('list_chat_tools')
 
+/** List skills from j-cli (both user and project sources) */
+export const listSkills = () =>
+  invoke<Array<{ name: string; description: string; source: string; dirPath: string }>>('list_skills')
+
+/** Scan global skills directories (~/.claude/agents/skills/ and ~/.agent/skills/) */
+export const scanGlobalSkills = () =>
+  invoke<Array<{ name: string; description: string; source: string; dirPath: string }>>('scan_global_skills')
+
+/** Copy a skill from a source directory to a workspace */
+export const copySkillToWorkspace = (sourceDir: string, workspaceSlug: string, skillSlug: string) =>
+  invoke<void>('copy_skill_to_workspace', { sourceDir, workspaceSlug, skillSlug })
+
 /** Enable or disable a built-in chat tool by name */
 export const setToolEnabled = (name: string, enabled: boolean) =>
   invoke<void>('set_tool_enabled', { name, enabled })

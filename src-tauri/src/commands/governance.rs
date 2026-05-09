@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 static MCP_CONFIG_LOCK: Mutex<()> = Mutex::new(());
@@ -346,5 +346,168 @@ pub fn set_tool_enabled(name: String, enabled: bool) -> Result<(), String> {
         Ok(())
     } else {
         Err("保存配置失败".to_string())
+    }
+}
+
+// ===== Skills: Global scan & import =====
+
+fn parse_skill_frontmatter(path: &Path) -> Option<(String, String)> {
+    let content = fs::read_to_string(path).ok()?;
+    let trimmed = content.trim_start();
+    if !trimmed.starts_with("---") {
+        return None;
+    }
+    let rest = &trimmed[3..];
+    let end_idx = rest.find("\n---")?;
+    let fm_str = rest[..end_idx].trim().to_string();
+
+    #[derive(serde::Deserialize)]
+    struct Fm {
+        name: Option<String>,
+        description: Option<String>,
+    }
+
+    let fm: Fm = serde_yaml::from_str(&fm_str).ok()?;
+    let name = fm.name?;
+    let description = fm.description.unwrap_or_default();
+    Some((name, description))
+}
+
+fn scan_skills_dir(home_dir: &Path, subpath: &str) -> Vec<SkillInfo> {
+    let dir = home_dir.join(subpath);
+    if !dir.is_dir() {
+        return Vec::new();
+    }
+    let mut skills = Vec::new();
+    let entries = match fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(_) => return skills,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let skill_md = path.join("SKILL.md");
+        if !skill_md.exists() {
+            continue;
+        }
+        if let Some((name, description)) = parse_skill_frontmatter(&skill_md) {
+            let dir_name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let source = format!("global:{}/{}", subpath, dir_name);
+            skills.push(SkillInfo {
+                name,
+                description,
+                source,
+                dir_path: path.to_string_lossy().to_string(),
+            });
+        }
+    }
+    skills
+}
+
+#[tauri::command]
+pub fn scan_global_skills() -> Result<Vec<SkillInfo>, String> {
+    let home = dirs::home_dir().ok_or_else(|| "无法获取 home 目录".to_string())?;
+    let mut skills = Vec::new();
+    skills.extend(scan_skills_dir(&home, ".claude/agents/skills"));
+    skills.extend(scan_skills_dir(&home, ".agent/skills"));
+    Ok(skills)
+}
+
+#[tauri::command]
+pub fn copy_skill_to_workspace(
+    source_dir: String,
+    workspace_slug: String,
+    skill_slug: String,
+) -> Result<(), String> {
+    let home = dirs::home_dir().ok_or_else(|| "无法获取 home 目录".to_string())?;
+    let target_base = home
+        .join(".jgui")
+        .join("agent-workspaces")
+        .join(&workspace_slug)
+        .join("skills")
+        .join(&skill_slug);
+    fs::create_dir_all(&target_base).map_err(|e| format!("创建目标目录失败: {}", e))?;
+
+    let source_skill_md = PathBuf::from(&source_dir).join("SKILL.md");
+    let target_skill_md = target_base.join("SKILL.md");
+
+    if !source_skill_md.exists() {
+        return Err(format!("源 SKILL.md 不存在: {}", source_skill_md.display()));
+    }
+
+    fs::copy(&source_skill_md, &target_skill_md)
+        .map_err(|e| format!("复制 SKILL.md 失败: {}", e))?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_parse_skill_frontmatter_valid() {
+        let dir = std::env::temp_dir().join("j-gui-test-parse-fm");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("SKILL.md");
+        let mut file = fs::File::create(&path).unwrap();
+        writeln!(file, "---").unwrap();
+        writeln!(file, "name: Test Skill").unwrap();
+        writeln!(file, "description: A test skill").unwrap();
+        writeln!(file, "---").unwrap();
+        writeln!(file, "This is the body").unwrap();
+        drop(file);
+
+        let result = parse_skill_frontmatter(&path);
+        assert!(result.is_some());
+        let (name, desc) = result.unwrap();
+        assert_eq!(name, "Test Skill");
+        assert_eq!(desc, "A test skill");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_parse_skill_frontmatter_invalid() {
+        let dir = std::env::temp_dir().join("j-gui-test-parse-fm-invalid");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("SKILL.md");
+        let mut file = fs::File::create(&path).unwrap();
+        writeln!(file, "No frontmatter here").unwrap();
+        writeln!(file, "Just content").unwrap();
+        drop(file);
+
+        let result = parse_skill_frontmatter(&path);
+        assert!(result.is_none());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_parse_skill_frontmatter_no_name() {
+        let dir = std::env::temp_dir().join("j-gui-test-parse-fm-noname");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("SKILL.md");
+        let mut file = fs::File::create(&path).unwrap();
+        writeln!(file, "---").unwrap();
+        writeln!(file, "description: No name here").unwrap();
+        writeln!(file, "---").unwrap();
+        writeln!(file, "Body").unwrap();
+        drop(file);
+
+        // Without name field, should return None
+        let result = parse_skill_frontmatter(&path);
+        assert!(result.is_none());
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }
