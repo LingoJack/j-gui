@@ -15,7 +15,7 @@ import {
   listSessions,
   createSession,
   getSessionMessages,
-  listAgentSessions,
+  getAgentSessionList,
   createAgentSession,
   getAgentSession,
   deleteAgentSession,
@@ -146,7 +146,7 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
         setAgentSessionsList([]);
         return;
       }
-      const list = activeTab.type === "agent" ? await listAgentSessions() : await listSessions();
+      const list = activeTab.type === "agent" ? await getAgentSessionList() : await listSessions();
       const sorted = list.sort((a, b) => b.updatedAt - a.updatedAt);
       if (activeTab.type === "agent") {
         setAgentSessionsList(sorted);
@@ -362,13 +362,18 @@ export default function LeftSidebar({ onOpenSettings }: Props) {
         open ? "w-[280px]" : "w-[48px]",
       )}
     >
-      <div className="flex items-center h-10 px-2 border-b border-border">
+      <div className="flex items-center gap-1 h-10 px-2 border-b border-border">
         <button
           onClick={() => setOpen(!open)}
           className="p-1.5 rounded-md hover:bg-accent text-muted-foreground"
         >
           {open ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
         </button>
+        {open && activeTabType && (
+          <span className="text-xs font-medium text-muted-foreground ml-1">
+            {activeTabType === "agent" ? "Agent" : "Chat"} 模式
+          </span>
+        )}
       </div>
 
       {open ? (

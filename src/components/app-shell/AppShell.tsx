@@ -19,7 +19,7 @@ import {
   getAgentConfig,
   getSessionMessages,
   getAgentSession,
-  listAgentSessions,
+  getAgentSessionList,
   listSessions,
 } from "@/lib/tauri";
 import LeftSidebar from "./LeftSidebar";
@@ -37,8 +37,6 @@ export default function AppShell() {
   const theme = useAtomValue(themeAtom);
   const setTheme = useSetAtom(themeAtom);
   const setConfig = useSetAtom(agentConfigAtom);
-  const chatSessions = useAtomValue(chatSessionsAtom);
-  const agentSessions = useAtomValue(agentSessionsListAtom);
   const setChatSessions = useSetAtom(chatSessionsAtom);
   const setAgentSessions = useSetAtom(agentSessionsListAtom);
   const setSessionTitleOverrides = useSetAtom(sessionTitleOverridesAtom);
@@ -53,7 +51,6 @@ export default function AppShell() {
   const searchOpen = useAtomValue(searchOpenAtom);
   const setSearchOpen = useSetAtom(searchOpenAtom);
   const setAgentMessages = useSetAtom(agentMessagesAtom);
-  const titleOverrides = useAtomValue(sessionTitleOverridesAtom);
   const loadRequestRef = useRef(0);
 
   // Load agent config (including theme) on mount
@@ -71,7 +68,7 @@ export default function AppShell() {
   useEffect(() => {
     const loadSearchSessions = async () => {
       try {
-        const [chatList, agentList] = await Promise.all([listSessions(), listAgentSessions()]);
+        const [chatList, agentList] = await Promise.all([listSessions(), getAgentSessionList()]);
         setChatSessions(chatList);
         setAgentSessions(agentList);
       } catch {
@@ -174,15 +171,6 @@ export default function AppShell() {
     setActiveTabId(nextTab.id);
   }, [setActiveTabId, setTabs, tabs]);
 
-  const chatSearchSessions = chatSessions.map((session) => ({
-    ...session,
-    title: titleOverrides[session.id] ?? session.title,
-  }));
-  const agentSearchSessions = agentSessions.map((session) => ({
-    ...session,
-    title: titleOverrides[session.id] ?? session.title,
-  }));
-
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background">
       <LeftSidebar onOpenSettings={() => setSettingsOpen(true)} />
@@ -194,9 +182,7 @@ export default function AppShell() {
       <SearchDialog
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
-        chatSessions={chatSearchSessions}
-        agentSessions={agentSearchSessions}
-        onSelect={handleSelectSession}
+        onSelectSession={handleSelectSession}
       />
       <ToastContainer />
     </div>

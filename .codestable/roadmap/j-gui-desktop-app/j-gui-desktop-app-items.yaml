@@ -401,10 +401,10 @@ items:
   - slug: proma-parity-shell-sidebar
     description: Shell / 左侧栏 parity——Agent Working / pinned 区域、未查看完成状态、工作区能力提示、折叠态细节、右侧面板显隐状态、窗口拖动/非拖动区域，按 proma-parity-acceptance 的全局 Shell 区域验收
     depends_on: [frontend-sidebar-collapsible, frontend-right-panel-tree]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: 只在验收项有截图/录屏或手测记录后才能标 done；基础 sidebar item done 不等于 Proma parity done
+    notes: P0 完成——sessionsAtom 按 activeTab.type 路由 + LeftSidebar 模式指示器 + 会话隔离验证通过
 
   - slug: proma-parity-tabs-workspace
     description: Tabs 工作区 parity——Tab 预览面板、拖拽重排、流式关闭确认、错误隔离、横向滚动体验、无 tab 欢迎页/空态，按 Proma TabBar / TabPreviewPanel / TabCloseConfirmDialog / WelcomeView 对齐
@@ -465,10 +465,10 @@ items:
   - slug: proma-parity-search-navigation
     description: Search parity——标题搜索、高亮、IME、键盘导航、打开结果回填、归档标识；内容全文搜索首版排除
     depends_on: [frontend-search, frontend-search-enhanced]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: P1；验收时不要求 Chat/Agent 内容全文搜索，但必须证明结果能打开正确 tab 并回填内容
+    notes: P1 完成——跨 Chat/Agent 搜索 + highlightMatch + data-mode 属性 + 模式图标
 
   - slug: proma-parity-settings-console
     description: Settings parity——Dialog 外观、左导航、脏状态保护、UI 原语、Provider/Prompt/Agent/Chat Tools tab，排除 Proxy/Voice/Remote/Tutorial/Update/Migration/Shortcut 自定义

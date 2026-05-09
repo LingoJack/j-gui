@@ -200,7 +200,7 @@ export async function createAgentSession(): Promise<string> {
   return invoke("create_agent_session");
 }
 
-export async function listAgentSessions(): Promise<AgentSessionInfo[]> {
+export async function getAgentSessionList(): Promise<AgentSessionInfo[]> {
   return invoke("list_agent_sessions");
 }
 

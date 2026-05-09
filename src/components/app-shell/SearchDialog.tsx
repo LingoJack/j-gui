@@ -1,16 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { Search, MessageSquare, Bot } from "lucide-react";
-import type { SessionInfo } from "@/lib/tauri";
+import { listSessions, getAgentSessionList, type SessionInfo } from "@/lib/tauri";
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  chatSessions: SessionInfo[];
-  agentSessions: SessionInfo[];
-  onSelect: (id: string, type: "chat" | "agent") => void | Promise<void>;
+  onSelectSession: (id: string, type: "chat" | "agent") => void | Promise<void>;
 }
 
-function highlightMatch(text: string, query: string): React.ReactNode {
+export function highlightMatch(text: string, query: string): React.ReactNode {
   if (!query) return text;
   const idx = text.toLowerCase().indexOf(query.toLowerCase());
   if (idx === -1) return text;
@@ -31,13 +29,31 @@ interface MergedItem {
 export default function SearchDialog({
   open,
   onClose,
-  chatSessions,
-  agentSessions,
-  onSelect,
+  onSelectSession,
 }: Props) {
   const [query, setQuery] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [composing, setComposing] = useState(false);
+  const [chatSessions, setChatSessions] = useState<SessionInfo[]>([]);
+  const [agentSessions, setAgentSessions] = useState<SessionInfo[]>([]);
+
+  // Fetch both session lists on open
+  useEffect(() => {
+    if (!open) return;
+    const fetchSessions = async () => {
+      try {
+        const [chatList, agentList] = await Promise.all([
+          listSessions(),
+          getAgentSessionList(),
+        ]);
+        setChatSessions(chatList);
+        setAgentSessions(agentList);
+      } catch {
+        // Best-effort loading
+      }
+    };
+    void fetchSessions();
+  }, [open]);
 
   // Merge both session sources with type tags for cross-mode search, sorted by most recent
   const allSessions: MergedItem[] = [
@@ -80,11 +96,11 @@ export default function SearchDialog({
         setSelectedIdx((i) => Math.max(i - 1, 0));
       } else if (e.key === "Enter" && filtered[selectedIdx]) {
         const item = filtered[selectedIdx];
-        onSelect(item.session.id, item.type);
+        onSelectSession(item.session.id, item.type);
         onClose();
       }
     },
-    [composing, filtered, onClose, onSelect, selectedIdx],
+    [composing, filtered, onClose, onSelectSession, selectedIdx],
   );
 
   if (!open) return null;
@@ -126,8 +142,9 @@ export default function SearchDialog({
             filtered.map((item, i) => (
               <button
                 key={`${item.type}-${item.session.id}`}
+                data-mode={item.type}
                 onClick={() => {
-                  onSelect(item.session.id, item.type);
+                  onSelectSession(item.session.id, item.type);
                   onClose();
                 }}
                 className={`w-full text-left px-4 py-2.5 text-sm hover:bg-accent transition-colors ${
