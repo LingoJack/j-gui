@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::kernel::types::{infer_provider, KernelChannelModel, KernelProvider};
 use crate::kernel::{ConfigKernel, JcliAdapter};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderInfo {
     pub name: String,
@@ -15,7 +15,7 @@ pub struct ProviderInfo {
     pub supports_vision: bool,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentConfigInfo {
     pub providers: Vec<ProviderInfo>,
@@ -23,7 +23,7 @@ pub struct AgentConfigInfo {
     pub theme: String,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct YamlConfigInfo {
     pub sections: BTreeMap<String, BTreeMap<String, String>>,
@@ -541,5 +541,78 @@ mod tests {
 
         let result = set_system_prompt_impl(&mock, "test");
         assert!(result.is_err());
+    }
+
+    // --- error propagation ---
+
+    #[test]
+    fn get_agent_config_kernel_error_propagates() {
+        let mut mock = MockConfigKernel::new();
+        mock.expect_load_providers()
+            .returning(|| Err(crate::kernel::KernelError::Config("db error".into())));
+
+        let result = get_agent_config_impl(&mock);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("db error"));
+    }
+
+    #[test]
+    fn set_agent_config_save_error_propagates() {
+        let mut mock = MockConfigKernel::new();
+        mock.expect_load_providers().returning(|| Ok(vec![]));
+        mock.expect_save_providers()
+            .returning(|_| Err(crate::kernel::KernelError::Config("disk full".into())));
+
+        let result = set_agent_config_impl(
+            &mock,
+            AgentConfigInfo {
+                providers: vec![ProviderInfo {
+                    name: "Test".into(),
+                    api_base: "https://test.com".into(),
+                    api_key: "key".into(),
+                    model: "m".into(),
+                    supports_vision: false,
+                }],
+                active_index: 0,
+                theme: "dark".into(),
+            },
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("disk full"));
+    }
+
+    #[test]
+    fn set_active_provider_kernel_error_propagates() {
+        let mut mock = MockConfigKernel::new();
+        mock.expect_load_providers()
+            .returning(|| Ok(vec![KernelProvider::default()]));
+        mock.expect_set_active_index()
+            .returning(|_| Err(crate::kernel::KernelError::Config("save failed".into())));
+
+        let result = set_active_provider_impl(&mock, 0);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("save failed"));
+    }
+
+    #[test]
+    fn get_config_kernel_error_propagates() {
+        let mut mock = MockConfigKernel::new();
+        mock.expect_get_yaml_sections()
+            .returning(|| Err(crate::kernel::KernelError::Config("parse error".into())));
+
+        let result = get_config_impl(&mock);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("parse error"));
+    }
+
+    #[test]
+    fn get_system_prompt_kernel_error_propagates() {
+        let mut mock = MockConfigKernel::new();
+        mock.expect_load_system_prompt()
+            .returning(|| Err(crate::kernel::KernelError::Config("io error".into())));
+
+        let result = get_system_prompt_impl(&mock);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("io error"));
     }
 }
