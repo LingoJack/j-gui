@@ -51,6 +51,16 @@ src-tauri/              Rust 后端（commands/ + chat_engine.rs）
 - **流式 IPC**：Chat 流式必须用 `Channel<T>`（非 Tauri Events — Events 不适合低延迟高频场景）
 - **Agent 模式**：Claude Agent SDK CLI 子进程 + j-agent crate 并行，预留 `AgentBackend` trait
 - **Channel send 错误**：取消请求通过 Channel drop 实现
+- **jcli 解耦**（强制，详见 `.codestable/compound/2026-05-10-decision-jgui-jcli-decouple.md`）：
+  - j-gui **不修改 jcli 源代码**（jcli 由独立仓库/团队维护）
+  - j-gui **写入 jcli 数据目录**（`~/.jdata/`）保持 CLI/GUI 数据同步
+  - 所有 `j_cli::` 导入仅允许在 `kernel/adapter.rs` 中——其他模块通过 `ChatKernel` / `ConfigKernel` / `GovernanceKernel` trait 调用
+  - 退出标准：`grep -r "j_cli::" src-tauri/src/` 仅命中 `kernel/adapter.rs`
+- **jcli 升级应对**（详见 `.codestable/compound/2026-05-10-decision-jgui-jcli-decouple.md#jcli-升级应对`）：
+  - jcli 小版本升级 → 更新 Cargo.toml → cargo check 通过（零改动）
+  - jcli API 签名变化 → 仅修改 adapter 内部实现（trait 签名保持稳定）
+  - jcli 新增功能 → trait 加方法（带默认 Unsupported 实现）→ adapter 实现 → 前端按需加 UI
+  - trait 签名变更必须有 deprecation 周期
 - **Git 排除**：`.codestable/` `.claude/` 不提交
 
 ### 任务完成验证（强制）
