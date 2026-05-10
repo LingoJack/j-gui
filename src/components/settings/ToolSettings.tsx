@@ -45,14 +45,19 @@ export function BuiltinToolsSection(): React.ReactElement {
   }, [])
 
   const handleToggle = async (name: string, currentEnabled: boolean): Promise<void> => {
+    // Optimistic update for immediate UI feedback
+    setTools((prev) =>
+      prev.map((t) => (t.name === name ? { ...t, enabled: !currentEnabled } : t))
+    )
     try {
       await ipc.setToolEnabled(name, !currentEnabled)
-      setTools((prev) =>
-        prev.map((t) => (t.name === name ? { ...t, enabled: !currentEnabled } : t))
-      )
     } catch (err) {
       console.error('[内置工具] 切换失败:', err)
       toast.error('切换工具状态失败')
+      // Rollback on failure
+      setTools((prev) =>
+        prev.map((t) => (t.name === name ? { ...t, enabled: currentEnabled } : t))
+      )
     }
   }
 
