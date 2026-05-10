@@ -432,10 +432,13 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
   /** 删除消息 */
   const handleDeleteMessage = React.useCallback(async (messageId: string): Promise<void> => {
     try {
-      const updatedMessages = await ipc.deleteMessage(
-        conversationId,
-        messageId
-      )
+      const pairIndex = messages.findIndex((m) => m.id === messageId)
+      if (pairIndex === -1) {
+        console.warn('[ChatView] 未找到要删除的消息:', messageId)
+        return
+      }
+      await ipc.deleteMessage(conversationId, pairIndex)
+      const updatedMessages = messages.filter((_, i) => i !== pairIndex)
       setMessages(updatedMessages)
       if (inlineEditingMessageId === messageId) {
         setInlineEditingMessageId(null)
@@ -444,7 +447,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
     } catch (error) {
       console.error('[ChatView] 删除消息失败:', error)
     }
-  }, [conversationId, contextDividers, inlineEditingMessageId, syncContextDividers])
+  }, [conversationId, messages, contextDividers, inlineEditingMessageId, syncContextDividers])
 
   /** 重新发送：从该用户消息分叉后，直接重发 */
   const handleResendMessage = React.useCallback(async (message: { id: string; content: string }): Promise<void> => {

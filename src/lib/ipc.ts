@@ -195,8 +195,8 @@ export async function sendMessage(input: any): Promise<void> {
 }
 
 export async function stopGeneration(sessionId: string) { try { await invoke('stop_generation', { sessionId }) } catch { warnOnce('stop_generation') } }
-export const deleteMessage = (conversationId: string, messageId: string) =>
-  tryInvoke<any[]>('delete_message', { conversationId, messageId }, [])
+export const deleteMessage = (conversationId: string, pairIndex: number) =>
+  tryInvoke<void>('delete_message', { sessionId: conversationId, pairIndex })
 export const truncateMessagesFrom = (conversationId: string, messageId: string, preserveFirstMessageAttachments?: boolean) =>
   tryInvoke<any[]>('truncate_messages_from', { conversationId, messageId, preserveFirstMessageAttachments }, [])
 export const updateContextDividers = (conversationId: string, dividers: string[]) =>
