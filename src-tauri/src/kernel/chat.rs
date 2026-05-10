@@ -6,9 +6,10 @@ use super::types::{KernelChatMessage, KernelProvider, KernelSessionEvent, Kernel
 
 /// Chat + Session kernel trait.
 // mockall::automock unavailable: stream_chat takes Channel<String> (not Clone).
-// Use mockall::mock! macro for manual mock when writing kernel-based tests.
-#[async_trait]
-pub trait ChatKernel: Send + Sync {
+// ?Send: jcli call_llm_stream_async uses &mut dyn FnMut callback which is not Send.
+// SAFETY: Channel<String> inside is Send, the trait object Send restriction is lifted only for the callback.
+#[async_trait(?Send)]
+pub trait ChatKernel: Sync {
     /// Stream LLM response via Channel<String>. Each chunk is a text delta.
     async fn stream_chat(
         &self,

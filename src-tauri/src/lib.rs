@@ -20,6 +20,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AgentState(Arc::new(Mutex::new(None))))
+        .manage(kernel::JcliAdapter::new())
         .invoke_handler(tauri::generate_handler![
             commands::agent::start_agent,
             commands::agent::send_agent_message,
