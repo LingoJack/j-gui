@@ -135,13 +135,15 @@ jcli 仓库已发布 `j-agent` crate，当前 j-gui 的 Agent 模式通过 CC SD
 
 ### Phase F: 移动端远程连接 (P4 远期)
 
-**决策**：移动端不另起项目，在 j-gui 内添加移动端 Web UI（PWA）。手机扫码 → 局域网连接 → 桌面 j-gui 作为 WS 服务端 → 移动 Web UI 作为客户端。不涉及原生 Android/iOS 开发。
+**决策**：Tauri v2 支持 Android/iOS 原生编译。移动端在 j-gui monorepo 内，用 Tauri mobile 构建原生 App——桌面端作为 WS 服务端，移动端作为 WS 客户端（不需要 jcli，纯远程遥控器）。
 
-**31. remote-mobile-access** — 桌面远程服务 + 移动端 Web UI
+**31. remote-mobile-access** — 桌面远程服务 + 移动端 Tauri App
 
-- **现状**：jcli `command::chat::remote` 提供 WS bridge 能力，j-gui 未集成。移动端无 App——需通过扫码 PC 桌面端进入 Web UI
-- **目标**：j-gui 桌面端——设置页"远程访问"tab：启动/停止 WS 服务、局域网地址+二维码、PIN 码确认、连接设备列表。移动端——同一项目内新增 `src-mobile/` React Web UI（PWA），通过 WS 连接桌面端操作 Chat/Agent，响应式适配手机屏幕
-- **不另起项目**：移动 Web UI 在 j-gui monorepo 内，复用 `packages/shared` 类型和 IPC 模式，仅通过网络层替换 Tauri invoke
+- **现状**：jcli `command::chat::remote` 提供 WS bridge 能力，j-gui 未集成。Tauri v2 已支持 Android/iOS 构建
+- **目标**：
+  - **桌面端**：设置页"远程访问"tab——启动/停止 WS 服务、局域网地址+二维码、PIN 码确认、连接设备列表
+  - **移动端**：`src-mobile/` Tauri mobile App——React WebView 复用现有 UI 组件，Rust 层仅做轻量 WS 客户端（不依赖 jcli），通过局域网连接桌面端操作 Chat/Agent。`packages/shared` 类型跨桌面/移动端共享
+- **分发**：Android APK + iOS IPA（通过 Tauri bundler），不需要应用商店
 - **安全**：仅局域网可访问、PIN 码 + Token 双重确认、超时自动断开
 - **依赖**：#30 kernel-trait-abstraction（远程服务通过 trait 调用内核）
 
