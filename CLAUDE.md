@@ -44,6 +44,21 @@ src-tauri/              Rust 后端（commands/ + chat_engine.rs）
 - **Channel send 错误**：取消请求通过 Channel drop 实现
 - **Git 排除**：`.codestable/` `.claude/` 不提交
 
+### 任务完成验证（强制）
+
+**每个子代理任务/手动改动完成后，必须跑全量检查，不通过不算完成：**
+
+| 检查项 | 命令 | 要求 |
+|--------|------|------|
+| 前端测试 | `bun run test` | 全部通过，零失败 |
+| Rust 测试 | `cargo test --manifest-path src-tauri/Cargo.toml` | 全部通过，零失败 |
+| 前端类型检查 | `bunx tsc --noEmit` | 零错误（存量错误例外，但不新增） |
+| Rust 编译检查 | `cargo check --manifest-path src-tauri/Cargo.toml` | 零新告警 |
+| Rust 格式 | `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` | 格式正确 |
+| Rust Lint | `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` | 零告警 |
+
+**这些检查在子代理实现报告中必须逐项汇报，主控 agent 在标记任务完成前必须独立验证。**
+
 ---
 
 ## 行为准则
