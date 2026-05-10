@@ -199,12 +199,12 @@ items:
 
   # ===== Phase E: 内核解耦 & Agent 升级 (P2) =====
   - slug: kernel-trait-abstraction
-    description: jcli 公开 API 抽象层——定义 JcliKernel 及各领域 trait（ChatKernel/ConfigKernel/GovernanceKernel），j-gui 仅依赖 trait 不依赖 jcli 内部实现。解决当前 22 个深层导入点、无 semver 缓冲的问题
+    description: 3 trait + KernelError + types.rs DTO + JcliAdapter + feature flag 安全迁移 + _impl 测试模式 + Channel 流式签名。25 导入点归零仅剩 adapter
     depends_on: []
-    status: planned
-    feature: null
+    status: in-progress
+    feature: 2026-05-10-kernel-trait-abstraction
     minimal_loop: true
-    notes: ⭐ 优先于 #27——先建 trait 抽象层，后续 feature 全基于 trait 实现，不再引入新的 jcli 内部导入
+    notes: ⭐ 优先于 #27。design approved 2026-05-10，checklist 已生成
 
   - slug: agent-engine-jagent
     description: 替换 CC SDK CLI 子进程为 j-agent crate——新增 JAgentBackend 实现 AgentBackend trait，支持流式 Agent Loop、工具审批/回传、中断处理、会话 resume。依赖 #27

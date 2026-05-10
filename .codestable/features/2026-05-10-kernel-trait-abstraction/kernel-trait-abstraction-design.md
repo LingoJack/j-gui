@@ -1,7 +1,7 @@
 ---
 doc_type: feature-design
 feature: 2026-05-10-kernel-trait-abstraction
-status: draft
+status: approved
 summary: 定义 3 个内核 trait（ChatKernel / ConfigKernel / GovernanceKernel）替代 25 个直接导入。Tauri State 注入 + _impl 层测试模式 + feature flag 安全迁移 + Channel 流式。j-gui 侧改动，不碰 jcli 代码。
 tags: [kernel, trait, abstraction, decouple, jcli]
 roadmap: j-gui-v1

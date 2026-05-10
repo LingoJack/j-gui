@@ -1,0 +1,92 @@
+feature: 2026-05-10-kernel-trait-abstraction
+roadmap: j-gui-v1
+roadmap_item: kernel-trait-abstraction
+created: 2026-05-10
+status: ready
+
+steps:
+  - id: step-1
+    paradigm: data-model
+    description: 创建 kernel/ 目录，定义 3 个 trait + types.rs + error.rs + #[automock]
+    exit: cargo check 通过
+    status: pending
+
+  - id: step-2
+    paradigm: data-model
+    description: 写 JcliAdapter (kernel/adapter.rs)，每个方法委托给现有 jcli 调用，内部做 Kernel* ↔ jcli 类型转换
+    exit: cargo test 全量通过（行为不变）
+    status: pending
+
+  - id: step-3
+    paradigm: integration
+    description: lib.rs 注册 app.manage(JcliAdapter::new())，ChatEngine 改为接收 kernel
+    exit: cargo check 通过
+    status: pending
+
+  - id: step-4
+    paradigm: migration
+    description: 迁移 alias.rs (3 命令) + system.rs (2 命令) → ConfigKernel。_impl 层测试
+    exit: cargo test 通过
+    status: pending
+
+  - id: step-5
+    paradigm: migration
+    description: 迁移 config.rs (7 命令) + channels.rs (6 命令) → ConfigKernel
+    exit: cargo test 全量通过
+    status: pending
+
+  - id: step-6
+    paradigm: migration
+    description: 迁移 chat_engine.rs + chat.rs → ChatKernel + ConfigKernel。最高风险——流式 + ChatEngine 编排
+    exit: cargo test + 手动流式验证
+    status: pending
+
+  - id: step-7
+    paradigm: migration
+    description: 迁移 governance.rs → GovernanceKernel
+    exit: cargo test 通过
+    status: pending
+
+  - id: step-8
+    paradigm: migration
+    description: 迁移 agent_engine.rs (write_error_log → eprintln!) + agent_session.rs → ConfigKernel::data_dir
+    exit: cargo test 通过
+    status: pending
+
+  - id: step-9
+    paradigm: verification
+    description: 退出标准验证——grep j_cli:: 仅限 kernel/adapter.rs + 全量测试 + bun run test
+    exit: 退出标准达成
+    status: pending
+
+checks:
+  - id: check-types
+    description: KernelError 变体 + types.rs DTO + 3 trait 编译
+    target: step-1
+  - id: check-adapter-delegation
+    description: JcliAdapter 每个方法委托给正确 jcli 调用，类型转换正确
+    target: step-2
+  - id: check-state-injection
+    description: app.manage 注册 + ChatEngine 接收 kernel + 命令通过 state 获取
+    target: step-3
+  - id: check-alias-system-migration
+    description: alias.rs 3 命令 + system.rs 2 命令全部迁移，_impl 可独立测试
+    target: step-4
+  - id: check-config-channels-migration
+    description: config.rs 7 命令 + channels.rs 6 命令全部迁移
+    target: step-5
+  - id: check-chat-migration
+    description: ChatEngine 流式链路正常，Channel<ChatEvent> 推送正确，取消/错误处理不变
+    target: step-6
+  - id: check-governance-migration
+    description: governance.rs 全部导入点迁移，Skills/Hooks/MCP/Chat Tools 命令正常
+    target: step-7
+  - id: check-agent-migration
+    description: agent_engine 日志替换 + agent_session 迁移
+    target: step-8
+  - id: check-exit-criterion
+    description: grep -r "j_cli::" src-tauri/src/ 仅命中 kernel/adapter.rs
+    target: step-9
+  - id: check-full-tests
+    description: cargo test 全量通过 + bun run test 全量通过 + cargo clippy 零新告警
+    target: step-9
