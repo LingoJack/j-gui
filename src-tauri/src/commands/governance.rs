@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex};
 
 use crate::kernel::{GovernanceKernel, JcliAdapter};
 
+static GOVERNANCE_CONFIG_LOCK: Mutex<()> = Mutex::new(());
+
 fn home_dir() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
@@ -18,8 +20,6 @@ fn home_dir() -> Option<PathBuf> {
         std::env::var("HOME").ok().map(PathBuf::from)
     }
 }
-
-static GOVERNANCE_CONFIG_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
