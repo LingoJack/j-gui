@@ -84,33 +84,57 @@ src/main.tsx
 
 ### 2.3 后端命令与引擎
 
-后端入口 `src-tauri/src/lib.rs:10-52` 注册所有命令。
+后端入口 `src-tauri/src/lib.rs` 注册所有命令，当前共有 **82 个 Tauri 命令**（`generate_handler![]`）。
 
-**Chat 引擎**（`src-tauri/src/commands/chat.rs:1-84` + `src-tauri/src/chat_engine.rs:1-250`）：
+#### 内核 Trait 抽象层（`src-tauri/src/kernel/`）
+
+2026-05-10 新增的 kernel trait 层将 j-cli 依赖与 Tauri 命令层解耦，支持命令单元测试：
+
+| Trait | 文件 | 方法数 | 说明 |
+|-------|------|--------|------|
+| `ChatKernel` | `kernel/chat.rs` | 11 | Chat 流式 + 会话 CRUD + 固定/归档 |
+| `ConfigKernel` | `kernel/config.rs` | 14 | Channel CRUD + Alias + SystemPrompt + YamlConfig + 主题 |
+| `GovernanceKernel` | `kernel/governance.rs` | 18 | Skills/Hooks/MCP CRUD + 工作区管理 + CC SDK 导入 |
+
+所有 trait 均标注 `Send + Sync`，`ConfigKernel` 和 `GovernanceKernel` 通过 `#[mockall::automock]` 支持 mock 测试。
+
+**实现**：`kernel/adapter.rs` 中的 `JcliAdapter` 是三个 trait 的唯一实现。所有 `j_cli::` 导入**仅限 adapter.rs**（及 `commands/governance.rs` 中少量遗留导入）。命令层通过 `Arc<dyn ChatKernel>` / `Arc<dyn ConfigKernel>` / `Arc<dyn GovernanceKernel>` 调用，不直接依赖 j_cli。
+
+**测试模式**：每个命令文件采用 `_impl` 函数签名——`fn foo_impl(kernel: &dyn ConfigKernel, ...)` 接收 trait 引用，Tauri `#[tauri::command]` 函数仅做薄入口（提取 managed state 后委托 `_impl`）。这使得业务逻辑可在单元测试中通过 mock/mockall 注入测试，无需启动 Tauri 运行时。
+
+**Chat 引擎**（`src-tauri/src/commands/chat.rs` + `src-tauri/src/chat_engine.rs`）：
 - `send_message` — 流式 LLM 调用，`std::thread::spawn + tokio::block_on` 线程模型
 - `stop_generation` — 生成中止（`STOPPED_SESSIONS` 全局标记）
-- `create_session` / `list_sessions` / `get_session_messages` / `delete_message` / `clear_session` / `delete_session`
-- 写操作通过 `SESSION_WRITE_LOCK` 串行化
+- `list_sessions` / `create_session` / `delete_session` / `get_session_messages` / `delete_message` / `clear_session` / `toggle_pin_conversation` / `toggle_archive_conversation`
+- 10 个 Chat 命令，通过 `ChatKernel` trait 访问 jcli 存储
 - 详见 [backend-chat-engine](./backend-chat-engine.md)
 
-**Agent 引擎**（`src-tauri/src/commands/agent.rs:1-350` + `src-tauri/src/agent_engine.rs:1-730` + `src-tauri/src/agent_session.rs:1-270`）：
+**Agent 引擎**（`src-tauri/src/commands/agent.rs` + `src-tauri/src/agent_engine.rs` + `src-tauri/src/agent_session.rs`）：
 - claude CLI 子进程 + stream-json 协议
-- 12 个命令（`src-tauri/src/commands/agent.rs:1-566`）：`start_agent`, `create_agent_session`, `list_agent_sessions`, `get_agent_session`, `delete_agent_session`, `respond_agent_interrupt`, `send_agent_message`, `stop_agent`, `generate_agent_title`, `update_agent_session_title`, `respond_permission`, `respond_ask_user`
+- 12 个命令：`start_agent`, `create_agent_session`, `list_agent_sessions`, `get_agent_session`, `delete_agent_session`, `respond_agent_interrupt`, `send_agent_message`, `stop_agent`, `generate_agent_title`, `update_agent_session_title`, `respond_permission`, `respond_ask_user`
 - 中断路由按 `kind` 分派（permission / ask_user / plan）
 - 会话持久化在 `~/.jdata/agent/sessions/{id}/`，使用 `AGENT_TRANSCRIPT_LOCK` 串行化
 - 详见 [backend-agent-engine](./backend-agent-engine.md)
 
-**Governance 命令**（`src-tauri/src/commands/governance.rs:1-514`）：
-- `list_skills`, `list_hooks`, `list_mcp_servers`, `save_mcp_servers`, `list_chat_tools`, `set_tool_enabled`
-- `scan_global_skills`, `copy_skill_to_workspace`
-- 25 个内置工具定义在 `BUILTIN_TOOLS` 静态数组
+**Governance 命令**（`src-tauri/src/commands/governance.rs`，当前 **21 个命令**）：
+- 基础：`list_skills`, `list_hooks`, `list_mcp_servers`, `save_mcp_servers`, `list_chat_tools`, `set_tool_enabled`
+- 全局扫描：`scan_global_skills`, `copy_skill_to_workspace`
+- 启停管理：`toggle_hook`
+- 工作区管理：`read_skill_content`, `write_skill_content`, `toggle_workspace_skill`, `delete_workspace_skill`, `get_workspace_skills`, `get_workspace_skills_dir`, `get_other_workspace_skills`, `import_skill_from_workspace`, `get_workspace_mcp_config`, `save_workspace_mcp_config`
+- CC SDK 互操作：`import_cc_sdk_hooks`, `import_cc_sdk_mcp`
+- 双源架构：j-cli 原生配置 + CC SDK 工作区配置，前端 UI 通过 `GovernanceKernel` trait 统一访问
 
-**其他命令**：
-- `channels.rs`（渠道 CRUD + 连接测试 + 模型拉取）、`files.rs`（文件对话框 + 附件读写 + 目录列表）
-- `settings.rs`（GUI 设置 + 用户档案 + Agent 工作区 + 环境检测）
-- `config.rs`（provider 配置脱敏读写）、`system.rs`（版本与主题）、`alias.rs`（别名读写）
+**其他命令**（按模块）：
+- `channels.rs`（6 命令：Channel CRUD + test_channel_direct + fetch_models）
+- `files.rs`（6 命令：文件对话框 + 附件读写 + 目录列表 + delete/rename）
+- `settings.rs`（15 命令：GUI 设置 + 用户档案 + Agent 工作区 + 环境检测 + SystemPrompt CRUD）
+- `config.rs`（7 命令：agent_config / yaml_config / system_prompt 读写 + set_active_provider）
+- `system.rs`（2 命令：版本与主题）
+- `alias.rs`（3 命令：别名读写）
 
-**数据目录**：GUI 配置与附件存 `%APPDATA%/j-gui/` (Windows) / `~/.j-gui/` (Unix)；Chat/Agent 会话存 `~/.jdata/`（j-cli constants）
+**测试覆盖**：Rust **136 测试**（kernel traits + adapter + commands） + 前端 **54 测试**（7 文件）。
+
+**数据目录**：GUI 配置与附件存 `%APPDATA%/j-gui/` (Windows) / `~/.j-gui/` (Unix)；Chat/Agent 会话存 `~/.jdata/`（j-cli constants）。
 
 ### 2.4 前端 IPC 层与全局事件监听
 
@@ -226,15 +250,18 @@ Claude Code 生态中，`npx skills add` 或 `npx @anthropic-ai/agent-skills` �
 | Agent 原子 | `src/atoms/agent-atoms.ts` |
 | 前端 ai-elements | `src/components/ai-elements/` |
 | Tauri 总注册 | `src-tauri/src/lib.rs:10-52` |
+| Kernel Trait 层 | `src-tauri/src/kernel/`（chat.rs / config.rs / governance.rs / adapter.rs / error.rs / types.rs） |
 | Chat 命令层 | `src-tauri/src/commands/chat.rs:1-85` |
 | Chat 引擎 | `src-tauri/src/chat_engine.rs:1-250` |
 | Agent 命令与引擎 | `src-tauri/src/commands/agent.rs:1-350`、`agent_engine.rs:1-730`、`agent_session.rs:1-270` |
-| Governance 命令 | `src-tauri/src/commands/governance.rs:1-514` |
-| Config / system / alias | `src-tauri/src/commands/config.rs`、`system.rs`、`alias.rs` |
+| Governance 命令 | `src-tauri/src/commands/governance.rs:1-900+`（21 命令 + _impl 模式） |
+| Config / channels / system / alias | `src-tauri/src/commands/config.rs`、`channels.rs`、`system.rs`、`alias.rs` |
+| Files / settings | `src-tauri/src/commands/files.rs`、`settings.rs` |
 
 ## 6. 变更日志
 
-- `2026-05-10`：全量重写——AppShell 减薄为布局容器、原子体系拆分、多标签页独立模块、ipc EventBus + 全局事件监听、设置 10 标签组件化、@proma/shared 类型系统、AiElements 渲染原语、Agent 中断三型路由。同步 6 份子文档。
+- `2026-05-10T1`：全量重写——AppShell 减薄为布局容器、原子体系拆分、多标签页独立模块、ipc EventBus + 全局事件监听、设置 10 标签组件化、@proma/shared 类型系统、AiElements 渲染原语、Agent 中断三型路由。同步 6 份子文档。
+- `2026-05-10T2`：更新 2.3 节——写入 kernel trait 抽象层（ChatKernel/ConfigKernel/GovernanceKernel）、82 命令按模块分拆计数、j_cli 导入隔离约束、`_impl` 测试模式、136 Rust 测试、governance 21 命令详情。更新 section 5/7 锚点与约束。
 
 ## 7. 关键约束
 
@@ -246,6 +273,8 @@ Claude Code 生态中，`npx skills add` 或 `npx @anthropic-ai/agent-skills` �
 - **Agent 审批**有三种 kind（permission / ask_user / plan），分别由三个独立 Banner 处理
 - **后端 Agent 引擎**已移除 `-p` flag（单次模式），支持多轮 memory；`respond_interrupt` 签名改为 `content: &str`
 - **生成中止**：Chat 端新增 `stop_generation()` + `STOPPED_SESSIONS` 全局状态，当前为 TODO 半完成态
+- **Kernel trait 隔离**：`ChatKernel` / `ConfigKernel` / `GovernanceKernel` 三个 trait 定义在 `kernel/` 下，`JcliAdapter` 是唯一实现。Tauri 命令层**不得直接导入 `j_cli::`**——所有 j-cli 依赖通过 trait 接口访问。`governance.rs` 中的少量遗留直接导入将在后续解耦
+- **`_impl` 测试模式**：每个 Tauri 命令的纯逻辑层放在 `fn foo_impl(kernel: &dyn Trait, ...)` 中，Tauri `#[tauri::command]` 函数仅做 managed state 提取和委托。这使得业务逻辑可以脱离 Tauri 运行时在纯 Rust 单元测试中验证
 
 ## 8. 相关文档
 

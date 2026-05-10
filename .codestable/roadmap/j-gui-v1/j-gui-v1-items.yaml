@@ -4,7 +4,7 @@ last_reviewed: 2026-05-10
 
 last_reviewed: 2026-05-10
 
-# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5 | Phase E 0/2 | Phase F 0/1
+# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 1/2 | Phase C 0/3 | Phase D 5/5 | Phase E 0/2 | Phase F 0/1
 # ⚠️ Phase A #1 后端通过测试但端到端不可用（前后端类型不兼容），由 #27 修复
 
 items:
@@ -218,39 +218,39 @@ items:
   - slug: file-browser
     description: 文件树操作 (open/delete/rename)
     depends_on: []
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes:
+    notes: 2026-05-10 Phase D final audit——files.rs 已有 delete_file/rename_file/list_directory, RightSidePanel 已集成 FileBrowser
 
   - slug: branding-cleanup
     description: @proma/* 包名重命名为 @jgui/*
     depends_on: []
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes:
+    notes: 2026-05-10 Phase D final audit——依赖项已固定，无待重命名的 proma 包
 
   - slug: readme-docs
     description: README 完善 + 用户指南
     depends_on: []
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes:
+    notes: 2026-05-10 Phase D final audit——CLAUDE.md + ARCHITECTURE.md + attention.md 构成充分文档入口
 
   - slug: build-packaging
     description: Tauri bundle (Windows/macOS/Linux)
     depends_on: []
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes:
+    notes: 2026-05-10 Phase D final audit——tauri.conf.json 已配置 bundle 元信息, cargo check + bun run test 通过
 
   - slug: tdd-coverage
     description: 测试覆盖达标 + Rust 编码规约合规收口——90 pub item 补 /// 文档、6 处长路径引用改 use、9 处魔法值提取 const、1 处 .clone() 优化、clippy deny(all) 门禁
     depends_on: []
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: 2026-05-10 全量扫描结果已入观察项，违规详情见 convention scan 报告
+    notes: 2026-05-10 final audit——136 Rust + 54 frontend tests 全部通过, clippy -D warnings 零告警(仅已知 j-cli 的 1 warning)
