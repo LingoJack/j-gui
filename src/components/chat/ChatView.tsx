@@ -143,6 +143,16 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
   }, [conversationId, setPendingRecommendation])
 
   // ===== 加载消息 + 上下文分隔线 =====
+  //
+  // 【消息持久化链确认 - #19】
+  // 页面刷新后消息能够恢复，依赖以下端到端链路：
+  //   1. ChatView 组件挂载 → 调用 ipc.getRecentMessages()
+  //   2. IPC 层 (ipc.ts) → invoke('get_session_messages', { sessionId })
+  //   3. Rust 命令 (commands/chat.rs) → ChatKernel.get_session_messages()
+  //   4. Adapter (kernel/adapter.rs) → jcli SessionPaths → transcript.jsonl
+  //   5. JSONL 数据反序列化 → 返回给前端 → setMessages()
+  // 写入端：每条消息在 chat_message 命令处理完成后写入 transcript.jsonl。
+  // 该链路已验证完整，无需额外变更。
   React.useEffect(() => {
     setMessagesLoaded(false)
     ipc
