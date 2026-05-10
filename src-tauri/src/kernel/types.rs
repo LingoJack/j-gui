@@ -1,10 +1,12 @@
 //! j-gui owned domain types for the kernel trait boundary.
 //! These are NOT jcli types — adapter does the conversion.
+//!
+//! All types derive Clone + Debug + PartialEq for mockall compatibility.
 
 use serde::{Deserialize, Serialize};
 
 /// Provider configuration for LLM calls.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelProvider {
     pub name: String,
@@ -15,14 +17,14 @@ pub struct KernelProvider {
 }
 
 /// Chat message.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KernelChatMessage {
     pub role: String,
     pub content: String,
 }
 
 /// Session summary for listing.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelSessionSummary {
     pub id: String,
@@ -32,7 +34,7 @@ pub struct KernelSessionSummary {
 }
 
 /// Session event from transcript.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KernelSessionEvent {
     pub role: String,
     pub content: String,
@@ -40,7 +42,7 @@ pub struct KernelSessionEvent {
 }
 
 /// Alias entry.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelAliasEntry {
     pub section: String,
@@ -49,7 +51,7 @@ pub struct KernelAliasEntry {
 }
 
 /// Skill info.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelSkillInfo {
     pub name: String,
@@ -59,7 +61,7 @@ pub struct KernelSkillInfo {
 }
 
 /// Hook info.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelHookInfo {
     pub name: Option<String>,
@@ -73,7 +75,7 @@ pub struct KernelHookInfo {
 }
 
 /// MCP server config.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelMcpServerConfig {
     pub name: String,
@@ -86,7 +88,7 @@ pub struct KernelMcpServerConfig {
 }
 
 /// Built-in tool info.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelToolInfo {
     pub name: String,
