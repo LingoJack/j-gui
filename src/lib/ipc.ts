@@ -24,11 +24,12 @@ function warnOnce(name: string): void {
 async function tryInvoke<T>(cmd: string, args?: unknown, fallback?: T): Promise<T> {
   try {
     return await invoke<T>(cmd, args as any)
-  } catch {
+  } catch (err) {
     if (fallback !== undefined) {
       warnOnce(cmd)
       return fallback
     }
+    console.error(`[tryInvoke] Tauri command '${cmd}' failed:`, err)
     throw new Error(`Tauri command '${cmd}' not available`)
   }
 }
@@ -118,8 +119,10 @@ export const onThemeSettingsChanged = stubEvent('themeSettingsChanged')
 // Channel Management
 // ============================================================
 
-export async function listChannels() { try { return await invoke<any[]>('list_channels') } catch { warnOnce('list_channels'); return [] } }
-export async function createChannel(input: any) { return invoke<any>('create_channel', { input }) }
+/** List all configured channels (includes enabled/disabled state and model list) */
+export async function listChannels(): Promise<any[]> { try { return await invoke<any[]>('list_channels') } catch { warnOnce('list_channels'); return [] } }
+/** Create a new channel, returns the created channel metadata */
+export async function createChannel(input: any): Promise<{id: string, name: string}> { return invoke<any>('create_channel', { input }) }
 export async function updateChannel(id: string, input: any) { return invoke<any>('update_channel', { id, input }) }
 export async function deleteChannel(id: string) { return invoke('delete_channel', { id }) }
 export const decryptApiKey = (channelId: string) => tryInvoke<string>('decrypt_api_key', { channelId }, '')

@@ -3,8 +3,8 @@
  *
  * 职责：
  * - 加载当前 Agent 会话消息
- * - 发送/停止/压缩 Agent 消息
- * - 附件上传处理
+ * - 发送/停止/压缩 Agent 消息（使用 useAgentSendMessage hook）
+ * - 附件上传处理（由 hook 管理）
  * - AgentHeader 支持标题编辑 + 文件浏览器切换
  *
  * 注意：IPC 流式事件监听已提升到全局 useGlobalAgentListeners，
@@ -53,72 +53,29 @@ import {
   agentSessionChannelMapAtom,
   agentSessionModelMapAtom,
   currentAgentWorkspaceIdAtom,
-  agentPendingPromptAtom,
-  agentPendingFilesAtom,
   agentWorkspacesAtom,
-  agentStreamErrorsAtom,
-  agentSessionDraftsAtom,
-  agentSessionDraftHtmlAtom,
-  agentPromptSuggestionsAtom,
   agentMessageRefreshAtom,
   agentSessionsAtom,
   agentAttachedDirectoriesMapAtom,
   workspaceAttachedDirectoriesMapAtom,
   liveMessagesMapAtom,
   agentThinkingAtom,
-  stoppedByUserSessionsAtom,
-  agentPlanModeSessionsAtom,
   agentPermissionModeMapAtom,
   agentDefaultPermissionModeAtom,
   sessionPersistedPermissionModeAtom,
   agentSessionPathMapAtom,
+  agentPromptSuggestionsAtom,
   allPendingAskUserRequestsAtom,
   allPendingExitPlanRequestsAtom,
-  finalizeStreamingActivities,
 } from '@/atoms/agent-atoms'
-import type { AgentContextStatus } from '@/atoms/agent-atoms'
 import { settingsOpenAtom } from '@/atoms/settings-tab'
 import { channelsAtom, thinkingExpandedAtom } from '@/atoms/chat-atoms'
 import { useOpenSession } from '@/hooks/useOpenSession'
 import { AgentSessionProvider } from '@/contexts/session-context'
-import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
 import { sendWithCmdEnterAtom } from '@/atoms/shortcut-atoms'
-import type { AgentSendInput, AgentPendingFile, ModelOption, SDKMessage } from '@proma/shared'
-import { fileToBase64 } from '@/lib/file-utils'
+import type { ModelOption } from '@proma/shared'
 import * as ipc from '@/lib/ipc'
-
-/** 稳定的空 SDKMessage 数组引用，避免 ?? [] 每次创建新引用 */
-const EMPTY_SDK_MESSAGES: SDKMessage[] = []
-
-interface SDKMessageRecord {
-  type?: string
-  parent_tool_use_id?: string | null
-  isSynthetic?: boolean
-  message?: {
-    content?: unknown
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
-function getUserTextFromSDKMessage(message: SDKMessage): string | null {
-  const sdkMessage = message as unknown as SDKMessageRecord
-  if (sdkMessage.type !== 'user' || sdkMessage.parent_tool_use_id || sdkMessage.isSynthetic) {
-    return null
-  }
-
-  const content = sdkMessage.message?.content
-  if (!Array.isArray(content)) return null
-  if (content.some((block) => isRecord(block) && block.type === 'tool_result')) return null
-
-  const texts = content
-    .filter((block) => isRecord(block) && block.type === 'text' && typeof block.text === 'string')
-    .map((block) => (block as { text: string }).text)
-
-  return texts.length > 0 ? texts.join('\n') : null
-}
+import { useAgentSendMessage } from './useAgentSendMessage'
 
 // ===== 思考模式 Hover Popover =====
 
@@ -201,23 +158,49 @@ function AgentThinkingPopover({ agentThinking, onToggle }: AgentThinkingPopoverP
 }
 
 export function AgentView({ sessionId }: { sessionId: string }): React.ReactElement {
-  const renderCountRef = React.useRef(0)
-  renderCountRef.current++
-  if (renderCountRef.current % 50 === 0) {
-  }
+  // 从 useAgentSendMessage 获取发送相关状态和处理器
+  const {
+    persistedSDKMessages,
+    setPersistedSDKMessages,
+    messagesLoaded,
+    setMessagesLoaded,
+    pendingFiles,
+    inputContent,
+    setInputContent,
+    inputHtmlContent,
+    setInputHtmlContent,
+    streaming,
+    streamState,
+    liveMessages,
+    stoppedByUser,
+    attachedDirs,
+    isPlanMode,
+    suggestion,
+    hasAvailableModel,
+    agentError,
+    errorCopied,
+    isDragOver,
+    agentChannelId,
+    agentModelId,
+    contextStatus,
+    handleSend,
+    handleStop,
+    handleCompact,
+    handleRetry,
+    handleRetryInNewSession,
+    handleCopyError,
+    handleOpenFileDialog,
+    handleAttachFolder,
+    handleRemoveFile,
+    handlePasteFiles,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    setIsDragOver,
+  } = useAgentSendMessage(sessionId)
 
-  const [persistedSDKMessages, setPersistedSDKMessages] = React.useState<SDKMessage[]>([])
   const setStreamingStates = useSetAtom(agentStreamingStatesAtom)
-  const streamingStates = useAtomValue(agentStreamingStatesAtom)
-  const streamState = streamingStates.get(sessionId)
-  const streaming = streamState?.running ?? false
-  const stoppedByUserSessions = useAtomValue(stoppedByUserSessionsAtom)
-  const sendWithCmdEnter = useAtomValue(sendWithCmdEnterAtom)
-  const stoppedByUser = stoppedByUserSessions.has(sessionId)
-  const liveMessagesMap = useAtomValue(liveMessagesMapAtom)
   const setLiveMessagesMap = useSetAtom(liveMessagesMapAtom)
-  // 稳定化空数组引用，避免 ?? [] 每次创建新引用导致下游 useMemo 链不必要重算
-  const liveMessages = liveMessagesMap.get(sessionId) ?? EMPTY_SDK_MESSAGES
   // Per-session 渠道/模型配置（优先读 session map，回退到全局默认值）
   const sessionChannelMap = useAtomValue(agentSessionChannelMapAtom)
   const sessionModelMap = useAtomValue(agentSessionModelMapAtom)
@@ -225,23 +208,17 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
   const setSessionModelMap = useSetAtom(agentSessionModelMapAtom)
   const [defaultChannelId, setDefaultChannelId] = useAtom(agentChannelIdAtom)
   const [defaultModelId, setDefaultModelId] = useAtom(agentModelIdAtom)
-  const agentChannelId = sessionChannelMap.get(sessionId) ?? defaultChannelId
-  const agentModelId = sessionModelMap.get(sessionId) ?? defaultModelId
   const agentChannelIds = useAtomValue(agentChannelIdsAtom)
   const setAgentChannelIds = useSetAtom(agentChannelIdsAtom)
   const [agentThinking, setAgentThinking] = useAtom(agentThinkingAtom)
   const setSettingsOpen = useSetAtom(settingsOpenAtom)
-  const setDraftSessionIds = useSetAtom(draftSessionIdsAtom)
   const globalWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
   const sessions = useAtomValue(agentSessionsAtom)
-  // 从会话元数据派生 workspaceId：会话数据已加载时以自身为准，未加载时回退全局 atom
-  const currentWorkspaceId = React.useMemo(() => {
+  const workspaceId = React.useMemo(() => {
     const meta = sessions.find((s) => s.id === sessionId)
-    if (!meta) return globalWorkspaceId // 数据未加载，回退全局
-    return meta.workspaceId ?? null     // 数据已加载，以会话自身为准
+    if (!meta) return globalWorkspaceId
+    return meta.workspaceId ?? null
   }, [sessions, sessionId, globalWorkspaceId])
-  const [pendingPrompt, setPendingPrompt] = useAtom(agentPendingPromptAtom)
-  const [pendingFiles, setPendingFiles] = useAtom(agentPendingFilesAtom)
   const workspaces = useAtomValue(agentWorkspacesAtom)
   // 保持 channelId 稳定：初始化前使用上次有效值，避免工具栏抖动
   const stableChannelIdRef = React.useRef(agentChannelId)
@@ -269,88 +246,27 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     }
   }, [sessionId, sessionChannelMap, sessionModelMap, defaultChannelId, defaultModelId, setSessionChannelMap, setSessionModelMap])
 
-  const contextStatus: AgentContextStatus = {
-    isCompacting: streamState?.isCompacting ?? false,
-    inputTokens: streamState?.inputTokens,
-    contextWindow: streamState?.contextWindow,
-  }
-  const setAgentStreamErrors = useSetAtom(agentStreamErrorsAtom)
-  const streamErrors = useAtomValue(agentStreamErrorsAtom)
-  const agentError = streamErrors.get(sessionId) ?? null
-  const planModeSessions = useAtomValue(agentPlanModeSessionsAtom)
-  const isPlanMode = planModeSessions.has(sessionId)
   const permissionModeMap = useAtomValue(agentPermissionModeMapAtom)
   const defaultPermissionMode = useAtomValue(agentDefaultPermissionModeAtom)
   const persistedPermissionMode = useAtomValue(sessionPersistedPermissionModeAtom(sessionId))
   const permissionMode = permissionModeMap.get(sessionId) ?? persistedPermissionMode ?? defaultPermissionMode
   const isPermissionPlanMode = permissionMode === 'plan'
   const store = useStore()
-  const suggestionsMap = useAtomValue(agentPromptSuggestionsAtom)
-  const suggestion = suggestionsMap.get(sessionId) ?? null
   const setPromptSuggestions = useSetAtom(agentPromptSuggestionsAtom)
   const setAgentSessions = useSetAtom(agentSessionsAtom)
   const openSession = useOpenSession()
   const setAttachedDirsMap = useSetAtom(agentAttachedDirectoriesMapAtom)
-  const attachedDirsMap = useAtomValue(agentAttachedDirectoriesMapAtom)
-  const attachedDirs = attachedDirsMap.get(sessionId) ?? []
   const wsAttachedDirsMap = useAtomValue(workspaceAttachedDirectoriesMapAtom)
-  const wsAttachedDirs = currentWorkspaceId ? (wsAttachedDirsMap.get(currentWorkspaceId) ?? []) : []
+  const wsAttachedDirs = workspaceId ? (wsAttachedDirsMap.get(workspaceId) ?? []) : []
 
-  const draftsMap = useAtomValue(agentSessionDraftsAtom)
-  const setDraftsMap = useSetAtom(agentSessionDraftsAtom)
-  const inputContent = draftsMap.get(sessionId) ?? ''
-  const setInputContent = React.useCallback((value: string) => {
-    setDraftsMap((prev) => {
-      const map = new Map(prev)
-      if (value.trim() === '') {
-        map.delete(sessionId)
-      } else {
-        map.set(sessionId, value)
-      }
-      return map
-    })
-  }, [sessionId, setDraftsMap])
-  const draftHtmlMap = useAtomValue(agentSessionDraftHtmlAtom)
-  const setDraftHtmlMap = useSetAtom(agentSessionDraftHtmlAtom)
-  const inputHtmlContent = draftHtmlMap.get(sessionId) ?? ''
-  const setInputHtmlContent = React.useCallback((html: string) => {
-    setDraftHtmlMap((prev) => {
-      const map = new Map(prev)
-      if (!html || html === '<p></p>') {
-        map.delete(sessionId)
-      } else {
-        map.set(sessionId, html)
-      }
-      return map
-    })
-  }, [sessionId, setDraftHtmlMap])
   const sessionPathMap = useAtomValue(agentSessionPathMapAtom)
   const setSessionPathMap = useSetAtom(agentSessionPathMapAtom)
   const sessionPath = sessionPathMap.get(sessionId) ?? null
   const [workspaceFilesPath, setWorkspaceFilesPath] = React.useState<string | null>(null)
-  const [isDragOver, setIsDragOver] = React.useState(false)
-  const [errorCopied, setErrorCopied] = React.useState(false)
-
-  // pendingFiles ref（供 addFilesAsAttachments 读取最新列表，避免闭包旧值）
-  const pendingFilesRef = React.useRef(pendingFiles)
-  React.useEffect(() => {
-    pendingFilesRef.current = pendingFiles
-  }, [pendingFiles])
 
   // 渠道已选但模型未选时，自动选择第一个可用模型
   const globalChannels = useAtomValue(channelsAtom)
 
-  // 检查 Agent 渠道列表中是否存在可用的模型（渠道 enabled + 模型 enabled）
-  const hasAvailableModel = React.useMemo(() => {
-    // Proma 官方渠道（商业版）：只要 enabled 且有可用模型，直接视为可用
-    const promaOfficial = globalChannels.find((c) => c.id === 'proma-official')
-    if (promaOfficial?.enabled && promaOfficial.models.some((m) => m.enabled)) return true
-    // 其他渠道：需在 agentChannelIds 白名单中
-    if (!agentChannelIds || agentChannelIds.length === 0) return false
-    return globalChannels.some(
-      (c) => c.enabled && agentChannelIds.includes(c.id) && c.models.some((m) => m.enabled),
-    )
-  }, [globalChannels, agentChannelIds])
   React.useEffect(() => {
     if (!agentChannelId || agentModelId) return
 
@@ -376,7 +292,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
 
   // 获取当前 session 的工作路径（文件浏览器需要）
   React.useEffect(() => {
-    if (!currentWorkspaceId) {
+    if (!workspaceId) {
       setSessionPathMap((prev) => {
         const map = new Map(prev)
         map.delete(sessionId)
@@ -386,7 +302,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     }
 
     ipc
-      .getAgentSessionPath(currentWorkspaceId, sessionId)
+      .getAgentSessionPath(workspaceId, sessionId)
       .then((path) => {
         if (path) {
           setSessionPathMap((prev) => {
@@ -409,10 +325,10 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
           return map
         })
       })
-  }, [sessionId, currentWorkspaceId, setSessionPathMap])
+  }, [sessionId, workspaceId, setSessionPathMap])
 
   // 获取工作区共享文件目录路径（@ 引用时需要搜索）
-  const workspaceSlug = workspaces.find((w) => w.id === currentWorkspaceId)?.slug ?? null
+  const workspaceSlug = workspaces.find((w) => w.id === workspaceId)?.slug ?? null
   React.useEffect(() => {
     if (!workspaceSlug) {
       setWorkspaceFilesPath(null)
@@ -438,9 +354,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
   const refreshMap = useAtomValue(agentMessageRefreshAtom)
   const refreshVersion = refreshMap.get(sessionId) ?? 0
 
-  // 消息是否已完成首次加载（用于 auto-send 等待）
-  const [messagesLoaded, setMessagesLoaded] = React.useState(false)
-
   // 加载当前会话消息
   React.useEffect(() => {
     // 流式运行中不重置 messagesLoaded，避免 streaming UI 消失后出现空窗闪烁
@@ -456,13 +369,11 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         // 消息加载完成后，同步清除流式展示状态和实时消息，
         // 确保 React 在一次渲染中同时显示持久化消息并移除流式气泡/实时消息，
         // 避免「实时消息已清 → 持久化消息未到」的空档闪烁
-        // 注意：保留 inputTokens/contextWindow 以维持上下文用量圆环显示
         setStreamingStates((prev) => {
           const state = prev.get(sessionId)
           if (!state || state.running) return prev  // 仍在运行中，不清除
           const map = new Map(prev)
           if (state.inputTokens !== undefined) {
-            // 保留 usage 数据，仅清除流式展示字段
             map.set(sessionId, {
               running: false,
               content: '',
@@ -482,7 +393,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         })
         setLiveMessagesMap((prev) => {
           if (!prev.has(sessionId)) return prev
-          // 仍在运行中，不清除实时消息（与 streamingStates 保护逻辑一致）
           const streamingState = store.get(agentStreamingStatesAtom).get(sessionId)
           if (streamingState?.running) return prev
           const map = new Map(prev)
@@ -491,7 +401,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         })
       })
       .catch(console.error)
-  }, [sessionId, refreshVersion, setStreamingStates, setLiveMessagesMap, store])
+  }, [sessionId, refreshVersion, setStreamingStates, setLiveMessagesMap, store, setPersistedSDKMessages, setMessagesLoaded])
 
   // 从会话元数据初始化附加目录（仅冷启动水合，后续由 handleAttachFolder/handleDetachDirectory 实时写入）
   React.useEffect(() => {
@@ -507,268 +417,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       return map
     })
   }, [sessionId, sessions, setAttachedDirsMap])
-
-  // 自动发送 pending prompt（从快速任务窗口或设置页触发）
-  // 等待 messagesLoaded 确保消息加载完成后再插入乐观消息，避免被加载结果覆盖。
-  // 使用 queueMicrotask 延迟发送：避免 setState → 重渲染 → cleanup 取消 timer 的竞态。
-  React.useEffect(() => {
-    if (!messagesLoaded) return
-    if (!pendingPrompt) return
-    if (pendingPrompt.sessionId !== sessionId) return
-    if (!agentChannelId || streaming) return
-
-    // 快照当前上下文
-    const snapshot = {
-      message: pendingPrompt.message,
-      channelId: agentChannelId,
-      modelId: agentModelId || undefined,
-      workspaceId: currentWorkspaceId || undefined,
-    }
-    setPendingPrompt(null)
-
-    queueMicrotask(() => {
-      // 初始化流式状态（startedAt 由渲染进程生成，传递给主进程原样回传，确保竞态保护使用同一个值）
-      const streamStartedAt = Date.now()
-      setStreamingStates((prev) => {
-        const map = new Map(prev)
-        const existing = prev.get(sessionId)
-        map.set(sessionId, {
-          running: true,
-          content: '',
-          toolActivities: [],
-          teammates: [],
-          model: snapshot.modelId,
-          startedAt: streamStartedAt,
-          inputTokens: existing?.inputTokens,
-          contextWindow: existing?.contextWindow,
-        })
-        return map
-      })
-
-      // 乐观更新：SDKMessage 格式（Phase 4）
-      const tempUserSDKMsg: SDKMessage = {
-        type: 'user',
-        message: {
-          content: [{ type: 'text', text: snapshot.message }],
-        },
-        parent_tool_use_id: null,
-        _createdAt: Date.now(),
-      } as unknown as SDKMessage
-      setPersistedSDKMessages((prev) => [...prev, tempUserSDKMsg])
-
-      // 发送消息
-      const input: AgentSendInput = {
-        sessionId,
-        userMessage: snapshot.message,
-        channelId: snapshot.channelId,
-        modelId: snapshot.modelId,
-        workspaceId: snapshot.workspaceId,
-        startedAt: streamStartedAt,
-        permissionModeOverride: permissionMode,
-      }
-      ipc.sendAgentMessage(input).catch((error) => {
-        console.error('[AgentView] 自动发送配置消息失败:', error)
-        setStreamingStates((prev) => {
-          const current = prev.get(sessionId)
-          if (!current) return prev
-          const map = new Map(prev)
-          map.set(sessionId, { ...current, running: false })
-          return map
-        })
-      })
-    })
-  }, [messagesLoaded, pendingPrompt, sessionId, agentChannelId, agentModelId, currentWorkspaceId, streaming, setPendingPrompt, setStreamingStates, permissionMode])
-  // ===== 附件处理 =====
-
-  /** 为文件生成唯一文件名（避免粘贴多张图片时文件名重复导致覆盖） */
-  const makeUniqueFilename = React.useCallback((originalName: string, existingNames: string[]): string => {
-    if (!existingNames.includes(originalName)) return originalName
-    const dotIdx = originalName.lastIndexOf('.')
-    const baseName = dotIdx > 0 ? originalName.slice(0, dotIdx) : originalName
-    const ext = dotIdx > 0 ? originalName.slice(dotIdx) : ''
-    let counter = 1
-    while (existingNames.includes(`${baseName}-${counter}${ext}`)) {
-      counter++
-    }
-    return `${baseName}-${counter}${ext}`
-  }, [])
-
-  /** 将 File 对象列表添加为待发送附件 */
-  const addFilesAsAttachments = React.useCallback(async (files: File[]): Promise<void> => {
-    // 收集已有的 pending 文件名，用于去重
-    const usedNames: string[] = pendingFilesRef.current.map((f) => f.filename)
-
-    for (const file of files) {
-      try {
-        const base64 = await fileToBase64(file)
-        const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
-        const uniqueFilename = makeUniqueFilename(file.name, usedNames)
-        usedNames.push(uniqueFilename)
-
-        const pending: AgentPendingFile = {
-          id: `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          filename: uniqueFilename,
-          mediaType: file.type || 'application/octet-stream',
-          size: file.size,
-          previewUrl,
-        }
-
-        if (!window.__pendingAgentFileData) {
-          window.__pendingAgentFileData = new Map<string, string>()
-        }
-        window.__pendingAgentFileData.set(pending.id, base64)
-
-        setPendingFiles((prev) => [...prev, pending])
-      } catch (error) {
-        console.error('[AgentView] 添加附件失败:', error)
-      }
-    }
-  }, [makeUniqueFilename, setPendingFiles])
-
-  /** 打开文件选择对话框 */
-  const handleOpenFileDialog = React.useCallback(async (): Promise<void> => {
-    try {
-      const result = await ipc.openFileDialog()
-      if (result.files.length === 0) return
-
-      for (const fileInfo of result.files) {
-        const previewUrl = fileInfo.mediaType.startsWith('image/')
-          ? `data:${fileInfo.mediaType};base64,${fileInfo.data}`
-          : undefined
-
-        const pending: AgentPendingFile = {
-          id: `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          filename: fileInfo.filename,
-          mediaType: fileInfo.mediaType,
-          size: fileInfo.size,
-          previewUrl,
-        }
-
-        if (!window.__pendingAgentFileData) {
-          window.__pendingAgentFileData = new Map<string, string>()
-        }
-        window.__pendingAgentFileData.set(pending.id, fileInfo.data)
-
-        setPendingFiles((prev) => [...prev, pending])
-      }
-    } catch (error) {
-      console.error('[AgentView] 文件选择对话框失败:', error)
-    }
-  }, [setPendingFiles])
-
-  /** 附加文件夹（不复制，仅记录路径） */
-  const handleAttachFolder = React.useCallback(async (): Promise<void> => {
-    try {
-      const result = await ipc.openFolderDialog()
-      if (!result) return
-
-      const updated = await ipc.attachDirectory({
-        sessionId,
-        directoryPath: result.path,
-      })
-
-      setAttachedDirsMap((prev) => {
-        const map = new Map(prev)
-        map.set(sessionId, updated)
-        return map
-      })
-
-      toast.success(`已附加目录: ${result.name}`)
-    } catch (error) {
-      console.error('[AgentView] 附加文件夹失败:', error)
-      toast.error('附加文件夹失败')
-    }
-  }, [sessionId, setAttachedDirsMap])
-
-  /** 移除待发送文件 */
-  const handleRemoveFile = React.useCallback((id: string): void => {
-    setPendingFiles((prev) => {
-      const file = prev.find((f) => f.id === id)
-      if (file?.previewUrl?.startsWith('blob:')) {
-        URL.revokeObjectURL(file.previewUrl)
-      }
-      window.__pendingAgentFileData?.delete(id)
-      return prev.filter((f) => f.id !== id)
-    })
-  }, [setPendingFiles])
-
-  /** 粘贴文件处理 */
-  const handlePasteFiles = React.useCallback((files: File[]): void => {
-    addFilesAsAttachments(files)
-  }, [addFilesAsAttachments])
-
-  /** 拖放处理 */
-  const handleDragOver = React.useCallback((e: React.DragEvent): void => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragOver(true)
-  }, [])
-
-  const handleDragLeave = React.useCallback((e: React.DragEvent): void => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragOver(false)
-  }, [])
-
-  const handleDrop = React.useCallback(async (e: React.DragEvent): Promise<void> => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragOver(false)
-
-    const droppedFiles = Array.from(e.dataTransfer.files)
-    if (droppedFiles.length === 0) return
-
-    // 通过 preload 的 webUtils.getPathForFile 获取真实路径
-    const pathMap = new Map<string, File>()
-    const paths: string[] = []
-    for (const f of droppedFiles) {
-      try {
-        const p = ipc.getPathForFile(f)
-        if (p) {
-          paths.push(p)
-          pathMap.set(p, f)
-        }
-      } catch { /* 无法获取路径时忽略 */ }
-    }
-
-    if (paths.length > 0) {
-      try {
-        // 通过主进程检测目录 vs 文件
-        const { directories, files: filePaths } = await ipc.checkPathsType(paths)
-
-        // 拖拽的文件夹直接附加
-        for (const dirPath of directories) {
-          try {
-            const updated = await ipc.attachDirectory({
-              sessionId,
-              directoryPath: dirPath,
-            })
-            setAttachedDirsMap((prev) => {
-              const map = new Map(prev)
-              map.set(sessionId, updated)
-              return map
-            })
-            const dirName = dirPath.split('/').pop() || dirPath
-            toast.success(`已附加目录: ${dirName}`)
-          } catch (error) {
-            console.error('[AgentView] 拖拽附加文件夹失败:', error)
-          }
-        }
-
-        // 普通文件作为附件
-        const regularFiles = filePaths.map((p) => pathMap.get(p)!).filter(Boolean)
-        if (regularFiles.length > 0) {
-          addFilesAsAttachments(regularFiles)
-        }
-      } catch (error) {
-        console.error('[AgentView] 路径检测失败，回退处理:', error)
-        addFilesAsAttachments(droppedFiles)
-      }
-    } else {
-      // 无路径信息：回退，所有项按普通文件处理
-      addFilesAsAttachments(droppedFiles)
-    }
-  }, [sessionId, addFilesAsAttachments, setAttachedDirsMap])
 
   /** ModelSelector 选择回调 */
   const handleModelSelect = React.useCallback((option: ModelOption): void => {
@@ -809,412 +457,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     if (!agentChannelId || !agentModelId) return null
     return { channelId: agentChannelId, modelId: agentModelId }
   }, [agentChannelId, agentModelId])
-
-  /** 发送消息 */
-  const handleSend = React.useCallback(async (): Promise<void> => {
-    const text = inputContent.trim()
-    // 如果输入为空但有建议，使用建议内容
-    const effectiveText = text || suggestion || ''
-    if ((!effectiveText && pendingFiles.length === 0) || !agentChannelId || !hasAvailableModel) return
-
-    // 上一条消息仍在处理中，直接追加发送
-    if (streaming) {
-      // 流式追加时不处理附件（仅支持纯文本）
-      if (pendingFiles.length > 0) {
-        toast.info('Agent 运行中暂不支持追加发送附件', {
-          description: '请等待完成后再发送附件，或先撤除附件仅发送文本',
-        })
-        return
-      }
-
-      const localUuid = crypto.randomUUID()
-
-      // 1. 立即注入 liveMessages（作为普通用户消息显示）
-      const syntheticMsg: import('@proma/shared').SDKMessage = {
-        type: 'user',
-        uuid: localUuid,
-        message: {
-          content: [{ type: 'text', text: effectiveText }],
-        },
-        parent_tool_use_id: null,
-        _createdAt: Date.now(),
-      } as unknown as import('@proma/shared').SDKMessage
-
-      store.set(liveMessagesMapAtom, (prev) => {
-        const map = new Map(prev)
-        const current = map.get(sessionId) ?? []
-        map.set(sessionId, [...current, syntheticMsg])
-        return map
-      })
-
-      // 2. 清空输入框
-      setInputContent('')
-      setInputHtmlContent('')
-      setPromptSuggestions((prev) => {
-        if (!prev.has(sessionId)) return prev
-        const map = new Map(prev)
-        map.delete(sessionId)
-        return map
-      })
-
-      // 3. 异步发送到后端（立即软中断当前 turn，再注入消息作为新一轮输入）
-      ipc.queueAgentMessage({
-        sessionId,
-        userMessage: effectiveText,
-        uuid: localUuid,
-        interrupt: true,
-      }).catch((error) => {
-        console.error('[AgentView] 追加消息失败:', error)
-        toast.error('追加消息失败', { description: String(error) })
-        // 回滚：从 liveMessages 移除
-        store.set(liveMessagesMapAtom, (prev) => {
-          const map = new Map(prev)
-          const current = (map.get(sessionId) ?? []).filter(
-            (m) => (m as unknown as { uuid?: string }).uuid !== localUuid
-          )
-          map.set(sessionId, current)
-          return map
-        })
-      })
-      return
-    }
-
-    // 清除当前会话的错误消息
-    setAgentStreamErrors((prev) => {
-      if (!prev.has(sessionId)) return prev
-      const map = new Map(prev)
-      map.delete(sessionId)
-      return map
-    })
-
-    // 清除当前会话的提示建议
-    setPromptSuggestions((prev) => {
-      if (!prev.has(sessionId)) return prev
-      const map = new Map(prev)
-      map.delete(sessionId)
-      return map
-    })
-
-    // 1. 如果有 pending 文件，先保存到 session 目录
-    let fileReferences = ''
-    if (pendingFiles.length > 0) {
-      const workspace = workspaces.find((w) => w.id === currentWorkspaceId)
-      if (workspace) {
-        // 区分：已有 sourcePath 的文件（从侧面板添加）直接引用，其余需要保存
-        const existingFiles = pendingFiles.filter((f) => f.sourcePath)
-        const newFiles = pendingFiles.filter((f) => !f.sourcePath)
-
-        const allRefs: Array<{ filename: string; targetPath: string }> = []
-
-        // 已有路径的文件直接引用
-        for (const f of existingFiles) {
-          allRefs.push({ filename: f.filename, targetPath: f.sourcePath! })
-        }
-
-        // 新上传的文件保存到 session 目录
-        if (newFiles.length > 0) {
-          const filesToSave = newFiles.map((f) => ({
-            filename: f.filename,
-            data: window.__pendingAgentFileData?.get(f.id) || '',
-          }))
-          try {
-            const saved = await ipc.saveFilesToAgentSession({
-              workspaceSlug: workspace.slug,
-              sessionId,
-              files: filesToSave,
-            })
-            allRefs.push(...saved)
-          } catch (error) {
-            console.error('[AgentView] 保存附件到 session 失败:', error)
-          }
-        }
-
-        if (allRefs.length > 0) {
-          const refs = allRefs.map((f) => `- ${f.filename}: ${f.targetPath}`).join('\n')
-          fileReferences += `<attached_files>\n${refs}\n</attached_files>\n\n`
-        }
-      }
-
-      // 清理
-      for (const f of pendingFiles) {
-        if (f.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(f.previewUrl)
-        window.__pendingAgentFileData?.delete(f.id)
-      }
-      setPendingFiles([])
-    }
-
-    // 2. 构建最终消息
-    const finalMessage = fileReferences + effectiveText
-
-    // 清除打断状态（上一轮的打断标记不再显示）
-    store.set(stoppedByUserSessionsAtom, (prev: Set<string>) => {
-      if (!prev.has(sessionId)) return prev
-      const next = new Set(prev)
-      next.delete(sessionId)
-      return next
-    })
-
-    // 取消 draft 标记，让会话出现在侧边栏
-    setDraftSessionIds((prev: Set<string>) => {
-      if (!prev.has(sessionId)) return prev
-      const next = new Set(prev)
-      next.delete(sessionId)
-      return next
-    })
-
-    // 初始化流式状态（startedAt 由渲染进程生成，传递给主进程原样回传，确保竞态保护使用同一个值）
-    const streamStartedAt = Date.now()
-    setStreamingStates((prev) => {
-      const map = new Map(prev)
-      const existing = prev.get(sessionId)
-      map.set(sessionId, {
-        running: true,
-        content: '',
-        toolActivities: [],
-        teammates: [],
-        model: agentModelId || undefined,
-        startedAt: streamStartedAt,
-        inputTokens: existing?.inputTokens,
-        contextWindow: existing?.contextWindow,
-      })
-      return map
-    })
-
-    // 乐观更新：SDKMessage 格式的用户消息（Phase 4）
-    const tempUserSDKMsg: SDKMessage = {
-      type: 'user',
-      message: {
-        content: [{ type: 'text', text: finalMessage }],
-      },
-      parent_tool_use_id: null,
-      _createdAt: Date.now(),
-    } as unknown as SDKMessage
-    setPersistedSDKMessages((prev) => [...prev, tempUserSDKMsg])
-
-    const input: AgentSendInput = {
-      sessionId,
-      userMessage: finalMessage,
-      channelId: agentChannelId,
-      modelId: agentModelId || undefined,
-      workspaceId: currentWorkspaceId || undefined,
-      startedAt: streamStartedAt,
-      permissionModeOverride: permissionMode,
-      ...(attachedDirs.length > 0 && { additionalDirectories: attachedDirs }),
-      // 解析用户消息中的 Skill/MCP 引用，传递结构化元数据给后端
-      ...(() => {
-        const skills = [...effectiveText.matchAll(/\/skill:(\S+)/g)].map(m => m[1]).filter(Boolean) as string[]
-        const mcps = [...effectiveText.matchAll(/#mcp:(\S+)/g)].map(m => m[1]).filter(Boolean) as string[]
-        return {
-          ...(skills.length > 0 && { mentionedSkills: skills }),
-          ...(mcps.length > 0 && { mentionedMcpServers: mcps }),
-        }
-      })(),
-    }
-
-    setInputContent('')
-    setInputHtmlContent('')
-
-    ipc.sendAgentMessage(input).catch((error) => {
-      console.error('[AgentView] 发送消息失败:', error)
-      setStreamingStates((prev) => {
-        const current = prev.get(sessionId)
-        if (!current) return prev
-        const map = new Map(prev)
-        map.set(sessionId, { ...current, running: false })
-        return map
-      })
-    })
-  }, [inputContent, pendingFiles, attachedDirs, sessionId, agentChannelId, agentModelId, currentWorkspaceId, workspaces, streaming, suggestion, hasAvailableModel, store, setStreamingStates, setPendingFiles, setAgentStreamErrors, setPromptSuggestions, setInputContent, setLiveMessagesMap, permissionMode])
-
-  /** 停止生成 */
-  const handleStop = React.useCallback((): void => {
-    setStreamingStates((prev) => {
-      const current = prev.get(sessionId)
-      if (!current || !current.running) return prev
-      const map = new Map(prev)
-      map.set(sessionId, {
-        ...current,
-        running: false,
-        ...finalizeStreamingActivities(current.toolActivities, current.teammates),
-      })
-      return map
-    })
-
-    ipc.stopAgent(sessionId).catch(console.error)
-  }, [sessionId, setStreamingStates])
-
-  /** 手动发送 /compact 命令 */
-  const handleCompact = React.useCallback((): void => {
-    if (!agentChannelId || streaming) return
-
-    const streamStartedAt = Date.now()
-    const localUuid = crypto.randomUUID()
-
-    // 1. 立即注入合成用户消息（/compact 气泡立刻可见，与普通发送路径一致）
-    const syntheticMsg: import('@proma/shared').SDKMessage = {
-      type: 'user',
-      uuid: localUuid,
-      message: {
-        content: [{ type: 'text', text: '/compact' }],
-      },
-      parent_tool_use_id: null,
-      _createdAt: streamStartedAt,
-    } as unknown as import('@proma/shared').SDKMessage
-
-    store.set(liveMessagesMapAtom, (prev) => {
-      const map = new Map(prev)
-      const current = map.get(sessionId) ?? []
-      map.set(sessionId, [...current, syntheticMsg])
-      return map
-    })
-
-    // 2. 初始化流式状态 + 乐观设 isCompacting=true（SDK compacting 事件之前就显示"正在压缩..."分隔符）
-    setStreamingStates((prev) => {
-      const map = new Map(prev)
-      const current = prev.get(sessionId) ?? {
-        running: true,
-        content: '',
-        toolActivities: [],
-        teammates: [],
-        model: agentModelId || undefined,
-        startedAt: streamStartedAt,
-      }
-      map.set(sessionId, { ...current, running: true, startedAt: streamStartedAt, isCompacting: true, compactInFlight: true })
-      return map
-    })
-
-    ipc.sendAgentMessage({
-      sessionId,
-      userMessage: '/compact',
-      channelId: agentChannelId,
-      modelId: agentModelId || undefined,
-      workspaceId: currentWorkspaceId || undefined,
-      startedAt: streamStartedAt,
-      permissionModeOverride: permissionMode,
-    }).catch((error) => {
-      console.error('[AgentView] /compact 发送失败:', error)
-      // 回滚：移除合成用户消息 + 清除 isCompacting flag
-      store.set(liveMessagesMapAtom, (prev) => {
-        const map = new Map(prev)
-        const current = (map.get(sessionId) ?? []).filter(
-          (m) => (m as unknown as { uuid?: string }).uuid !== localUuid,
-        )
-        map.set(sessionId, current)
-        return map
-      })
-      setStreamingStates((prev) => {
-        const map = new Map(prev)
-        const current = prev.get(sessionId)
-        if (!current) return prev
-        map.set(sessionId, { ...current, isCompacting: false, compactInFlight: false })
-        return map
-      })
-    })
-  }, [sessionId, agentChannelId, agentModelId, currentWorkspaceId, streaming, setStreamingStates, store, permissionMode])
-
-  /** 复制错误信息到剪贴板 */
-  const handleCopyError = React.useCallback(async (): Promise<void> => {
-    if (!agentError) return
-
-    try {
-      await navigator.clipboard.writeText(agentError)
-      setErrorCopied(true)
-      setTimeout(() => setErrorCopied(false), 2000)
-    } catch (error) {
-      console.error('[AgentView] 复制错误信息失败:', error)
-    }
-  }, [agentError])
-
-  /** 重试：在当前会话中重新发送最后一条用户消息 */
-  const handleRetry = React.useCallback((): void => {
-    if (!agentChannelId || streaming) return
-
-    // 找到最后一条用户消息
-    const lastUserMessage = [...persistedSDKMessages]
-      .reverse()
-      .map(getUserTextFromSDKMessage)
-      .find((text): text is string => text !== null)
-    if (!lastUserMessage) return
-
-    // 清除错误状态
-    setAgentStreamErrors((prev) => {
-      if (!prev.has(sessionId)) return prev
-      const map = new Map(prev)
-      map.delete(sessionId)
-      return map
-    })
-
-    // 初始化流式状态（startedAt 由渲染进程生成，传递给主进程原样回传）
-    const streamStartedAt = Date.now()
-    setStreamingStates((prev) => {
-      const map = new Map(prev)
-      const existing = prev.get(sessionId)
-      map.set(sessionId, {
-        running: true,
-        content: '',
-        toolActivities: [],
-        teammates: [],
-        model: agentModelId || undefined,
-        startedAt: streamStartedAt,
-        inputTokens: existing?.inputTokens,
-        contextWindow: existing?.contextWindow,
-      })
-      return map
-    })
-
-    ipc.sendAgentMessage({
-      sessionId,
-      userMessage: lastUserMessage,
-      channelId: agentChannelId,
-      modelId: agentModelId || undefined,
-      workspaceId: currentWorkspaceId || undefined,
-      startedAt: streamStartedAt,
-      permissionModeOverride: permissionMode,
-    }).catch(console.error)
-  }, [persistedSDKMessages, sessionId, agentChannelId, agentModelId, currentWorkspaceId, streaming, setAgentStreamErrors, setStreamingStates, permissionMode])
-
-  /** 在新会话中重试：创建新会话 + 切换 tab + 发送引用旧会话的提示词 */
-  const handleRetryInNewSession = React.useCallback(async (): Promise<void> => {
-    if (!agentChannelId) return
-
-    try {
-      const meta = await ipc.createAgentSession(
-        undefined, agentChannelId, currentWorkspaceId || undefined,
-      )
-      setAgentSessions((prev) => [meta, ...prev])
-
-      // 切换到新会话 tab
-      openSession('agent', meta.id, meta.title)
-
-      // 发送引用旧会话的默认提示词
-      const prompt = `上个会话的 id 是 ${sessionId}，可以参考同工作区下的会话继续完成工作`
-
-      // 初始化新会话流式状态
-      setStreamingStates((prev) => {
-        const map = new Map(prev)
-        map.set(meta.id, {
-          running: true,
-          content: '',
-          toolActivities: [],
-          teammates: [],
-          model: agentModelId || undefined,
-          startedAt: Date.now(),
-        })
-        return map
-      })
-
-      ipc.sendAgentMessage({
-        sessionId: meta.id,
-        userMessage: prompt,
-        channelId: agentChannelId,
-        modelId: agentModelId || undefined,
-        workspaceId: currentWorkspaceId || undefined,
-        permissionModeOverride: permissionMode,
-      }).catch(console.error)
-    } catch (error) {
-      console.error('[AgentView] 在新会话中重试失败:', error)
-    }
-  }, [sessionId, agentChannelId, agentModelId, currentWorkspaceId, openSession, setAgentSessions, setStreamingStates, permissionMode])
 
   /** 分叉会话：从指定消息处创建新会话并自动切换 */
   const handleFork = React.useCallback(async (upToMessageUuid: string): Promise<void> => {
@@ -1284,31 +526,13 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     }
   }, [rewindTargetUuid, sessionId, store])
 
-  // 监听快捷键系统分发的 stop-generation 事件
-  React.useEffect(() => {
-    const handler = (): void => {
-      if (streaming) handleStop()
-    }
-    window.addEventListener('jgui:stop-generation', handler)
-    return () => window.removeEventListener('jgui:stop-generation', handler)
-  }, [streaming, handleStop])
-
-  // 监听快捷键系统分发的 focus-input 事件（Cmd+L）
-  React.useEffect(() => {
-    const handler = (): void => {
-      const proseMirror = document.querySelector('[data-input-mode="agent"] .ProseMirror') as HTMLElement | null
-      proseMirror?.focus()
-    }
-    window.addEventListener('jgui:focus-input', handler)
-    return () => window.removeEventListener('jgui:focus-input', handler)
-  }, [])
-
   const allAskUserRequests = useAtomValue(allPendingAskUserRequestsAtom)
   const allExitPlanRequests = useAtomValue(allPendingExitPlanRequestsAtom)
   const hasBannerOverlay =
     (allAskUserRequests.get(sessionId)?.length ?? 0) > 0 ||
     (allExitPlanRequests.get(sessionId)?.length ?? 0) > 0
 
+  const sendWithCmdEnter = useAtomValue(sendWithCmdEnterAtom)
   const hasTextInput = inputContent.trim().length > 0
   const canSend = (hasTextInput || pendingFiles.length > 0 || !!suggestion) && agentChannelId !== null && hasAvailableModel && (!streaming || hasTextInput)
 
