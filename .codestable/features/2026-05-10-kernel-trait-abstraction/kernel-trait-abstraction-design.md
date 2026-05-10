@@ -214,7 +214,70 @@ flowchart TD
 4. **渐进迁移** → 每次迁移一个模块的导入点，编译 + 测试通过后再迁下一个
 5. **验证** → `grep -r "j_cli::" src-tauri/src/` 仅剩 adapters/
 
-### 2.3 挂载点
+### 2.3 jcli 升级应对
+
+trait 抽象层的核心价值：jcli 升级时，**仅修改 JcliAdapter 内部实现，j-gui 其余模块不变**。
+
+**场景 1：jcli 小版本升级（API 签名不变）**
+
+```
+jcli v1.0.0 → v1.1.0
+  - 更新 Cargo.toml: j-cli = { path = "../../jcli" }（或 version = "1.1.0"）
+  - cargo check → 编译通过
+  - 验证完成
+```
+
+Adapter 的委托调用签名没变，零改动。
+
+**场景 2：jcli API 签名变化**
+
+```
+jcli 改了 call_llm_stream_async 的参数顺序或返回类型
+  ↓
+JcliAdapter::stream_chat() 内部委托调用编译报错
+  ↓
+修改 adapter 内部实现，适配新签名
+  ↓
+ChatKernel trait 签名保持稳定 → chat_engine.rs 等调用方零改动
+  ↓
+cargo check → cargo test → 完成
+```
+
+影响范围：**仅 JcliAdapter 一个文件**。
+
+**场景 3：jcli 新增功能**
+
+```
+jcli 新增 "weekly-report" 功能
+  ↓
+方案 A：不涉及现有 trait → j-gui 无需改动
+       （仅 CLI 用户可用，GUI 后续按需加 UI）
+  ↓
+方案 B：需要 GUI 支持
+  1. 在对应 trait 加方法（如 ChatKernel::generate_report）
+
+  2. JcliAdapter 实现该方法
+  3. 前端按需加 UI 入口
+  4. 不影响其他 trait 方法
+```
+
+**场景 4：jcli 废弃/移除功能**
+
+```
+jcli 移除某个 API
+  ↓
+JcliAdapter 对应方法编译报错
+  ↓
+评估：trait 方法是否仍需保留？
+  - 是 → adapter 改用新 API 或替代实现
+  - 否 → 从 trait 移除该方法 → 搜索所有调用点 → 移除 UI 入口
+```
+
+**关键约束**：
+- trait 签名变更必须有 deprecation 周期（先标记 `#[deprecated]`，下一版本再删）
+- adapter 是 jcli API 变更的**唯一影响面**——这个约束写入 CLAUDE.md
+
+### 2.4 挂载点
 
 | # | 挂载点 | 说明 |
 |---|--------|------|
@@ -224,7 +287,7 @@ flowchart TD
 | 4 | 各 commands/ 文件 | 从直接 import jcli 改为通过 trait 调用 |
 | 5 | `chat_engine.rs` / `agent_engine.rs` | 同上 |
 
-### 2.4 推进策略
+### 2.5 推进策略
 
 | Step | Paradigm | 内容 | 退出信号 |
 |------|----------|------|---------|
@@ -236,7 +299,7 @@ flowchart TD
 | 6 | 迁移 session+system | chat.rs / agent_session.rs → SessionKernel + SystemKernel | `cargo test` 全量通过 |
 | 7 | 验证 | grep j_cli import 仅限 adapters/ + `cargo test` + `bun run test` | 退出标准达成 |
 
-### 2.5 结构健康度
+### 2.6 结构健康度
 
 **新增目录**：
 - `src-tauri/src/kernel/`（6 个文件：mod + 5 trait）— 新目录，健康 ✅
