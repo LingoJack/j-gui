@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -26,12 +28,13 @@ pub trait ConfigKernel: Send + Sync {
     // -- YamlConfig --
 
     fn get_yaml_sections(&self) -> Result<HashMap<String, HashMap<String, String>>, KernelError>;
-    fn set_yaml_property(
-        &self,
-        section: &str,
-        key: &str,
-        value: &str,
-    ) -> Result<(), KernelError>;
+    fn set_yaml_property(&self, section: &str, key: &str, value: &str) -> Result<(), KernelError>;
+
+    // -- Active index / theme --
+
+    fn load_active_index(&self) -> Result<usize, KernelError>;
+    fn set_active_index(&self, index: usize) -> Result<(), KernelError>;
+    fn load_theme_name(&self) -> Result<String, KernelError>;
 
     // -- System --
 

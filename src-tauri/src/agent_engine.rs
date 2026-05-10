@@ -1,6 +1,4 @@
 use crate::agent_session::{self, AgentTimelineItem, InterruptSnapshot, ToolCallSnapshot};
-use j_cli::command::chat::storage::load_agent_config;
-use j_cli::util::log::write_error_log;
 use serde::Serialize;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -53,32 +51,28 @@ impl AgentEngine {
         on_event: Channel<AgentEvent>,
         permission_mode: &str,
         session_id: &str,
+        model: &str,
+        api_base: &str,
+        api_key: &str,
     ) -> Result<Self, String> {
-        let config = load_agent_config();
-        let provider = config
-            .providers
-            .get(config.active_index)
-            .ok_or("未配置模型提供方")?
-            .clone();
-
         let claude_path = which_claude()?;
 
         let mut cmd = Command::new(&claude_path);
-        let args = build_claude_args(&provider.model, permission_mode);
+        let args = build_claude_args(model, permission_mode);
         cmd.args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        if !provider.api_base.is_empty() {
-            cmd.env("ANTHROPIC_BASE_URL", &provider.api_base);
+        if !api_base.is_empty() {
+            cmd.env("ANTHROPIC_BASE_URL", api_base);
         }
         // API key is passed via env var as required by the Claude CLI.
         // On a single-user desktop this is acceptable; on shared systems,
         // /proc/<pid>/environ (Linux) or process environment APIs (Windows)
         // could leak the key to same-user processes.
-        if !provider.api_key.is_empty() {
-            cmd.env("ANTHROPIC_API_KEY", &provider.api_key);
+        if !api_key.is_empty() {
+            cmd.env("ANTHROPIC_API_KEY", api_key);
         }
 
         let mut process = cmd
@@ -188,21 +182,12 @@ impl AgentEngine {
                         if let Err(err) =
                             agent_session::update_tool_call_result(&sid, &tool_id, &content)
                         {
-                            write_error_log(
-                                "AgentEngine::update_tool_call_result",
-                                &format!("session_id={}, tool_id={}, error={}", sid, tool_id, err),
-                            );
+                            eprintln!("[AgentEngine::update_tool_call_result] session_id={}, tool_id={}, error={}", sid, tool_id, err);
                         }
                     }
                     if let Some(item) = timeline_item {
                         if let Err(err) = agent_session::append_timeline_item(&sid, &item) {
-                            write_error_log(
-                                "AgentEngine::append_timeline_item",
-                                &format!(
-                                    "session_id={}, item_id={}, kind={}, error={}",
-                                    sid, item.id, item.kind, err
-                                ),
-                            );
+                            eprintln!("[AgentEngine::append_timeline_item] session_id={}, item_id={}, kind={}, error={}", sid, item.id, item.kind, err);
                         }
                     }
                 }

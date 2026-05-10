@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use super::error::KernelError;
 use super::types::{KernelHookInfo, KernelMcpServerConfig, KernelSkillInfo, KernelToolInfo};
 

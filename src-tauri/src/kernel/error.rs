@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 /// Unified error type for kernel traits.
 #[derive(Debug, thiserror::Error)]
 pub enum KernelError {

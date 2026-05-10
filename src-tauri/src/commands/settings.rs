@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use crate::kernel::JcliAdapter;
 
 fn settings_dir() -> PathBuf {
     dirs_next().unwrap_or_else(|| PathBuf::from("."))
@@ -21,11 +24,15 @@ fn user_profile_path() -> PathBuf {
 pub(crate) fn dirs_next() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
-        std::env::var("APPDATA").ok().map(|d| PathBuf::from(d).join("j-gui"))
+        std::env::var("APPDATA")
+            .ok()
+            .map(|d| PathBuf::from(d).join("j-gui"))
     }
     #[cfg(not(target_os = "windows"))]
     {
-        std::env::var("HOME").ok().map(|d| PathBuf::from(d).join(".jgui"))
+        std::env::var("HOME")
+            .ok()
+            .map(|d| PathBuf::from(d).join(".jgui"))
     }
 }
 
@@ -534,8 +541,6 @@ pub fn check_environment() -> Result<EnvCheckResult, String> {
 // System Prompt Management
 // ============================================================
 
-use j_cli::command::chat::storage::load_system_prompt;
-
 static SYSTEM_PROMPT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 const JCLI_DEFAULT_ID: &str = "jcli-default";
@@ -551,12 +556,13 @@ fn system_prompts_config_path() -> PathBuf {
     settings_dir().join("system_prompts.json")
 }
 
-fn migrate_system_prompts_config() {
+fn migrate_system_prompts_config(data_dir: &Path) {
     let new_path = system_prompts_config_path();
     if new_path.exists() {
         return;
     }
-    let old_path = j_cli::command::chat::storage::agent_data_dir()
+    let old_path = data_dir
+        .join("agent")
         .join("gui")
         .join("system_prompts.json");
     if old_path.exists() {
@@ -569,8 +575,8 @@ fn migrate_system_prompts_config() {
     }
 }
 
-fn create_default_system_prompt_config() -> SystemPromptConfig {
-    let content = load_system_prompt().unwrap_or_default();
+fn create_default_system_prompt_config(jcli_system_prompt: Option<&str>) -> SystemPromptConfig {
+    let content = jcli_system_prompt.unwrap_or("").to_string();
     let now = now_millis();
     SystemPromptConfig {
         prompts: vec![SystemPromptEntry {
@@ -586,7 +592,9 @@ fn create_default_system_prompt_config() -> SystemPromptConfig {
     }
 }
 
-fn load_system_prompts_config_inner() -> Result<SystemPromptConfig, String> {
+fn load_system_prompts_config_inner(
+    jcli_system_prompt: Option<&str>,
+) -> Result<SystemPromptConfig, String> {
     let path = system_prompts_config_path();
     if path.exists() {
         let content =
@@ -595,13 +603,13 @@ fn load_system_prompts_config_inner() -> Result<SystemPromptConfig, String> {
             Ok(config) => Ok(config),
             Err(e) => {
                 eprintln!("警告: 系统提示词配置已损坏 ({}), 将重置为默认配置", e);
-                let config = create_default_system_prompt_config();
+                let config = create_default_system_prompt_config(jcli_system_prompt);
                 let _ = save_system_prompts_config_inner(&config);
                 Ok(config)
             }
         }
     } else {
-        let config = create_default_system_prompt_config();
+        let config = create_default_system_prompt_config(jcli_system_prompt);
         save_system_prompts_config_inner(&config)?;
         Ok(config)
     }
@@ -618,23 +626,29 @@ fn save_system_prompts_config_inner(config: &SystemPromptConfig) -> Result<(), S
 
 fn modify_system_prompts_config<T>(
     f: impl FnOnce(&mut SystemPromptConfig) -> Result<T, String>,
+    data_dir: &Path,
+    jcli_system_prompt: Option<&str>,
 ) -> Result<T, String> {
     let _lock = SYSTEM_PROMPT_LOCK
         .lock()
         .map_err(|e| format!("锁定系统提示词配置失败: {}", e))?;
-    migrate_system_prompts_config();
-    let mut config = load_system_prompts_config_inner()?;
+    migrate_system_prompts_config(data_dir);
+    let mut config = load_system_prompts_config_inner(jcli_system_prompt)?;
     let result = f(&mut config)?;
     save_system_prompts_config_inner(&config)?;
     Ok(result)
 }
 
-fn read_system_prompts_config<T>(f: impl FnOnce(&SystemPromptConfig) -> T) -> Result<T, String> {
+fn read_system_prompts_config<T>(
+    f: impl FnOnce(&SystemPromptConfig) -> T,
+    data_dir: &Path,
+    jcli_system_prompt: Option<&str>,
+) -> Result<T, String> {
     let _lock = SYSTEM_PROMPT_LOCK
         .lock()
         .map_err(|e| format!("锁定系统提示词配置失败: {}", e))?;
-    migrate_system_prompts_config();
-    let config = load_system_prompts_config_inner()?;
+    migrate_system_prompts_config(data_dir);
+    let config = load_system_prompts_config_inner(jcli_system_prompt)?;
     Ok(f(&config))
 }
 
@@ -675,94 +689,166 @@ pub struct UpdateSystemPromptInput {
 }
 
 #[tauri::command]
-pub fn get_system_prompts() -> Result<Vec<SystemPromptEntry>, String> {
-    read_system_prompts_config(|c| c.prompts.clone())
+pub fn get_system_prompts(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+) -> Result<Vec<SystemPromptEntry>, String> {
+    let data_dir = state.config().data_dir();
+    let jcli_prompt = state
+        .config()
+        .load_system_prompt()
+        .map_err(|e| e.to_string())?;
+    read_system_prompts_config(|c| c.prompts.clone(), &data_dir, jcli_prompt.as_deref())
 }
 
 #[tauri::command]
-pub fn get_system_prompt_config() -> Result<SystemPromptConfig, String> {
-    read_system_prompts_config(|c| c.clone())
+pub fn get_system_prompt_config(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+) -> Result<SystemPromptConfig, String> {
+    let data_dir = state.config().data_dir();
+    let jcli_prompt = state
+        .config()
+        .load_system_prompt()
+        .map_err(|e| e.to_string())?;
+    read_system_prompts_config(|c| c.clone(), &data_dir, jcli_prompt.as_deref())
 }
 
 #[tauri::command]
-pub fn create_system_prompt(input: CreateSystemPromptInput) -> Result<SystemPromptEntry, String> {
-    modify_system_prompts_config(|config| {
-        let now = now_millis();
-        let entry = SystemPromptEntry {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: input.name.clone(),
-            content: input.content.clone(),
-            builtin: false,
-            created_at: now,
-            updated_at: now,
-        };
-        config.prompts.push(entry.clone());
-        Ok(entry)
-    })
+pub fn create_system_prompt(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    input: CreateSystemPromptInput,
+) -> Result<SystemPromptEntry, String> {
+    let data_dir = state.config().data_dir();
+    let jcli_prompt = state
+        .config()
+        .load_system_prompt()
+        .map_err(|e| e.to_string())?;
+    modify_system_prompts_config(
+        |config| {
+            let now = now_millis();
+            let entry = SystemPromptEntry {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: input.name.clone(),
+                content: input.content.clone(),
+                builtin: false,
+                created_at: now,
+                updated_at: now,
+            };
+            config.prompts.push(entry.clone());
+            Ok(entry)
+        },
+        &data_dir,
+        jcli_prompt.as_deref(),
+    )
 }
 
 #[tauri::command]
 pub fn update_system_prompt(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
     id: String,
     input: UpdateSystemPromptInput,
 ) -> Result<SystemPromptEntry, String> {
-    modify_system_prompts_config(|config| {
-        let entry = config
-            .prompts
-            .iter_mut()
-            .find(|p| p.id == id)
-            .ok_or_else(|| format!("提示词 '{}' 未找到", id))?;
-        if entry.builtin {
-            return Err("内置提示词不可编辑".to_string());
-        }
-        if let Some(name) = &input.name {
-            entry.name = name.clone();
-        }
-        if let Some(content) = &input.content {
-            entry.content = content.clone();
-        }
-        entry.updated_at = now_millis();
-        Ok(entry.clone())
-    })
+    let data_dir = state.config().data_dir();
+    let jcli_prompt = state
+        .config()
+        .load_system_prompt()
+        .map_err(|e| e.to_string())?;
+    modify_system_prompts_config(
+        |config| {
+            let entry = config
+                .prompts
+                .iter_mut()
+                .find(|p| p.id == id)
+                .ok_or_else(|| format!("提示词 '{}' 未找到", id))?;
+            if entry.builtin {
+                return Err("内置提示词不可编辑".to_string());
+            }
+            if let Some(name) = &input.name {
+                entry.name = name.clone();
+            }
+            if let Some(content) = &input.content {
+                entry.content = content.clone();
+            }
+            entry.updated_at = now_millis();
+            Ok(entry.clone())
+        },
+        &data_dir,
+        jcli_prompt.as_deref(),
+    )
 }
 
 #[tauri::command]
-pub fn delete_system_prompt(id: String) -> Result<(), String> {
-    modify_system_prompts_config(|config| {
-        let idx = config
-            .prompts
-            .iter()
-            .position(|p| p.id == id)
-            .ok_or_else(|| format!("提示词 '{}' 未找到", id))?;
-        if config.prompts[idx].builtin {
-            return Err("内置提示词不可删除".to_string());
-        }
-        config.prompts.remove(idx);
-        // If deleting the default, fall back to jcli-default
-        if config.default_prompt_id == id {
-            config.default_prompt_id = JCLI_DEFAULT_ID.to_string();
-        }
-        Ok(())
-    })
+pub fn delete_system_prompt(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    id: String,
+) -> Result<(), String> {
+    let data_dir = state.config().data_dir();
+    let jcli_prompt = state
+        .config()
+        .load_system_prompt()
+        .map_err(|e| e.to_string())?;
+    modify_system_prompts_config(
+        |config| {
+            let idx = config
+                .prompts
+                .iter()
+                .position(|p| p.id == id)
+                .ok_or_else(|| format!("提示词 '{}' 未找到", id))?;
+            if config.prompts[idx].builtin {
+                return Err("内置提示词不可删除".to_string());
+            }
+            config.prompts.remove(idx);
+            // If deleting the default, fall back to jcli-default
+            if config.default_prompt_id == id {
+                config.default_prompt_id = JCLI_DEFAULT_ID.to_string();
+            }
+            Ok(())
+        },
+        &data_dir,
+        jcli_prompt.as_deref(),
+    )
 }
 
 #[tauri::command]
-pub fn set_default_prompt(prompt_id: String) -> Result<(), String> {
-    modify_system_prompts_config(|config| {
-        if !config.prompts.iter().any(|p| p.id == prompt_id) {
-            return Err(format!("提示词 '{}' 未找到", prompt_id));
-        }
-        config.default_prompt_id = prompt_id;
-        Ok(())
-    })
+pub fn set_default_prompt(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    prompt_id: String,
+) -> Result<(), String> {
+    let data_dir = state.config().data_dir();
+    let jcli_prompt = state
+        .config()
+        .load_system_prompt()
+        .map_err(|e| e.to_string())?;
+    modify_system_prompts_config(
+        |config| {
+            if !config.prompts.iter().any(|p| p.id == prompt_id) {
+                return Err(format!("提示词 '{}' 未找到", prompt_id));
+            }
+            config.default_prompt_id = prompt_id;
+            Ok(())
+        },
+        &data_dir,
+        jcli_prompt.as_deref(),
+    )
 }
 
 #[tauri::command]
-pub fn update_append_setting(append_date_time_and_user_name: bool) -> Result<(), String> {
-    modify_system_prompts_config(|config| {
-        config.append_date_time_and_user_name = append_date_time_and_user_name;
-        Ok(())
-    })
+pub fn update_append_setting(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    append_date_time_and_user_name: bool,
+) -> Result<(), String> {
+    let data_dir = state.config().data_dir();
+    let jcli_prompt = state
+        .config()
+        .load_system_prompt()
+        .map_err(|e| e.to_string())?;
+    modify_system_prompts_config(
+        |config| {
+            config.append_date_time_and_user_name = append_date_time_and_user_name;
+            Ok(())
+        },
+        &data_dir,
+        jcli_prompt.as_deref(),
+    )
 }
 
 #[cfg(test)]

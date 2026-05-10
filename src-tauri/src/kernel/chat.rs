@@ -1,22 +1,29 @@
 use async_trait::async_trait;
-use tauri::ipc::Channel;
 
 use super::error::KernelError;
 use super::types::{KernelChatMessage, KernelProvider, KernelSessionEvent, KernelSessionSummary};
 
 /// Chat + Session kernel trait.
-// mockall::automock unavailable: stream_chat takes Channel<String> (not Clone).
-// ?Send: jcli call_llm_stream_async uses &mut dyn FnMut callback which is not Send.
-// SAFETY: Channel<String> inside is Send, the trait object Send restriction is lifted only for the callback.
+/// Requires Send + Sync so Arc<dyn ChatKernel> is Send (needed for thread::spawn).
+/// The ?Send on async_trait allows the streaming callback to be !Send (jcli requirement).
 #[async_trait(?Send)]
-pub trait ChatKernel: Sync {
-    /// Stream LLM response via Channel<String>. Each chunk is a text delta.
+pub trait ChatKernel: Send + Sync {
+    /// Stream LLM response. Each text delta is delivered via `on_chunk`.
+    /// Returns the full response text on success.
     async fn stream_chat(
         &self,
         provider: &KernelProvider,
         messages: &[KernelChatMessage],
         system_prompt: Option<&str>,
-        on_event: Channel<String>,
+        on_chunk: &mut dyn for<'a> FnMut(&'a str),
+    ) -> Result<String, KernelError>;
+
+    /// Persist a message event to the session transcript.
+    fn append_message(
+        &self,
+        session_id: &str,
+        role: &str,
+        content: &str,
     ) -> Result<(), KernelError>;
 
     // -- Session CRUD --

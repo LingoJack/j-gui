@@ -1,5 +1,6 @@
 use crate::agent_engine::{AgentEngine, AgentEvent};
 use crate::agent_session::{self, AgentSessionInfo, AgentTimelineItem};
+use crate::kernel::JcliAdapter;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
@@ -30,16 +31,34 @@ enum AgentInterruptResponse {
 #[tauri::command]
 pub fn start_agent(
     state: tauri::State<'_, AgentState>,
+    kernel: tauri::State<'_, Arc<JcliAdapter>>,
     on_event: Channel<AgentEvent>,
     permission_mode: Option<String>,
     session_id: Option<String>,
 ) -> Result<(), String> {
+    let providers = kernel
+        .config()
+        .load_providers()
+        .map_err(|e| e.to_string())?;
+    let active_index = kernel
+        .config()
+        .load_active_index()
+        .map_err(|e| e.to_string())?;
+    let provider = providers.get(active_index).ok_or("未配置模型提供方")?;
+
     let mode = permission_mode.unwrap_or_else(|| "default".to_string());
     let sid = match session_id {
         Some(id) => id,
         None => agent_session::create_agent_session()?,
     };
-    let engine = AgentEngine::start(on_event, &mode, &sid)?;
+    let engine = AgentEngine::start(
+        on_event,
+        &mode,
+        &sid,
+        &provider.model,
+        &provider.api_base,
+        &provider.api_key,
+    )?;
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
     *guard = Some(engine);
     Ok(())
@@ -205,7 +224,10 @@ pub struct AskUserRequest {
 /// Generate a title for an agent session by asking the active LLM to
 /// summarize the first user message and first assistant response.
 #[tauri::command]
-pub async fn generate_agent_title(session_id: String) -> Result<String, String> {
+pub async fn generate_agent_title(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    session_id: String,
+) -> Result<String, String> {
     let timeline = agent_session::get_agent_session(&session_id)?;
 
     let first_user_msg = timeline
@@ -235,8 +257,12 @@ pub async fn generate_agent_title(session_id: String) -> Result<String, String> 
         .unwrap_or_else(|| "New conversation".to_string());
 
     // Try LLM-based title generation via reqwest
-    let config = j_cli::command::chat::storage::load_agent_config();
-    if let Some(provider) = config.providers.get(config.active_index) {
+    let providers = state.config().load_providers().map_err(|e| e.to_string())?;
+    let active_index = state
+        .config()
+        .load_active_index()
+        .map_err(|e| e.to_string())?;
+    if let Some(provider) = providers.get(active_index) {
         let client = reqwest::Client::new();
         let prompt = format!("Generate a short title (max 10 words) for this conversation. Return ONLY the title, no quotes, no punctuation:\n\n{}", conversation_text);
         let body = serde_json::json!({

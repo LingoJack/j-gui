@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! j-gui owned domain types for the kernel trait boundary.
 //! These are NOT jcli types — adapter does the conversion.
 //!
@@ -6,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Provider configuration for LLM calls.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelProvider {
     pub name: String,

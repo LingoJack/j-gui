@@ -1,13 +1,12 @@
-use j_cli::command::chat::infra::hook::manager::HookManager;
-use j_cli::command::chat::infra::hook::types::HookEvent;
-use j_cli::command::chat::infra::skill::{load_all_skills, Skill, SkillSource};
 use j_cli::command::chat::storage::{load_agent_config, save_agent_config};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+
+use crate::kernel::{GovernanceKernel, JcliAdapter};
 
 fn home_dir() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
@@ -31,20 +30,6 @@ pub struct SkillInfo {
     pub dir_path: String,
 }
 
-impl From<Skill> for SkillInfo {
-    fn from(s: Skill) -> Self {
-        SkillInfo {
-            name: s.frontmatter.name,
-            description: s.frontmatter.description,
-            source: match s.source {
-                SkillSource::User => "user".to_string(),
-                SkillSource::Project => "project".to_string(),
-            },
-            dir_path: s.dir_path.to_string_lossy().to_string(),
-        }
-    }
-}
-
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HookInfo {
@@ -58,49 +43,42 @@ pub struct HookInfo {
     pub unique_id: String,
 }
 
-fn hook_event_to_str(e: HookEvent) -> String {
-    match e {
-        HookEvent::PreSendMessage => "PreSendMessage".to_string(),
-        HookEvent::PostSendMessage => "PostSendMessage".to_string(),
-        HookEvent::PreLlmRequest => "PreLlmRequest".to_string(),
-        HookEvent::PostLlmResponse => "PostLlmResponse".to_string(),
-        HookEvent::PreToolExecution => "PreToolExecution".to_string(),
-        HookEvent::PostToolExecution => "PostToolExecution".to_string(),
-        HookEvent::PostToolExecutionFailure => "PostToolExecutionFailure".to_string(),
-        HookEvent::Stop => "Stop".to_string(),
-        HookEvent::PreMicroCompact => "PreMicroCompact".to_string(),
-        HookEvent::PostMicroCompact => "PostMicroCompact".to_string(),
-        HookEvent::PreAutoCompact => "PreAutoCompact".to_string(),
-        HookEvent::PostAutoCompact => "PostAutoCompact".to_string(),
-        HookEvent::SessionStart => "SessionStart".to_string(),
-        HookEvent::SessionEnd => "SessionEnd".to_string(),
-    }
+#[tauri::command]
+pub fn list_skills(state: tauri::State<'_, Arc<JcliAdapter>>) -> Result<Vec<SkillInfo>, String> {
+    list_skills_impl(state.governance())
 }
 
-#[tauri::command]
-pub fn list_skills() -> Result<Vec<SkillInfo>, String> {
-    let skills = load_all_skills();
-    Ok(skills.into_iter().map(SkillInfo::from).collect())
-}
-
-#[tauri::command]
-pub fn list_hooks() -> Result<Vec<HookInfo>, String> {
-    let manager = HookManager::load();
-    let entries = manager.list_hooks();
-    Ok(entries
+fn list_skills_impl(kernel: &dyn GovernanceKernel) -> Result<Vec<SkillInfo>, String> {
+    let skills = kernel.list_skills().map_err(|e| e.to_string())?;
+    Ok(skills
         .into_iter()
-        .map(|e| HookInfo {
-            name: e.name,
-            event: hook_event_to_str(e.event),
-            source: e.source.to_string(),
-            hook_type: e.hook_type.to_string(),
-            label: e.label,
-            timeout: e.timeout,
-            on_error: e.on_error.map(|o| match o {
-                j_cli::command::chat::infra::hook::types::OnError::Skip => "skip".to_string(),
-                j_cli::command::chat::infra::hook::types::OnError::Stop => "stop".to_string(),
-            }),
-            unique_id: e.unique_id,
+        .map(|s| SkillInfo {
+            name: s.name,
+            description: s.description,
+            source: s.source,
+            dir_path: s.dir_path,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn list_hooks(state: tauri::State<'_, Arc<JcliAdapter>>) -> Result<Vec<HookInfo>, String> {
+    list_hooks_impl(state.governance())
+}
+
+fn list_hooks_impl(kernel: &dyn GovernanceKernel) -> Result<Vec<HookInfo>, String> {
+    let hooks = kernel.list_hooks().map_err(|e| e.to_string())?;
+    Ok(hooks
+        .into_iter()
+        .map(|h| HookInfo {
+            name: h.name,
+            event: h.event,
+            source: h.source,
+            hook_type: h.hook_type,
+            label: h.label,
+            timeout: h.timeout,
+            on_error: h.on_error,
+            unique_id: h.unique_id,
         })
         .collect())
 }
@@ -524,6 +502,10 @@ mod tests {
     use super::*;
     use std::io::Write;
 
+    use crate::kernel::error::KernelError;
+    use crate::kernel::governance::MockGovernanceKernel;
+    use crate::kernel::types::{KernelHookInfo, KernelSkillInfo};
+
     #[test]
     fn test_parse_skill_frontmatter_valid() {
         let dir = std::env::temp_dir().join("j-gui-test-parse-fm");
@@ -672,5 +654,131 @@ mod tests {
         assert_eq!(result.unwrap(), std::fs::canonicalize(&skill_dir).unwrap());
 
         let _ = fs::remove_dir_all(&skill_dir);
+    }
+
+    // === Kernel-based list_skills tests ===
+
+    #[test]
+    fn list_skills_returns_mapped_skills() {
+        let mut mock = MockGovernanceKernel::new();
+        mock.expect_list_skills().returning(|| {
+            Ok(vec![KernelSkillInfo {
+                name: "Test Skill".into(),
+                description: "A test skill".into(),
+                source: "user".into(),
+                dir_path: "/tmp/test/skill".into(),
+            }])
+        });
+
+        let result = list_skills_impl(&mock);
+        assert!(result.is_ok());
+        let skills = result.unwrap();
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].name, "Test Skill");
+        assert_eq!(skills[0].description, "A test skill");
+        assert_eq!(skills[0].source, "user");
+        assert_eq!(skills[0].dir_path, "/tmp/test/skill");
+    }
+
+    #[test]
+    fn list_skills_empty() {
+        let mut mock = MockGovernanceKernel::new();
+        mock.expect_list_skills().returning(|| Ok(vec![]));
+
+        let result = list_skills_impl(&mock);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn list_skills_kernel_error_propagates() {
+        let mut mock = MockGovernanceKernel::new();
+        mock.expect_list_skills()
+            .returning(|| Err(KernelError::Governance("db error".into())));
+
+        let result = list_skills_impl(&mock);
+        assert!(result.is_err());
+    }
+
+    // === Kernel-based list_hooks tests ===
+
+    #[test]
+    fn list_hooks_returns_mapped_hooks() {
+        let mut mock = MockGovernanceKernel::new();
+        mock.expect_list_hooks().returning(|| {
+            Ok(vec![KernelHookInfo {
+                name: Some("My Hook".into()),
+                event: "PreSendMessage".into(),
+                source: "user".into(),
+                hook_type: "bash".into(),
+                label: "Lint check".into(),
+                timeout: Some(30),
+                on_error: Some("skip".into()),
+                unique_id: "abc-123".into(),
+            }])
+        });
+
+        let result = list_hooks_impl(&mock);
+        assert!(result.is_ok());
+        let hooks = result.unwrap();
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0].name, Some("My Hook".into()));
+        assert_eq!(hooks[0].event, "PreSendMessage");
+        assert_eq!(hooks[0].source, "user");
+        assert_eq!(hooks[0].hook_type, "bash");
+        assert_eq!(hooks[0].label, "Lint check");
+        assert_eq!(hooks[0].timeout, Some(30));
+        assert_eq!(hooks[0].on_error, Some("skip".into()));
+        assert_eq!(hooks[0].unique_id, "abc-123");
+    }
+
+    #[test]
+    fn list_hooks_empty() {
+        let mut mock = MockGovernanceKernel::new();
+        mock.expect_list_hooks().returning(|| Ok(vec![]));
+
+        let result = list_hooks_impl(&mock);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn list_hooks_kernel_error_propagates() {
+        let mut mock = MockGovernanceKernel::new();
+        mock.expect_list_hooks()
+            .returning(|| Err(KernelError::Governance("hook error".into())));
+
+        let result = list_hooks_impl(&mock);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn list_hooks_maps_all_fields() {
+        let mut mock = MockGovernanceKernel::new();
+        mock.expect_list_hooks().returning(|| {
+            Ok(vec![KernelHookInfo {
+                name: None,
+                event: "PostLlmResponse".into(),
+                source: "builtin".into(),
+                hook_type: "llm".into(),
+                label: "Auto-format".into(),
+                timeout: None,
+                on_error: Some("stop".into()),
+                unique_id: "xyz-789".into(),
+            }])
+        });
+
+        let result = list_hooks_impl(&mock);
+        assert!(result.is_ok());
+        let hooks = result.unwrap();
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0].name, None);
+        assert_eq!(hooks[0].event, "PostLlmResponse");
+        assert_eq!(hooks[0].source, "builtin");
+        assert_eq!(hooks[0].hook_type, "llm");
+        assert_eq!(hooks[0].label, "Auto-format");
+        assert_eq!(hooks[0].timeout, None);
+        assert_eq!(hooks[0].on_error, Some("stop".into()));
+        assert_eq!(hooks[0].unique_id, "xyz-789");
     }
 }
