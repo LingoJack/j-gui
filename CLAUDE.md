@@ -38,7 +38,16 @@ src-tauri/              Rust 后端（commands/ + chat_engine.rs）
 - **j-cli 源码**：`E:\Coding\AI\jcli`，j-gui 通过相对路径依赖 `j-cli = { path = "../../jcli" }`
 - **j-cli 数据目录**：`~/.jdata/`（由 `j_cli::constants` 定义）
 - **Agent 配置路径**：`~/.jdata/agent/data/agent_config.json`
-- **Rust 编码规约**：见 `.codestable/compound/2026-05-08-decision-rust-coding-conventions.md`
+- **Rust 编码规约**（强制，详见 `.codestable/compound/2026-05-08-decision-rust-coding-conventions.md`）：
+  - `cargo fmt` + `cargo clippy -- -D warnings` 零告警
+  - 命名：`PascalCase`（类型/Trait）、`snake_case`（函数/变量/模块）、`SCREAMING_SNAKE_CASE`（常量）
+  - 禁止 `.clone()` 滥用，优先借用/所有权转移；接口参数优先 `&str`/`&[T]` 而非 `String`/`Vec`
+  - 禁止 `unwrap()`/`expect()` 在库代码中使用；用 `?` 传播错误，应用层用 `anyhow`，库层用 `thiserror`
+  - 类型与 `impl` 块物理相邻；派生 `Debug, Default, PartialEq`；构造用 `new() -> Self`
+  - 显式处理枚举分支，禁止 `_ => ...` 通配；用 `.map()`/`.and_then()`/`.ok_or()` 链式处理
+  - 禁止长路径引用（`a::b::c::Type`），用 `use` 导入；弃用 `mod.rs`，去 `utils` 化按功能归类
+  - 函数单一职责，参数 >4 个封 `Config` 结构体；魔法值提取为 `const`
+  - `pub` 成员须有 `///` 文档；`unsafe` 块须有 `// SAFETY:` 注释
 - **流式 IPC**：Chat 流式必须用 `Channel<T>`（非 Tauri Events — Events 不适合低延迟高频场景）
 - **Agent 模式**：Claude Agent SDK CLI 子进程 + j-agent crate 并行，预留 `AgentBackend` trait
 - **Channel send 错误**：取消请求通过 Channel drop 实现

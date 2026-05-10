@@ -121,11 +121,17 @@ tags: [tauri, desktop, j-cli, chat, agent]
 - **存储**: Chat/Agent 会话走 j-cli 路径 (`~/.jdata/`)；GUI 配置走 `%APPDATA%/j-gui/` (Windows) / `~/.j-gui/` (Unix)
 - **状态**: Jotai atoms，前端不引入 React Router
 - **Skills/MCP/Hooks**: j-cli 源和 CC SDK 源各自独立路径，UI 区分展示，全局 Skills 只读导入
+- **Rust 编码规约**：强制遵守 `.codestable/compound/2026-05-08-decision-rust-coding-conventions.md`（CLAUDE.md 已内联关键规则）
 
 ## 观察项
 
 - j-cli `SkillSource` 枚举当前只有 `User | Project`，全局 Skills 导入需扩展 `Global` 变体
 - CC SDK MCP 工作区配置 (`mcp.json`) 与 j-cli MCP 配置 (`mcp_config.json`) 格式可能不同，需确认序列化兼容
+- **Rust 编码规约合规**（2026-05-10 扫描，待修）：
+  - `settings.rs:308` `_ => {}` 通配 — `update_settings` 宏化后仍保留静默忽略，需改为日志记录或拒绝未知 key
+  - `governance.rs` `save_mcp_servers` 字段逐行 `.clone()` — 可改用解构减少 clone
+  - 新增 `pub fn`（`scan_global_skills` / `copy_skill_to_workspace` / `validate_slug` 等）缺 `///` 文档注释
+  - 建议 Phase D `tdd-coverage` 同步加入 clippy `#![deny(clippy::all)]` 门禁
 
 ## 变更日志
 
