@@ -156,7 +156,7 @@ export async function getRecentMessages(id: string, limit: number): Promise<{ me
     return { messages: msgs.slice(-limit), hasMore: msgs.length > limit }
   } catch { warnOnce('get_session_messages'); return { messages: [], hasMore: false } }
 }
-export async function updateConversationTitle(id: string, title: string) { return invoke<any>('update_conversation_title', { id, title }) }
+export const updateConversationTitle = (id: string, title: string) => tryInvoke<any>('update_conversation_title', { id, title })
 export const updateConversationModel = (id: string, modelId: string, channelId: string) =>
   tryInvoke<any>('update_conversation_model', { id, modelId, channelId })
 export const deleteConversation = (id: string) => tryInvoke('delete_session', { sessionId: id })
@@ -226,9 +226,9 @@ export async function updateAgentSessionTitle(id: string, title: string) { retur
 export const deleteAgentSession = (id: string) => tryInvoke('delete_agent_session', { id })
 export const migrateChatToAgent = (conversationId: string, agentSessionId: string) =>
   tryInvoke('migrate_chat_to_agent', { conversationId, agentSessionId })
-export const togglePinAgentSession = (id: string) => tryInvoke<any>('toggle_pin_agent_session', { id })
-export const toggleManualWorkingAgentSession = (id: string) => tryInvoke<any>('toggle_manual_working_agent_session', { id })
-export const toggleArchiveAgentSession = (id: string) => tryInvoke<any>('toggle_archive_agent_session', { id })
+export const togglePinAgentSession = (_id: string) => { warnOnce('toggle_pin_agent_session'); return Promise.resolve(false) } // TODO: backend command not yet registered
+export const toggleManualWorkingAgentSession = (_id: string) => { warnOnce('toggle_manual_working_agent_session'); return Promise.resolve(false) } // TODO: backend command not yet registered
+export const toggleArchiveAgentSession = (_id: string) => { warnOnce('toggle_archive_agent_session'); return Promise.resolve(false) } // TODO: backend command not yet registered
 export const searchAgentSessionMessages = (query: string) =>
   tryInvoke<any[]>('search_agent_session_messages', { query }, [])
 export const moveAgentSessionToWorkspace = (input: any) =>
@@ -463,7 +463,7 @@ export const updateChatToolState = (id: string, state: any) =>
   tryInvoke('update_chat_tool_state', { id, state })
 export const addCustomTool = (meta: any) => tryInvoke<any>('add_custom_tool', { meta })
 export const removeCustomTool = (id: string) => tryInvoke('remove_custom_tool', { id })
-export const deleteCustomChatTool = (id: string) => tryInvoke('delete_custom_chat_tool', { id })
+export const deleteCustomChatTool = (id: string) => tryInvoke('delete_custom_chat_tool', { id }, false) // TODO: backend command not yet registered
 export const getChatToolCredentials = (id: string) =>
   tryInvoke<any>('get_chat_tool_credentials', { id }, {})
 export const updateChatToolCredentials = (id: string, creds: any) =>
