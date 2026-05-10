@@ -233,7 +233,7 @@ export const moveAgentSessionToWorkspace = (input: any) =>
   tryInvoke<any>('move_agent_session_to_workspace', { input })
 export const forkAgentSession = (input: any) => tryInvoke<any>('fork_agent_session', { input })
 export const rewindSession = (input: any) => tryInvoke<any>('rewind_session', { input })
-export async function generateAgentTitle(input: any) { try { return await invoke<string>('generate_agent_title', { input }) } catch { return null } }
+export async function generateAgentTitle(sessionId: string) { try { return await invoke<string>('generate_agent_title', { sessionId }) } catch { return null } }
 // Agent active channels — one per session
 const agentChannels = new Map<string, Channel<any>>()
 
