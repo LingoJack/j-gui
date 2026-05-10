@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::kernel::types::{current_timestamp, KernelChannelModel, KernelProvider};
+use crate::kernel::types::{
+    infer_provider, KernelChannelModel, KernelCreateChannelInput, KernelUpdateChannelInput,
+    KernelProvider,
+};
 use crate::kernel::{ConfigKernel, JcliAdapter};
 
 // ---------------------------------------------------------------------------
@@ -11,7 +14,7 @@ use crate::kernel::{ConfigKernel, JcliAdapter};
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelInfo {
-    pub id: usize,
+    pub id: String,
     pub name: String,
     pub provider: String,
     pub api_base: String,
@@ -31,12 +34,13 @@ pub struct CreateChannelInput {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateChannelInput {
-    pub index: usize,
-    pub name: String,
-    pub api_base: String,
-    pub api_key: String,
-    pub model: String,
-    pub supports_vision: Option<bool>,
+    pub name: Option<String>,
+    pub provider: Option<String>,
+    #[serde(alias = "baseUrl")]
+    pub api_base: Option<String>,
+    pub api_key: Option<String>,
+    pub models: Option<Vec<KernelChannelModel>>,
+    pub enabled: Option<bool>,
 }
 
 #[derive(Clone, Serialize)]
@@ -96,9 +100,9 @@ fn mask_api_key(key: &str) -> String {
     }
 }
 
-fn provider_to_channel_info(idx: usize, p: &KernelProvider) -> ChannelInfo {
+fn provider_to_channel_info(p: &KernelProvider) -> ChannelInfo {
     ChannelInfo {
-        id: idx,
+        id: p.id.clone(),
         name: p.name.clone(),
         provider: if p.provider.is_empty() {
             infer_provider(&p.api_base)
@@ -108,38 +112,6 @@ fn provider_to_channel_info(idx: usize, p: &KernelProvider) -> ChannelInfo {
         api_base: p.api_base.clone(),
         models: p.models.iter().map(|m| m.id.clone()).collect(),
     }
-}
-
-fn infer_provider(api_base: &str) -> String {
-    let base = api_base.to_lowercase();
-    if base.contains("deepseek") {
-        return "deepseek".into();
-    }
-    if base.contains("openai") {
-        return "openai".into();
-    }
-    if base.contains("anthropic") || base.contains("claude") {
-        return "anthropic".into();
-    }
-    if base.contains("google") || base.contains("gemini") {
-        return "google".into();
-    }
-    if base.contains("moonshot") || base.contains("kimi") {
-        return "moonshot".into();
-    }
-    if base.contains("zhipu") || base.contains("chatglm") {
-        return "zhipu".into();
-    }
-    if base.contains("minimax") {
-        return "minimax".into();
-    }
-    if base.contains("doubao") || base.contains("volc") {
-        return "doubao".into();
-    }
-    if base.contains("qwen") || base.contains("tongyi") {
-        return "tongyi".into();
-    }
-    "custom".into()
 }
 
 // ---------------------------------------------------------------------------
@@ -164,17 +136,18 @@ pub fn create_channel(
 #[tauri::command]
 pub fn update_channel(
     state: tauri::State<'_, Arc<JcliAdapter>>,
+    id: String,
     input: UpdateChannelInput,
 ) -> Result<ChannelInfo, String> {
-    update_channel_impl(state.config(), input)
+    update_channel_impl(state.config(), id, input)
 }
 
 #[tauri::command]
 pub fn delete_channel(
     state: tauri::State<'_, Arc<JcliAdapter>>,
-    index: usize,
+    id: String,
 ) -> Result<(), String> {
-    delete_channel_impl(state.config(), index)
+    delete_channel_impl(state.config(), &id)
 }
 
 #[tauri::command]
@@ -271,20 +244,14 @@ pub async fn test_channel_direct(input: TestChannelInput) -> Result<TestChannelR
 
 fn list_channels_impl(config: &dyn ConfigKernel) -> Result<Vec<ChannelInfo>, String> {
     let providers = config.load_providers().map_err(|e| e.to_string())?;
-    Ok(providers
-        .iter()
-        .enumerate()
-        .map(|(i, p)| provider_to_channel_info(i, p))
-        .collect())
+    Ok(providers.iter().map(|p| provider_to_channel_info(p)).collect())
 }
 
 fn create_channel_impl(
     config: &dyn ConfigKernel,
     input: CreateChannelInput,
 ) -> Result<ChannelInfo, String> {
-    let mut providers = config.load_providers().map_err(|e| e.to_string())?;
-    providers.push(KernelProvider {
-        id: String::new(),
+    let kernel_input = KernelCreateChannelInput {
         name: input.name,
         provider: infer_provider(&input.api_base),
         api_base: input.api_base,
@@ -295,77 +262,43 @@ fn create_channel_impl(
             enabled: true,
         }],
         enabled: true,
-        supports_vision: input.supports_vision.unwrap_or(false),
-        created_at: current_timestamp(),
-        updated_at: current_timestamp(),
-    });
-    let idx = providers.len() - 1;
-    config
-        .save_providers(&providers)
+    };
+    let provider = config
+        .create_channel(kernel_input)
         .map_err(|e| e.to_string())?;
-    Ok(provider_to_channel_info(idx, &providers[idx]))
+    Ok(provider_to_channel_info(&provider))
 }
 
 fn update_channel_impl(
     config: &dyn ConfigKernel,
+    id: String,
     input: UpdateChannelInput,
 ) -> Result<ChannelInfo, String> {
-    let mut providers = config.load_providers().map_err(|e| e.to_string())?;
-    if input.index >= providers.len() {
-        return Err(format!(
-            "无效的 provider 索引: {}（共 {} 个提供方）",
-            input.index,
-            providers.len()
-        ));
-    }
+    // Handle masked api_key: if the incoming key has "..." preserve existing
+    let api_key = input.api_key.as_deref().and_then(|k| {
+        if k.contains("...") {
+            None // signal to kernel to preserve existing
+        } else {
+            Some(k.to_string())
+        }
+    });
 
-    // If the incoming api_key is masked (contains "..."), preserve the old key
-    let api_key = if input.api_key.contains("...") {
-        providers[input.index].api_key.clone()
-    } else {
-        input.api_key.clone()
-    };
-
-    providers[input.index] = KernelProvider {
-        id: String::new(),
+    let kernel_input = KernelUpdateChannelInput {
         name: input.name,
-        provider: infer_provider(&input.api_base),
+        provider: input.provider,
         api_base: input.api_base,
         api_key,
-        models: vec![KernelChannelModel {
-            id: input.model.clone(),
-            name: input.model.clone(),
-            enabled: true,
-        }],
-        enabled: true,
-        supports_vision: input.supports_vision.unwrap_or(false),
-        created_at: current_timestamp(),
-        updated_at: current_timestamp(),
+        models: input.models,
+        enabled: input.enabled,
     };
-
-    config
-        .save_providers(&providers)
+    let provider = config
+        .update_channel(&id, kernel_input)
         .map_err(|e| e.to_string())?;
-    Ok(provider_to_channel_info(
-        input.index,
-        &providers[input.index],
-    ))
+    Ok(provider_to_channel_info(&provider))
 }
 
-fn delete_channel_impl(config: &dyn ConfigKernel, index: usize) -> Result<(), String> {
-    let mut providers = config.load_providers().map_err(|e| e.to_string())?;
-    if index >= providers.len() {
-        return Err(format!(
-            "无效的 provider 索引: {}（共 {} 个提供方）",
-            index,
-            providers.len()
-        ));
-    }
-    providers.remove(index);
-    config
-        .save_providers(&providers)
-        .map_err(|e| e.to_string())?;
-    Ok(())
+fn delete_channel_impl(config: &dyn ConfigKernel, id: &str) -> Result<(), String> {
+    config.delete_channel(id).map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -491,7 +424,8 @@ fn parse_models(body: &str) -> Vec<ModelOption> {
 mod tests {
     use super::*;
     use crate::kernel::config::MockConfigKernel;
-    use crate::kernel::types::{KernelChannelModel, KernelProvider};
+    use crate::kernel::types::{KernelChannelModel, KernelCreateChannelInput, KernelProvider, KernelUpdateChannelInput};
+    use crate::kernel::KernelError;
 
     // --- mask_api_key ---
 
@@ -518,7 +452,7 @@ mod tests {
     #[test]
     fn provider_to_channel_info_maps_fields() {
         let p = KernelProvider {
-            id: String::new(),
+            id: "test-uuid".into(),
             name: "GPT-4o".into(),
             provider: String::new(),
             api_base: "https://api.openai.com/v1".into(),
@@ -533,8 +467,8 @@ mod tests {
             created_at: 0,
             updated_at: 0,
         };
-        let info = provider_to_channel_info(2, &p);
-        assert_eq!(info.id, 2);
+        let info = provider_to_channel_info(&p);
+        assert_eq!(info.id, "test-uuid");
         assert_eq!(info.name, "GPT-4o");
         assert_eq!(info.provider, "openai");
         // api_base is NOT masked
@@ -559,7 +493,7 @@ mod tests {
         let mut mock = MockConfigKernel::new();
         mock.expect_load_providers().returning(|| {
             Ok(vec![KernelProvider {
-                id: String::new(),
+                id: "ds-uuid".into(),
                 name: "My Provider".into(),
                 provider: String::new(),
                 api_base: "https://api.deepseek.com".into(),
@@ -580,6 +514,7 @@ mod tests {
         assert!(result.is_ok());
         let channels = result.unwrap();
         assert_eq!(channels.len(), 1);
+        assert_eq!(channels[0].id, "ds-uuid");
         assert_eq!(channels[0].name, "My Provider");
         assert_eq!(channels[0].provider, "deepseek");
         assert_eq!(channels[0].api_base, "https://api.deepseek.com");
@@ -591,10 +526,22 @@ mod tests {
     #[test]
     fn create_channel_appends_provider() {
         let mut mock = MockConfigKernel::new();
-        mock.expect_load_providers().returning(|| Ok(vec![]));
-        mock.expect_save_providers()
-            .withf(|p: &[KernelProvider]| p.len() == 1 && p[0].name == "New Channel")
-            .returning(|_| Ok(()));
+        mock.expect_create_channel()
+            .withf(|input: &KernelCreateChannelInput| input.name == "New Channel")
+            .returning(|input| {
+                Ok(KernelProvider {
+                    id: "new-uuid".into(),
+                    name: input.name,
+                    provider: input.provider,
+                    api_base: input.api_base,
+                    api_key: input.api_key,
+                    models: input.models,
+                    enabled: input.enabled,
+                    supports_vision: false,
+                    created_at: 1000,
+                    updated_at: 1000,
+                })
+            });
 
         let result = create_channel_impl(
             &mock,
@@ -608,6 +555,7 @@ mod tests {
         );
         assert!(result.is_ok());
         let info = result.unwrap();
+        assert_eq!(info.id, "new-uuid");
         assert_eq!(info.name, "New Channel");
         assert_eq!(info.provider, "openai");
     }
@@ -617,39 +565,33 @@ mod tests {
     #[test]
     fn update_channel_modifies_provider() {
         let mut mock = MockConfigKernel::new();
-        mock.expect_load_providers().returning(|| {
-            Ok(vec![KernelProvider {
-                id: String::new(),
-                name: "Old".into(),
-                provider: String::new(),
-                api_base: "https://old.com".into(),
-                api_key: "sk-old-key".into(),
-                models: vec![KernelChannelModel {
-                    id: "gpt-3.5".into(),
-                    name: "gpt-3.5".into(),
-                    enabled: true,
-                }],
-                enabled: true,
-                supports_vision: false,
-                created_at: 0,
-                updated_at: 0,
-            }])
-        });
-        mock.expect_save_providers()
-            .withf(|p: &[KernelProvider]| {
-                p.len() == 1 && p[0].name == "Updated" && p[0].api_key == "sk-new-key"
-            })
-            .returning(|_| Ok(()));
+        mock.expect_update_channel()
+            .withf(|id: &str, _input: &KernelUpdateChannelInput| id == "test-id")
+            .returning(|id: &str, input: KernelUpdateChannelInput| {
+                Ok(KernelProvider {
+                    id: id.to_string(),
+                    name: input.name.unwrap_or_default(),
+                    provider: input.provider.unwrap_or_default(),
+                    api_base: input.api_base.unwrap_or_default(),
+                    api_key: input.api_key.unwrap_or_default(),
+                    models: input.models.unwrap_or_default(),
+                    enabled: input.enabled.unwrap_or(true),
+                    supports_vision: false,
+                    created_at: 1000,
+                    updated_at: 2000,
+                })
+            });
 
         let result = update_channel_impl(
             &mock,
+            "test-id".into(),
             UpdateChannelInput {
-                index: 0,
-                name: "Updated".into(),
-                api_base: "https://new.com".into(),
-                api_key: "sk-new-key".into(),
-                model: "gpt-4".into(),
-                supports_vision: Some(true),
+                name: Some("Updated".into()),
+                provider: None,
+                api_base: Some("https://new.com".into()),
+                api_key: Some("sk-new-key".into()),
+                models: None,
+                enabled: None,
             },
         );
         assert!(result.is_ok());
@@ -660,59 +602,59 @@ mod tests {
     #[test]
     fn update_channel_preserves_masked_key() {
         let mut mock = MockConfigKernel::new();
-        mock.expect_load_providers().returning(|| {
-            Ok(vec![KernelProvider {
-                id: String::new(),
-                name: "Old".into(),
-                provider: String::new(),
-                api_base: "https://old.com".into(),
-                api_key: "sk-real-secret-key".into(),
-                models: vec![KernelChannelModel {
-                    id: "gpt-3.5".into(),
-                    name: "gpt-3.5".into(),
-                    enabled: true,
-                }],
-                enabled: true,
-                supports_vision: false,
-                created_at: 0,
-                updated_at: 0,
-            }])
-        });
-        mock.expect_save_providers()
-            .withf(|p: &[KernelProvider]| {
-                p.len() == 1 && p[0].api_key == "sk-real-secret-key" // preserved
+        mock.expect_update_channel()
+            .withf(|_id: &str, input: &KernelUpdateChannelInput| {
+                // api_key should be None (masked → None signals preserve)
+                input.api_key.is_none()
             })
-            .returning(|_| Ok(()));
+            .returning(|id: &str, input: KernelUpdateChannelInput| {
+                Ok(KernelProvider {
+                    id: id.to_string(),
+                    name: input.name.unwrap_or_default(),
+                    provider: input.provider.unwrap_or_default(),
+                    api_base: input.api_base.unwrap_or_default(),
+                    api_key: "sk-real-secret-key".into(),
+                    models: input.models.unwrap_or_default(),
+                    enabled: input.enabled.unwrap_or(true),
+                    supports_vision: false,
+                    created_at: 1000,
+                    updated_at: 2000,
+                })
+            });
 
-        // frontend sends masked key
         let result = update_channel_impl(
             &mock,
+            "test-id".into(),
             UpdateChannelInput {
-                index: 0,
-                name: "Updated".into(),
-                api_base: "https://new.com".into(),
-                api_key: "sk-r...key".into(), // masked
-                model: "gpt-4".into(),
-                supports_vision: None,
+                name: Some("Updated".into()),
+                provider: None,
+                api_base: Some("https://new.com".into()),
+                api_key: Some("sk-r...key".into()), // masked → becomes None
+                models: None,
+                enabled: None,
             },
         );
         assert!(result.is_ok());
     }
 
     #[test]
-    fn update_channel_invalid_index_returns_error() {
+    fn update_channel_not_found_returns_error() {
         let mut mock = MockConfigKernel::new();
-        mock.expect_load_providers().returning(|| Ok(vec![]));
+        mock.expect_update_channel()
+            .returning(|_id: &str, _input: KernelUpdateChannelInput| {
+                Err(KernelError::Config("渠道 ID 不存在: ghost".into()))
+            });
 
         let result = update_channel_impl(
             &mock,
+            "ghost".into(),
             UpdateChannelInput {
-                index: 999,
-                name: "test".into(),
-                api_base: "https://example.com".into(),
-                api_key: "sk-key".into(),
-                model: "model-1".into(),
-                supports_vision: None,
+                name: Some("test".into()),
+                provider: None,
+                api_base: None,
+                api_key: None,
+                models: None,
+                enabled: None,
             },
         );
         assert!(result.is_err());
@@ -723,56 +665,23 @@ mod tests {
     #[test]
     fn delete_channel_removes_provider() {
         let mut mock = MockConfigKernel::new();
-        mock.expect_load_providers().returning(|| {
-            Ok(vec![
-                KernelProvider {
-                    id: String::new(),
-                    name: "First".into(),
-                    provider: String::new(),
-                    api_base: "https://a.com".into(),
-                    api_key: "k1".into(),
-                    models: vec![KernelChannelModel {
-                        id: "m1".into(),
-                        name: "m1".into(),
-                        enabled: true,
-                    }],
-                    enabled: true,
-                    supports_vision: false,
-                    created_at: 0,
-                    updated_at: 0,
-                },
-                KernelProvider {
-                    id: String::new(),
-                    name: "Second".into(),
-                    provider: String::new(),
-                    api_base: "https://b.com".into(),
-                    api_key: "k2".into(),
-                    models: vec![KernelChannelModel {
-                        id: "m2".into(),
-                        name: "m2".into(),
-                        enabled: true,
-                    }],
-                    enabled: true,
-                    supports_vision: false,
-                    created_at: 0,
-                    updated_at: 0,
-                },
-            ])
-        });
-        mock.expect_save_providers()
-            .withf(|p: &[KernelProvider]| p.len() == 1 && p[0].name == "Second")
+        mock.expect_delete_channel()
+            .withf(|id: &str| id == "target-id")
             .returning(|_| Ok(()));
 
-        let result = delete_channel_impl(&mock, 0);
+        let result = delete_channel_impl(&mock, "target-id");
         assert!(result.is_ok());
     }
 
     #[test]
-    fn delete_channel_invalid_index_returns_error() {
+    fn delete_channel_not_found_returns_error() {
         let mut mock = MockConfigKernel::new();
-        mock.expect_load_providers().returning(|| Ok(vec![]));
+        mock.expect_delete_channel()
+            .returning(|_| {
+                Err(KernelError::Config("渠道 ID 不存在: ghost".into()))
+            });
 
-        let result = delete_channel_impl(&mock, 999);
+        let result = delete_channel_impl(&mock, "ghost");
         assert!(result.is_err());
     }
 

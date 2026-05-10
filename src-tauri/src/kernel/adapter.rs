@@ -159,43 +159,135 @@ fn to_jcli_messages(msgs: &[KernelChatMessage]) -> Vec<JcliChatMessage> {
 
 impl ConfigKernel for JcliAdapter {
     fn load_providers(&self) -> Result<Vec<KernelProvider>, KernelError> {
-        let config = load_agent_config();
-        Ok(config.providers.iter().map(from_jcli_provider).collect())
+        let config_val = read_agent_config_value()?;
+
+        let providers: Vec<KernelProvider> = match config_val {
+            Some(ref val) if is_v1_format(val) => {
+                serde_json::from_value(val["providers"].clone()).map_err(|e| {
+                    KernelError::Config(format!("反序列化 providers 失败: {e}"))
+                })?
+            }
+            Some(_) => {
+                // V0 format: use jcli to load, then migrate
+                let jcli_config = load_agent_config();
+                let mut providers: Vec<KernelProvider> =
+                    jcli_config.providers.iter().map(from_jcli_provider).collect();
+                for p in &mut providers {
+                    migrate_provider(p);
+                }
+                // Save migrated format
+                self.save_providers(&providers)?;
+                providers
+            }
+            None => vec![],
+        };
+
+        Ok(providers)
     }
 
     fn save_providers(&self, providers: &[KernelProvider]) -> Result<(), KernelError> {
-        let mut config = load_agent_config();
-        config.providers = providers.iter().map(to_jcli_provider).collect();
-        if save_agent_config(&config) {
-            Ok(())
-        } else {
-            Err(KernelError::Config("保存 provider 配置失败".into()))
+        // Read existing config to preserve non-provider fields (active_index, theme, etc.)
+        let mut config: serde_json::Value = match read_agent_config_value()? {
+            Some(val) => val,
+            None => {
+                // New file: start with jcli defaults
+                let jcli_config = load_agent_config();
+                serde_json::to_value(&jcli_config)
+                    .map_err(|e| KernelError::Config(format!("序列化默认配置失败: {e}")))?
+            }
+        };
+
+        // Serialize providers with our format
+        let providers_val = serde_json::to_value(providers)
+            .map_err(|e| KernelError::Config(format!("序列化 providers 失败: {e}")))?;
+        config["providers"] = providers_val;
+        config["version"] = serde_json::json!(1);
+
+        let path = agent_config_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
         }
+        let json = serde_json::to_string_pretty(&config)
+            .map_err(|e| KernelError::Config(format!("序列化配置失败: {e}")))?;
+        std::fs::write(&path, json)?;
+        Ok(())
     }
 
     fn create_channel(
         &self,
-        _input: KernelCreateChannelInput,
+        input: KernelCreateChannelInput,
     ) -> Result<KernelProvider, KernelError> {
-        Err(KernelError::Unsupported(
-            "create_channel: will be implemented in step 3".into(),
-        ))
+        let mut providers = self.load_providers()?;
+        let provider = KernelProvider {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: input.name,
+            provider: if input.provider.is_empty() {
+                infer_provider(&input.api_base)
+            } else {
+                input.provider
+            },
+            api_base: input.api_base,
+            api_key: input.api_key,
+            models: input.models,
+            enabled: input.enabled,
+            supports_vision: false,
+            created_at: current_timestamp(),
+            updated_at: current_timestamp(),
+        };
+        providers.push(provider.clone());
+        self.save_providers(&providers)?;
+        Ok(provider)
     }
 
     fn update_channel(
         &self,
-        _id: &str,
-        _input: KernelUpdateChannelInput,
+        id: &str,
+        input: KernelUpdateChannelInput,
     ) -> Result<KernelProvider, KernelError> {
-        Err(KernelError::Unsupported(
-            "update_channel: will be implemented in step 3".into(),
-        ))
+        let mut providers = self.load_providers()?;
+        let provider = providers
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or_else(|| KernelError::Config(format!("渠道 ID 不存在: {id}")))?;
+
+        // Apply partial updates (only non-None fields)
+        if let Some(name) = input.name {
+            provider.name = name;
+        }
+        if let Some(ref p) = input.provider {
+            provider.provider = p.clone();
+        }
+        if let Some(ref api_base) = input.api_base {
+            provider.api_base = api_base.clone();
+        }
+        if let Some(ref api_key) = input.api_key {
+            // If the incoming api_key is masked (contains "..."), preserve the old key
+            if !api_key.contains("...") {
+                provider.api_key = api_key.clone();
+            }
+        }
+        if let Some(ref models) = input.models {
+            provider.models = models.clone();
+        }
+        if let Some(enabled) = input.enabled {
+            provider.enabled = enabled;
+        }
+        provider.updated_at = current_timestamp();
+
+        let result = provider.clone();
+        self.save_providers(&providers)?;
+        Ok(result)
     }
 
-    fn delete_channel(&self, _id: &str) -> Result<(), KernelError> {
-        Err(KernelError::Unsupported(
-            "delete_channel: will be implemented in step 3".into(),
-        ))
+    fn delete_channel(&self, id: &str) -> Result<(), KernelError> {
+        let mut providers = self.load_providers()?;
+        let len_before = providers.len();
+        providers.retain(|p| p.id != id);
+        if providers.len() == len_before {
+            return Err(KernelError::Config(format!("渠道 ID 不存在: {id}")));
+        }
+        self.save_providers(&providers)?;
+        Ok(())
     }
 
     fn list_aliases(&self) -> Result<Vec<KernelAliasEntry>, KernelError> {
@@ -577,6 +669,7 @@ impl GovernanceKernel for JcliAdapter {
     fn list_hooks(&self) -> Result<Vec<KernelHookInfo>, KernelError> {
         let manager = HookManager::load();
         let entries = manager.list_hooks();
+        let config = load_agent_config();
         Ok(entries
             .into_iter()
             .map(|h| KernelHookInfo {
@@ -590,7 +683,8 @@ impl GovernanceKernel for JcliAdapter {
                     OnError::Skip => "skip".into(),
                     OnError::Stop => "stop".into(),
                 }),
-                unique_id: h.unique_id,
+                unique_id: h.unique_id.clone(),
+                enabled: !config.disabled_hooks.iter().any(|d| d == &h.unique_id),
             })
             .collect())
     }

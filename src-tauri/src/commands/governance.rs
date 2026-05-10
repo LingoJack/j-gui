@@ -41,6 +41,7 @@ pub struct HookInfo {
     pub timeout: Option<u64>,
     pub on_error: Option<String>, // "skip" | "stop"
     pub unique_id: String,
+    pub enabled: bool,
 }
 
 #[tauri::command]
@@ -79,6 +80,7 @@ fn list_hooks_impl(kernel: &dyn GovernanceKernel) -> Result<Vec<HookInfo>, Strin
             timeout: h.timeout,
             on_error: h.on_error,
             unique_id: h.unique_id,
+            enabled: h.enabled,
         })
         .collect())
 }
@@ -497,6 +499,240 @@ pub fn copy_skill_to_workspace(
     Ok(())
 }
 
+// ===== Governance Commands (#28) =====
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpWorkspaceConfig {
+    pub servers: Vec<McpServerConfig>,
+}
+
+#[tauri::command]
+pub fn toggle_hook(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    unique_id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    state
+        .governance()
+        .toggle_hook(&unique_id, enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn read_skill_content(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    workspace_slug: String,
+    skill_slug: String,
+) -> Result<String, String> {
+    state
+        .governance()
+        .read_skill_content(&workspace_slug, &skill_slug)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn write_skill_content(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    workspace_slug: String,
+    skill_slug: String,
+    content: String,
+) -> Result<(), String> {
+    state
+        .governance()
+        .write_skill_content(&workspace_slug, &skill_slug, &content)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn toggle_workspace_skill(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    workspace_slug: String,
+    skill_slug: String,
+    enabled: bool,
+) -> Result<(), String> {
+    state
+        .governance()
+        .toggle_workspace_skill(&workspace_slug, &skill_slug, enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_workspace_skill(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    workspace_slug: String,
+    skill_slug: String,
+) -> Result<(), String> {
+    state
+        .governance()
+        .delete_workspace_skill(&workspace_slug, &skill_slug)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_workspace_skills(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    workspace_slug: String,
+) -> Result<Vec<SkillInfo>, String> {
+    let skills = state
+        .governance()
+        .get_workspace_skills(&workspace_slug)
+        .map_err(|e| e.to_string())?;
+    Ok(skills
+        .into_iter()
+        .map(|s| SkillInfo {
+            name: s.name,
+            description: s.description,
+            source: s.source,
+            dir_path: s.dir_path,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn get_workspace_skills_dir(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    workspace_slug: String,
+) -> Result<String, String> {
+    state
+        .governance()
+        .get_workspace_skills_dir(&workspace_slug)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_other_workspace_skills(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    current_slug: String,
+) -> Result<Vec<SkillInfo>, String> {
+    let skills = state
+        .governance()
+        .get_other_workspace_skills(&current_slug)
+        .map_err(|e| e.to_string())?;
+    Ok(skills
+        .into_iter()
+        .map(|s| SkillInfo {
+            name: s.name,
+            description: s.description,
+            source: s.source,
+            dir_path: s.dir_path,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn import_skill_from_workspace(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    target_slug: String,
+    source_slug: String,
+    skill_slug: String,
+) -> Result<(), String> {
+    state
+        .governance()
+        .import_skill_from_workspace(&source_slug, &target_slug, &skill_slug)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_workspace_mcp_config(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    workspace_slug: String,
+) -> Result<McpWorkspaceConfig, String> {
+    let config = state
+        .governance()
+        .get_workspace_mcp_config(&workspace_slug)
+        .map_err(|e| e.to_string())?;
+    Ok(McpWorkspaceConfig {
+        servers: config
+            .servers
+            .into_iter()
+            .map(|s| McpServerConfig {
+                name: s.name,
+                transport: s.transport,
+                command: s.command,
+                args: s.args,
+                url: s.url,
+                env: s.env,
+                disabled: s.disabled,
+            })
+            .collect(),
+    })
+}
+
+#[tauri::command]
+pub fn save_workspace_mcp_config(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    workspace_slug: String,
+    config: McpWorkspaceConfig,
+) -> Result<(), String> {
+    let kernel_config = crate::kernel::types::KernelMcpWorkspaceConfig {
+        servers: config
+            .servers
+            .into_iter()
+            .map(|s| crate::kernel::types::KernelMcpServerConfig {
+                name: s.name,
+                transport: s.transport,
+                command: s.command,
+                args: s.args,
+                url: s.url,
+                env: s.env,
+                disabled: s.disabled,
+            })
+            .collect(),
+    };
+    state
+        .governance()
+        .save_workspace_mcp_config(&workspace_slug, &kernel_config)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn import_cc_sdk_hooks(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+) -> Result<Vec<HookInfo>, String> {
+    let hooks = state
+        .governance()
+        .import_cc_sdk_hooks()
+        .map_err(|e| e.to_string())?;
+    Ok(hooks
+        .into_iter()
+        .map(|h| HookInfo {
+            name: h.name,
+            event: h.event,
+            source: h.source,
+            hook_type: h.hook_type,
+            label: h.label,
+            timeout: h.timeout,
+            on_error: h.on_error,
+            unique_id: h.unique_id,
+            enabled: h.enabled,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn import_cc_sdk_mcp(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    workspace_slug: String,
+) -> Result<Vec<McpServerConfig>, String> {
+    let servers = state
+        .governance()
+        .import_cc_sdk_mcp(&workspace_slug)
+        .map_err(|e| e.to_string())?;
+    Ok(servers
+        .into_iter()
+        .map(|s| McpServerConfig {
+            name: s.name,
+            transport: s.transport,
+            command: s.command,
+            args: s.args,
+            url: s.url,
+            env: s.env,
+            disabled: s.disabled,
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -715,6 +951,7 @@ mod tests {
                 timeout: Some(30),
                 on_error: Some("skip".into()),
                 unique_id: "abc-123".into(),
+                enabled: true,
             }])
         });
 
@@ -765,6 +1002,7 @@ mod tests {
                 timeout: None,
                 on_error: Some("stop".into()),
                 unique_id: "xyz-789".into(),
+                enabled: true,
             }])
         });
 

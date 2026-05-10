@@ -87,6 +87,19 @@ pub fn run() {
             commands::governance::set_tool_enabled,
             commands::governance::scan_global_skills,
             commands::governance::copy_skill_to_workspace,
+            commands::governance::toggle_hook,
+            commands::governance::read_skill_content,
+            commands::governance::write_skill_content,
+            commands::governance::toggle_workspace_skill,
+            commands::governance::delete_workspace_skill,
+            commands::governance::get_workspace_skills,
+            commands::governance::get_workspace_skills_dir,
+            commands::governance::get_other_workspace_skills,
+            commands::governance::import_skill_from_workspace,
+            commands::governance::get_workspace_mcp_config,
+            commands::governance::save_workspace_mcp_config,
+            commands::governance::import_cc_sdk_hooks,
+            commands::governance::import_cc_sdk_mcp,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

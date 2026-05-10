@@ -120,7 +120,11 @@ pub struct KernelHookInfo {
     pub timeout: Option<u64>,
     pub on_error: Option<String>,
     pub unique_id: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
 }
+
+fn default_true() -> bool { true }
 
 /// MCP server config.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
