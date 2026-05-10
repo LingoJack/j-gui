@@ -4,7 +4,7 @@ last_reviewed: 2026-05-10
 
 last_reviewed: 2026-05-10
 
-# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5 | Phase E 0/1
+# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5 | Phase E 0/2
 # ⚠️ Phase A #1 后端通过测试但端到端不可用（前后端类型不兼容），由 #27 修复
 
 items:
@@ -188,7 +188,15 @@ items:
     minimal_loop: false
     notes:
 
-  # ===== Phase E: Agent 引擎升级 (P2) =====
+  # ===== Phase E: 内核解耦 & Agent 升级 (P2) =====
+  - slug: kernel-trait-abstraction
+    description: jcli 公开 API 抽象层——定义 JcliKernel 及各领域 trait（ChatKernel/ConfigKernel/GovernanceKernel），j-gui 仅依赖 trait 不依赖 jcli 内部实现。解决当前 22 个深层导入点、无 semver 缓冲的问题
+    depends_on: [channel-model-unify]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 依赖 #27 完成后 Channel 模型稳定。抽象后 jcli 内部重构不影响 j-gui 编译
+
   - slug: agent-engine-jagent
     description: 替换 CC SDK CLI 子进程为 j-agent crate——新增 JAgentBackend 实现 AgentBackend trait，支持流式 Agent Loop、工具审批/回传、中断处理、会话 resume。依赖 #27
     depends_on: [channel-model-unify]

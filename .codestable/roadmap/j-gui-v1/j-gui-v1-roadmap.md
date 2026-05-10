@@ -5,7 +5,7 @@ status: active
 created: 2026-05-10
 last_reviewed: 2026-05-10
 
-# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5 | Phase E 0/1
+# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5 | Phase E 0/2
 
 > **Phase A/B 完成口径**：基础链路已实现并通过测试，但存在前后端数据模型不兼容的端到端问题（详见 #27 说明）。
 tags: [tauri, desktop, j-cli, chat, agent]
@@ -111,6 +111,17 @@ tags: [tauri, desktop, j-cli, chat, agent]
 25. **build-packaging** — Tauri bundle (Windows/macOS/Linux)
 26. **tdd-coverage** — 测试覆盖达标 (前端 vitest + 后端 cargo test) + Rust 编码规约合规收口（90 个 pub item 缺 `///` 文档 + 6 处长路径引用 + 9 处魔法值提取 + 1 处 `.clone()` 优化 + clippy `#![deny(clippy::all)]` 门禁）
 
+### Phase E: 内核解耦 & Agent 升级 (P2)
+
+j-gui 当前与 jcli 重度耦合：22 个导入点跨越 10 个内部模块，无抽象层，path dependency 无 semver 缓冲。需建立 trait 抽象层使 j-gui 仅依赖接口不依赖实现，同时集成 j-agent crate。
+
+**30. kernel-trait-abstraction** — jcli 公开 API 抽象层
+
+- **现状**：j-gui 直接导入 jcli 内部模块（`j_cli::command::chat::storage`、`j_cli::command::chat::infra::hook::types` 等 22 处），jcli 改任意签名 j-gui 编译报错。
+- **目标**：jcli 暴露 `JcliKernel` trait（或各领域 trait：`ChatKernel` / `ConfigKernel` / `GovernanceKernel`），j-gui 仅依赖 trait，不依赖 impl。包含：Chat 流式调用、会话 CRUD、Provider 配置读写、Skills/Hooks 查询、Alias CRUD、System Prompt 读写、YamlConfig 访问。
+- **收益**：jcli 内部重构不影响 j-gui；j-gui 编译不再依赖 jcli 源码；可切换到 mock 实现做测试。
+- **依赖**：#27 channel-model-unify（Channel 模型稳定后再抽象）
+
 ### Phase E: Agent 引擎升级 (P2)
 
 jcli 仓库已发布 `j-agent` crate，当前 j-gui 的 Agent 模式通过 CC SDK CLI 子进程运行。集成 j-agent crate 可获得：原生 Rust 控制、无子进程开销、完整的 `AgentBackend` trait 实现、更细粒度的中断/工具/流式控制。
@@ -128,7 +139,7 @@ jcli 仓库已发布 `j-agent` crate，当前 j-gui 的 Agent 模式通过 CC SD
 - **Agent 后端**: CC SDK CLI 子进程 (当前) + j-agent crate (计划)
 - **IPC**: Tauri `invoke()` + `Channel<T>` (流式) + EventBus (事件分发)
 - **存储**：Chat/Agent 会话走 jcl i 路径 (`~/.jdata/`)；j-gui 自有配置（Channel、工作区 Skills/MCP）走 `%APPDATA%/j-gui/` (Windows) / `~/.jgui/` (Unix)
-- **jcli 解耦**：j-gui 不修改 jcli 代码。Channel 自建 `channels.json` 存储，首次从 jcli 单向导入，调用时动态映射 `Channel → ModelProvider`。详见 `.codestable/compound/2026-05-10-decision-jgui-jcli-decouple.md`
+- **jcli 解耦**：j-gui 不修改 jcli 源代码，但写入 jcli 数据目录（`~/.jdata/`）以保持 CLI/GUI 数据同步。GUI 独有配置走 `~/.jgui/`。详见 `.codestable/compound/2026-05-10-decision-jgui-jcli-decouple.md`
 - **状态**: Jotai atoms，前端不引入 React Router
 - **Skills/MCP/Hooks**: j-cli 源和 CC SDK 源各自独立路径，UI 区分展示，全局 Skills 只读导入
 - **Rust 编码规约**：强制遵守 `.codestable/compound/2026-05-08-decision-rust-coding-conventions.md`（CLAUDE.md 已内联关键规则）
