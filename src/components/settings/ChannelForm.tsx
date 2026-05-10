@@ -241,6 +241,10 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     setProvider(p)
     setBaseUrl(PROVIDER_DEFAULT_URLS[p])
     setTestResult(null)
+    // 新建模式下自动填充名称
+    if (!isEdit && !name.trim()) {
+      setName(PROVIDER_LABELS[p])
+    }
     // 预设模型：首次切换到对应 provider 且无模型时自动填充
     if (models.length === 0) {
       if (p === 'deepseek') {
@@ -343,19 +347,18 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
 
   /** 执行创建渠道 */
   const doCreate = React.useCallback(async (): Promise<boolean> => {
-    if (!name.trim() || !apiKey.trim()) return false
+    if (!name.trim()) { toast.warning('请输入配置名称'); return false }
+    if (!apiKey.trim()) { toast.warning('请输入 API Key'); return false }
 
     setSaving(true)
     try {
-      const input: ChannelCreateInput = {
+      await ipc.createChannel({
         name,
-        provider,
-        baseUrl,
+        apiBase: baseUrl,
         apiKey,
-        models,
-        enabled,
-      }
-      await ipc.createChannel(input)
+        model: models.find((m) => m.enabled)?.id ?? models[0]?.id ?? '',
+        supportsVision: provider === 'google',
+      })
       toast.success('渠道创建成功')
       return true
     } catch (error) {
@@ -365,7 +368,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     } finally {
       setSaving(false)
     }
-  }, [name, provider, baseUrl, apiKey, models, enabled])
+  }, [name, baseUrl, apiKey, models, provider])
 
   /** 创建渠道（仅新建模式） */
   const handleCreate = async (): Promise<void> => {
