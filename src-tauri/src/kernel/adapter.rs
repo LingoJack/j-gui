@@ -27,20 +27,25 @@ use j_cli::theme::ThemeName;
 
 // ===== JcliAdapter =====
 
+/// Adapter that implements all kernel traits by delegating to jcli calls.
 pub struct JcliAdapter;
 
 impl JcliAdapter {
+    /// Create a new adapter instance.
     pub fn new() -> Self {
         Self
     }
 
+    /// Return a reference to the [`ConfigKernel`] implementation.
     pub fn config(&self) -> &dyn ConfigKernel {
         self
     }
+    /// Return a reference to the [`ChatKernel`] implementation.
     #[allow(dead_code)]
     pub fn chat(&self) -> &dyn ChatKernel {
         self
     }
+    /// Return a reference to the [`GovernanceKernel`] implementation.
     pub fn governance(&self) -> &dyn GovernanceKernel {
         self
     }
@@ -101,7 +106,6 @@ fn migrate_provider(p: &mut KernelProvider) {
     }
 }
 
-#[allow(dead_code)]
 fn to_jcli_provider(p: &KernelProvider) -> ModelProvider {
     ModelProvider {
         name: p.name.clone(),
@@ -112,7 +116,6 @@ fn to_jcli_provider(p: &KernelProvider) -> ModelProvider {
     }
 }
 
-#[allow(dead_code)]
 fn from_jcli_provider(p: &ModelProvider) -> KernelProvider {
     KernelProvider {
         id: String::new(),
@@ -132,7 +135,6 @@ fn from_jcli_provider(p: &ModelProvider) -> KernelProvider {
     }
 }
 
-#[allow(dead_code)]
 fn to_jcli_messages(msgs: &[KernelChatMessage]) -> Vec<JcliChatMessage> {
     msgs.iter()
         .map(|m| JcliChatMessage {

@@ -30,11 +30,17 @@ pub trait ChatKernel: Send + Sync {
 
     // -- Session CRUD --
 
+    /// List all session summaries.
     fn list_sessions(&self) -> Result<Vec<KernelSessionSummary>, KernelError>;
+    /// Load session events by session ID.
     fn get_session(&self, session_id: &str) -> Result<Vec<KernelSessionEvent>, KernelError>;
+    /// Create a new session and return its ID.
     fn create_session(&self) -> Result<String, KernelError>;
+    /// Delete a session by ID.
     fn delete_session(&self, session_id: &str) -> Result<(), KernelError>;
+    /// Delete a user/assistant message pair by index.
     fn delete_message(&self, session_id: &str, pair_index: usize) -> Result<(), KernelError>;
+    /// Clear all messages from a session.
     fn clear_session(&self, session_id: &str) -> Result<(), KernelError>;
 
     /// Toggle the pinned state of a session. Returns the updated summary.
