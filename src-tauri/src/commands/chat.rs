@@ -97,7 +97,10 @@ mod tests {
 
         // Toggle off
         let info = engine.toggle_pin(&id).unwrap();
-        assert!(!info.pinned, "session should be unpinned after second toggle");
+        assert!(
+            !info.pinned,
+            "session should be unpinned after second toggle"
+        );
     }
 
     #[test]
@@ -112,7 +115,10 @@ mod tests {
 
         // Toggle off
         let info = engine.toggle_archive(&id).unwrap();
-        assert!(!info.archived, "session should be unarchived after second toggle");
+        assert!(
+            !info.archived,
+            "session should be unarchived after second toggle"
+        );
     }
 
     #[test]

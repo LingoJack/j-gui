@@ -448,7 +448,9 @@ impl ChatKernel for JcliAdapter {
                         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
                             (
                                 val.get("pinned").and_then(|v| v.as_bool()).unwrap_or(false),
-                                val.get("archived").and_then(|v| v.as_bool()).unwrap_or(false),
+                                val.get("archived")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false),
                             )
                         } else {
                             (false, false)
@@ -485,7 +487,13 @@ impl ChatKernel for JcliAdapter {
     }
 
     fn create_session(&self) -> Result<String, KernelError> {
-        Ok(uuid::Uuid::new_v4().to_string())
+        let id = uuid::Uuid::new_v4().to_string();
+        let paths = SessionPaths::new(&id);
+        if let Some(parent) = paths.transcript().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(paths.transcript(), "")?;
+        Ok(id)
     }
 
     fn delete_session(&self, session_id: &str) -> Result<(), KernelError> {
@@ -651,8 +659,18 @@ fn scan_workspace_skills_dir(skills_dir: &std::path::Path) -> Vec<KernelSkillInf
 
 /// Toggle a boolean field in session.json metadata.
 /// Reads the current value, flips it, writes back, and returns the updated summary.
-fn toggle_session_bool_field(session_id: &str, field: &str) -> Result<KernelSessionSummary, KernelError> {
-    let meta_path = SessionPaths::new(session_id).meta_file();
+fn toggle_session_bool_field(
+    session_id: &str,
+    field: &str,
+) -> Result<KernelSessionSummary, KernelError> {
+    let paths = SessionPaths::new(session_id);
+
+    // Guard: don't create phantom meta for non-existent sessions
+    if !paths.transcript().exists() {
+        return Err(KernelError::Chat("session not found".into()));
+    }
+
+    let meta_path = paths.meta_file();
 
     // Read existing meta or create default
     let mut meta: serde_json::Value = if meta_path.exists() {
@@ -696,16 +714,33 @@ fn toggle_session_bool_field(session_id: &str, field: &str) -> Result<KernelSess
     std::fs::write(&meta_path, json)?;
 
     // Build summary
-    let pinned = meta.get("pinned").and_then(|v| v.as_bool()).unwrap_or(false);
-    let archived = meta.get("archived").and_then(|v| v.as_bool()).unwrap_or(false);
-    let title = meta.get("title").and_then(|v| v.as_str()).map(|s| {
-        if s.is_empty() { None } else { Some(s.to_string()) }
-    }).unwrap_or(None);
+    let pinned = meta
+        .get("pinned")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let archived = meta
+        .get("archived")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let title = meta
+        .get("title")
+        .and_then(|v| v.as_str())
+        .map(|s| {
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_string())
+            }
+        })
+        .unwrap_or(None);
 
     Ok(KernelSessionSummary {
         id: session_id.to_string(),
         title,
-        message_count: meta.get("message_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+        message_count: meta
+            .get("message_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize,
         updated_at: now,
         pinned,
         archived,
@@ -1075,5 +1110,89 @@ impl GovernanceKernel for JcliAdapter {
     fn set_tool_enabled(&self, name: &str, enabled: bool) -> Result<(), KernelError> {
         crate::commands::governance::set_tool_enabled(name.to_string(), enabled)
             .map_err(KernelError::Governance)
+    }
+}
+
+// ===== Tests =====
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use j_cli::command::chat::storage::session::sessions_dir;
+    use std::fs;
+
+    /// toggle_session_bool_field returns error when transcript is missing
+    /// (should not create phantom meta file for non-existent session)
+    #[test]
+    fn test_toggle_session_bool_field_ghost_session_rejected() {
+        let session_id = "toggle-ghost-test-no-transcript";
+        let session_dir = sessions_dir().join(session_id);
+        let _ = fs::remove_dir_all(&session_dir);
+        fs::create_dir_all(&session_dir).unwrap();
+
+        // Create meta file but NO transcript — this is the ghost session scenario
+        let meta = serde_json::json!({
+            "id": session_id,
+            "title": "ghost",
+            "message_count": 0,
+            "created_at": 0,
+            "updated_at": 0,
+            "archived": false,
+        });
+        fs::write(
+            session_dir.join("session.json"),
+            serde_json::to_string_pretty(&meta).unwrap(),
+        )
+        .unwrap();
+
+        // Toggle should fail because transcript.jsonl doesn't exist
+        let result = toggle_session_bool_field(session_id, "archived");
+        assert!(
+            result.is_err(),
+            "should reject toggle when transcript is missing"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("session not found"),
+            "expected 'session not found', got: {}",
+            err
+        );
+
+        // Clean up
+        let _ = fs::remove_dir_all(&session_dir);
+    }
+
+    /// toggle_session_bool_field succeeds when transcript exists
+    #[test]
+    fn test_toggle_session_bool_field_with_transcript() {
+        let session_id = "toggle-transcript-test-valid";
+        let session_dir = sessions_dir().join(session_id);
+        let _ = fs::remove_dir_all(&session_dir);
+        fs::create_dir_all(&session_dir).unwrap();
+
+        // Create transcript file (empty content is fine — existence is what matters)
+        fs::write(session_dir.join("transcript.jsonl"), "").unwrap();
+
+        // Toggle should succeed and create meta with toggled field
+        let result = toggle_session_bool_field(session_id, "archived");
+        assert!(
+            result.is_ok(),
+            "toggle should succeed when transcript exists"
+        );
+
+        let summary = result.unwrap();
+        assert!(summary.archived, "archived should be toggled to true");
+
+        // Toggle again — should flip back
+        let result = toggle_session_bool_field(session_id, "archived");
+        assert!(result.is_ok());
+        let summary = result.unwrap();
+        assert!(
+            !summary.archived,
+            "archived should be toggled back to false"
+        );
+
+        // Clean up
+        let _ = fs::remove_dir_all(&session_dir);
     }
 }
