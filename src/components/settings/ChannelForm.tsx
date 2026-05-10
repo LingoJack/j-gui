@@ -330,7 +330,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     try {
       const result = await ipc.testChannelDirect({
         provider,
-        baseUrl,
+        apiBase: baseUrl,
         apiKey,
       })
       setTestResult(result)

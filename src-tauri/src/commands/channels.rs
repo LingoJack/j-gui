@@ -333,31 +333,47 @@ pub async fn test_channel_direct(input: TestChannelInput) -> Result<TestChannelR
     }
 }
 
+fn is_anthropic_provider(provider: Option<&str>) -> bool {
+    provider.map_or(false, |p| {
+        let p = p.to_lowercase();
+        p == "anthropic" || p == "deepseek"
+    })
+}
+
 async fn try_chat_completion(
     client: &reqwest::Client,
     input: &TestChannelInput,
 ) -> Result<TestChannelResult, String> {
-    let chat_url = format!("{}/chat/completions", input.api_base.trim_end_matches('/'));
+    let is_anthropic = is_anthropic_provider(input.provider.as_deref());
+    let path = if is_anthropic { "messages" } else { "chat/completions" };
+    let chat_url = format!("{}/{}", input.api_base.trim_end_matches('/'), path);
 
-    let model = input.model.as_deref().unwrap_or("gpt-3.5-turbo");
+    let model = input.model.as_deref().unwrap_or(
+        if is_anthropic { "claude-3-5-sonnet-20241022" } else { "gpt-3.5-turbo" }
+    );
     let body = serde_json::json!({
         "model": model,
         "messages": [{"role": "user", "content": "hi"}],
         "max_tokens": 5,
     });
 
-    let resp = client
+    let mut req = client
         .post(&chat_url)
-        .header("Authorization", format!("Bearer {}", input.api_key))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await;
+        .header("Content-Type", "application/json");
+
+    // Anthropic native API uses x-api-key; DeepSeek Anthropic-compatible uses Bearer
+    if input.provider.as_deref() == Some("anthropic") {
+        req = req.header("x-api-key", &input.api_key);
+    } else {
+        req = req.header("Authorization", format!("Bearer {}", input.api_key));
+    }
+
+    let resp = req.json(&body).send().await;
 
     match resp {
         Ok(r) if r.status().is_success() => Ok(TestChannelResult {
             success: true,
-            message: "API 连接测试通过 (chat/completions)".into(),
+            message: format!("API 连接测试通过 ({})", path),
             models: None,
         }),
         Ok(r) => {
@@ -382,7 +398,7 @@ async fn try_chat_completion(
         }
         Err(e) => Ok(TestChannelResult {
             success: false,
-            message: format!("无法连接: {e}"),
+                message: format!("无法连接: {e}"),
             models: None,
         }),
     }
