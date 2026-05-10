@@ -58,9 +58,20 @@ fn validate_session_id(id: &str) -> Result<(), String> {
 
 fn data_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
-    { std::env::var("USERPROFILE").ok().map(PathBuf::from).unwrap_or_default().join(".jdata") }
+    {
+        std::env::var("USERPROFILE")
+            .ok()
+            .map(PathBuf::from)
+            .unwrap_or_default()
+            .join(".jdata")
+    }
     #[cfg(not(target_os = "windows"))]
-    { std::env::var("HOME").ok().map(|d| PathBuf::from(d).join(".jdata")).unwrap_or_default() }
+    {
+        std::env::var("HOME")
+            .ok()
+            .map(|d| PathBuf::from(d).join(".jdata"))
+            .unwrap_or_default()
+    }
 }
 
 pub fn agent_sessions_dir() -> PathBuf {

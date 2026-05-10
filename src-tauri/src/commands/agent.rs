@@ -55,7 +55,7 @@ pub fn start_agent(
         on_event,
         &mode,
         &sid,
-        &provider.model,
+        provider.models.first().map(|m| m.id.as_str()).unwrap_or(""),
         &provider.api_base,
         &provider.api_key,
     )?;
@@ -266,7 +266,7 @@ pub async fn generate_agent_title(
         let client = reqwest::Client::new();
         let prompt = format!("Generate a short title (max 10 words) for this conversation. Return ONLY the title, no quotes, no punctuation:\n\n{}", conversation_text);
         let body = serde_json::json!({
-            "model": provider.model,
+            "model": provider.models.first().map(|m| &m.id),
             "messages": [
                 {"role": "system", "content": "You are a title generator. Return ONLY the title."},
                 {"role": "user", "content": prompt}

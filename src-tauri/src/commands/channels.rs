@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::kernel::types::{
-    infer_provider, KernelChannelModel, KernelCreateChannelInput, KernelUpdateChannelInput,
-    KernelProvider,
+    infer_provider, KernelChannelModel, KernelCreateChannelInput, KernelProvider,
+    KernelUpdateChannelInput,
 };
 use crate::kernel::{ConfigKernel, JcliAdapter};
 
@@ -17,7 +17,7 @@ pub struct ChannelInfo {
     pub id: String,
     pub name: String,
     pub provider: String,
-    pub api_base: String,
+    pub base_url: String,
     pub models: Vec<String>,
 }
 
@@ -109,7 +109,7 @@ fn provider_to_channel_info(p: &KernelProvider) -> ChannelInfo {
         } else {
             p.provider.clone()
         },
-        api_base: p.api_base.clone(),
+        base_url: p.api_base.clone(),
         models: p.models.iter().map(|m| m.id.clone()).collect(),
     }
 }
@@ -143,10 +143,7 @@ pub fn update_channel(
 }
 
 #[tauri::command]
-pub fn delete_channel(
-    state: tauri::State<'_, Arc<JcliAdapter>>,
-    id: String,
-) -> Result<(), String> {
+pub fn delete_channel(state: tauri::State<'_, Arc<JcliAdapter>>, id: String) -> Result<(), String> {
     delete_channel_impl(state.config(), &id)
 }
 
@@ -244,7 +241,7 @@ pub async fn test_channel_direct(input: TestChannelInput) -> Result<TestChannelR
 
 fn list_channels_impl(config: &dyn ConfigKernel) -> Result<Vec<ChannelInfo>, String> {
     let providers = config.load_providers().map_err(|e| e.to_string())?;
-    Ok(providers.iter().map(|p| provider_to_channel_info(p)).collect())
+    Ok(providers.iter().map(provider_to_channel_info).collect())
 }
 
 fn create_channel_impl(
@@ -424,7 +421,9 @@ fn parse_models(body: &str) -> Vec<ModelOption> {
 mod tests {
     use super::*;
     use crate::kernel::config::MockConfigKernel;
-    use crate::kernel::types::{KernelChannelModel, KernelCreateChannelInput, KernelProvider, KernelUpdateChannelInput};
+    use crate::kernel::types::{
+        KernelChannelModel, KernelCreateChannelInput, KernelProvider, KernelUpdateChannelInput,
+    };
     use crate::kernel::KernelError;
 
     // --- mask_api_key ---
@@ -472,7 +471,7 @@ mod tests {
         assert_eq!(info.name, "GPT-4o");
         assert_eq!(info.provider, "openai");
         // api_base is NOT masked
-        assert_eq!(info.api_base, "https://api.openai.com/v1");
+        assert_eq!(info.base_url, "https://api.openai.com/v1");
         assert_eq!(info.models, vec!["gpt-4o"]);
     }
 
@@ -517,7 +516,7 @@ mod tests {
         assert_eq!(channels[0].id, "ds-uuid");
         assert_eq!(channels[0].name, "My Provider");
         assert_eq!(channels[0].provider, "deepseek");
-        assert_eq!(channels[0].api_base, "https://api.deepseek.com");
+        assert_eq!(channels[0].base_url, "https://api.deepseek.com");
         assert_eq!(channels[0].models, vec!["deepseek-chat"]);
     }
 
@@ -677,9 +676,7 @@ mod tests {
     fn delete_channel_not_found_returns_error() {
         let mut mock = MockConfigKernel::new();
         mock.expect_delete_channel()
-            .returning(|_| {
-                Err(KernelError::Config("渠道 ID 不存在: ghost".into()))
-            });
+            .returning(|_| Err(KernelError::Config("渠道 ID 不存在: ghost".into())));
 
         let result = delete_channel_impl(&mock, "ghost");
         assert!(result.is_err());

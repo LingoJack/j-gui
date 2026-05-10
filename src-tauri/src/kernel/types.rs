@@ -124,7 +124,9 @@ pub struct KernelHookInfo {
     pub enabled: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 /// MCP server config.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

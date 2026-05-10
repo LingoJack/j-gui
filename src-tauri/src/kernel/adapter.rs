@@ -162,16 +162,16 @@ impl ConfigKernel for JcliAdapter {
         let config_val = read_agent_config_value()?;
 
         let providers: Vec<KernelProvider> = match config_val {
-            Some(ref val) if is_v1_format(val) => {
-                serde_json::from_value(val["providers"].clone()).map_err(|e| {
-                    KernelError::Config(format!("反序列化 providers 失败: {e}"))
-                })?
-            }
+            Some(ref val) if is_v1_format(val) => serde_json::from_value(val["providers"].clone())
+                .map_err(|e| KernelError::Config(format!("反序列化 providers 失败: {e}")))?,
             Some(_) => {
                 // V0 format: use jcli to load, then migrate
                 let jcli_config = load_agent_config();
-                let mut providers: Vec<KernelProvider> =
-                    jcli_config.providers.iter().map(from_jcli_provider).collect();
+                let mut providers: Vec<KernelProvider> = jcli_config
+                    .providers
+                    .iter()
+                    .map(from_jcli_provider)
+                    .collect();
                 for p in &mut providers {
                     migrate_provider(p);
                 }
@@ -542,10 +542,7 @@ fn home_dir() -> PathBuf {
 }
 
 fn workspace_dir(slug: &str) -> PathBuf {
-    home_dir()
-        .join(".jgui")
-        .join("agent-workspaces")
-        .join(slug)
+    home_dir().join(".jgui").join("agent-workspaces").join(slug)
 }
 
 fn workspace_skills_dir(slug: &str) -> PathBuf {
@@ -703,7 +700,11 @@ impl GovernanceKernel for JcliAdapter {
         }
     }
 
-    fn read_skill_content(&self, workspace_slug: &str, skill_slug: &str) -> Result<String, KernelError> {
+    fn read_skill_content(
+        &self,
+        workspace_slug: &str,
+        skill_slug: &str,
+    ) -> Result<String, KernelError> {
         let path = workspace_skills_dir(workspace_slug)
             .join(skill_slug)
             .join("SKILL.md");
@@ -750,7 +751,11 @@ impl GovernanceKernel for JcliAdapter {
         }
     }
 
-    fn delete_workspace_skill(&self, workspace_slug: &str, skill_slug: &str) -> Result<(), KernelError> {
+    fn delete_workspace_skill(
+        &self,
+        workspace_slug: &str,
+        skill_slug: &str,
+    ) -> Result<(), KernelError> {
         let path = workspace_skills_dir(workspace_slug).join(skill_slug);
         if path.exists() {
             std::fs::remove_dir_all(&path)?;
@@ -758,7 +763,10 @@ impl GovernanceKernel for JcliAdapter {
         Ok(())
     }
 
-    fn get_workspace_skills(&self, workspace_slug: &str) -> Result<Vec<KernelSkillInfo>, KernelError> {
+    fn get_workspace_skills(
+        &self,
+        workspace_slug: &str,
+    ) -> Result<Vec<KernelSkillInfo>, KernelError> {
         let skills_dir = workspace_skills_dir(workspace_slug);
         Ok(scan_workspace_skills_dir(&skills_dir))
     }
@@ -769,7 +777,10 @@ impl GovernanceKernel for JcliAdapter {
         Ok(dir.to_string_lossy().to_string())
     }
 
-    fn get_other_workspace_skills(&self, workspace_slug: &str) -> Result<Vec<KernelSkillInfo>, KernelError> {
+    fn get_other_workspace_skills(
+        &self,
+        workspace_slug: &str,
+    ) -> Result<Vec<KernelSkillInfo>, KernelError> {
         let base = home_dir().join(".jgui").join("agent-workspaces");
         if !base.is_dir() {
             return Ok(Vec::new());
@@ -833,10 +844,8 @@ impl GovernanceKernel for JcliAdapter {
             });
         }
         let content = std::fs::read_to_string(&path)?;
-        let servers: Vec<KernelMcpServerConfig> =
-            serde_json::from_str(&content).map_err(|e| {
-                KernelError::Governance(format!("解析 MCP 配置失败: {}", e))
-            })?;
+        let servers: Vec<KernelMcpServerConfig> = serde_json::from_str(&content)
+            .map_err(|e| KernelError::Governance(format!("解析 MCP 配置失败: {}", e)))?;
         Ok(KernelMcpWorkspaceConfig { servers })
     }
 
@@ -849,9 +858,8 @@ impl GovernanceKernel for JcliAdapter {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let content = serde_json::to_string_pretty(&config.servers).map_err(|e| {
-            KernelError::Governance(format!("序列化 MCP 配置失败: {}", e))
-        })?;
+        let content = serde_json::to_string_pretty(&config.servers)
+            .map_err(|e| KernelError::Governance(format!("序列化 MCP 配置失败: {}", e)))?;
         Ok(std::fs::write(&path, content)?)
     }
 
@@ -890,10 +898,8 @@ impl GovernanceKernel for JcliAdapter {
             return Ok(Vec::new());
         }
         let content = std::fs::read_to_string(&path)?;
-        let servers: Vec<KernelMcpServerConfig> =
-            serde_json::from_str(&content).map_err(|e| {
-                KernelError::Governance(format!("解析 SDK MCP 配置失败: {}", e))
-            })?;
+        let servers: Vec<KernelMcpServerConfig> = serde_json::from_str(&content)
+            .map_err(|e| KernelError::Governance(format!("解析 SDK MCP 配置失败: {}", e)))?;
         Ok(servers)
     }
 

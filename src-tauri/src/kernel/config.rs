@@ -4,7 +4,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use super::error::KernelError;
-use super::types::{KernelAliasEntry, KernelProvider};
+use super::types::{
+    KernelAliasEntry, KernelCreateChannelInput, KernelProvider, KernelUpdateChannelInput,
+};
 
 /// Config + Alias + System Prompt + YamlConfig + System kernel trait.
 #[cfg_attr(test, mockall::automock)]
@@ -13,6 +15,17 @@ pub trait ConfigKernel: Send + Sync {
 
     fn load_providers(&self) -> Result<Vec<KernelProvider>, KernelError>;
     fn save_providers(&self, providers: &[KernelProvider]) -> Result<(), KernelError>;
+
+    fn create_channel(
+        &self,
+        input: KernelCreateChannelInput,
+    ) -> Result<KernelProvider, KernelError>;
+    fn update_channel(
+        &self,
+        id: &str,
+        input: KernelUpdateChannelInput,
+    ) -> Result<KernelProvider, KernelError>;
+    fn delete_channel(&self, id: &str) -> Result<(), KernelError>;
 
     // -- Alias --
 

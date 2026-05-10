@@ -2,7 +2,8 @@
 
 use super::error::KernelError;
 use super::types::{
-    KernelHookInfo, KernelMcpServerConfig, KernelMcpWorkspaceConfig, KernelSkillInfo, KernelToolInfo,
+    KernelHookInfo, KernelMcpServerConfig, KernelMcpWorkspaceConfig, KernelSkillInfo,
+    KernelToolInfo,
 };
 
 /// Skills + Hooks + MCP + Chat Tools governance kernel trait.
@@ -36,7 +37,11 @@ pub trait GovernanceKernel: Send + Sync {
 
     // === Skills workspace management ===
 
-    fn read_skill_content(&self, workspace_slug: &str, skill_slug: &str) -> Result<String, KernelError>;
+    fn read_skill_content(
+        &self,
+        workspace_slug: &str,
+        skill_slug: &str,
+    ) -> Result<String, KernelError>;
     fn write_skill_content(
         &self,
         workspace_slug: &str,
@@ -49,10 +54,20 @@ pub trait GovernanceKernel: Send + Sync {
         skill_slug: &str,
         enabled: bool,
     ) -> Result<(), KernelError>;
-    fn delete_workspace_skill(&self, workspace_slug: &str, skill_slug: &str) -> Result<(), KernelError>;
-    fn get_workspace_skills(&self, workspace_slug: &str) -> Result<Vec<KernelSkillInfo>, KernelError>;
+    fn delete_workspace_skill(
+        &self,
+        workspace_slug: &str,
+        skill_slug: &str,
+    ) -> Result<(), KernelError>;
+    fn get_workspace_skills(
+        &self,
+        workspace_slug: &str,
+    ) -> Result<Vec<KernelSkillInfo>, KernelError>;
     fn get_workspace_skills_dir(&self, workspace_slug: &str) -> Result<String, KernelError>;
-    fn get_other_workspace_skills(&self, workspace_slug: &str) -> Result<Vec<KernelSkillInfo>, KernelError>;
+    fn get_other_workspace_skills(
+        &self,
+        workspace_slug: &str,
+    ) -> Result<Vec<KernelSkillInfo>, KernelError>;
     fn import_skill_from_workspace(
         &self,
         from_slug: &str,
