@@ -23,26 +23,43 @@ tags: [tauri, desktop, j-cli, chat, agent]
 
 ## 后端能力现状
 
-51 个已注册 Tauri 命令，按模块分布:
+**65 个已注册 Tauri 命令**，按模块分布:
 
-| 模块 | 命令数 | 状态 |
-|---|---|---|
-| Agent (commands/agent.rs) | 12 | CC SDK CLI + 标题/权限 |
-| Chat (commands/chat.rs) | 8 | 工作 (j-cli) + stop_generation |
-| Channels (commands/channels.rs) | 6 | 工作 (CRUD + 测试 + 模型) |
-| Config (commands/config.rs) | 7 | 工作 (j-cli) |
-| Settings (commands/settings.rs) | 8 | 工作 (GUI配置 + 工作区 + 环境检测) |
-| Files (commands/files.rs) | 4 | 工作 (对话框 + 附件) |
-| Governance (commands/governance.rs) | 8 | Skills/Hooks/MCP (j-cli 源 + 全局扫描 + 复制导入) |
-| System (commands/system.rs) | 2 | 工作 |
-| Alias (commands/alias.rs) | 3 | 工作 (j-cli) |
+| 模块 | 命令数 | 注入方式 | 状态 |
+|---|---|---|---|
+| Agent (commands/agent.rs) | 12 | `Arc<JcliAdapter>` → ConfigKernel | CC SDK CLI + 标题/权限 |
+| Chat (commands/chat.rs) | 8 | `Arc<JcliAdapter>` → ChatEngine(ChatKernel+ConfigKernel) | 流式 + 会话 CRUD |
+| Channels (commands/channels.rs) | 6 | `Arc<JcliAdapter>` → ConfigKernel | CRUD + 测试 + 模型获取 |
+| Config (commands/config.rs) | 7 | `Arc<JcliAdapter>` → ConfigKernel | Provider + YamlConfig + System Prompt |
+| Settings (commands/settings.rs) | 15 | `Arc<JcliAdapter>` → ConfigKernel | GUI 配置 + 工作区 + 环境检测 + System Prompt 管理 |
+| Files (commands/files.rs) | 4 | 无 jcli 依赖 | 文件对话框 + 附件 |
+| Governance (commands/governance.rs) | 8 | 部分 Arc<JcliAdapter> → GovernanceKernel | Skills/Hooks/MCP/Chat Tools |
+| System (commands/system.rs) | 2 | `Arc<JcliAdapter>` → ConfigKernel | 版本号 + 主题 |
+| Alias (commands/alias.rs) | 3 | `Arc<JcliAdapter>` → ConfigKernel | 别名 CRUD |
+
+### Kernel Trait 抽象层（#30 已完成 ✅）
+
+```
+src-tauri/src/kernel/
+├── chat.rs         ChatKernel — 流式 LLM + 会话 CRUD
+├── config.rs       ConfigKernel — Provider/Alias/System Prompt/YamlConfig
+├── governance.rs   GovernanceKernel — Skills/Hooks/MCP/Chat Tools
+├── types.rs        Kernel* DTO（不依赖 jcli 类型）
+├── error.rs        KernelError 统一错误类型
+├── adapter.rs      JcliAdapter — 唯一 j_cli:: 导入点
+└── mod.rs
+```
+
+- **jcli 导入收敛**：25 处 → 2 处（仅 governance adapter 依赖函数）
+- **测试隔离**：命令可通过 `MockConfigKernel` / `MockGovernanceKernel` 独立测试
+- **约束**：`j_cli::` 导入仅允许在 `kernel/adapter.rs`（CLAUDE.md 已记录）
 
 关键缺口:
-- API Key 加密存储（#27 修复）
-- 前端/后端 Channel 数据模型统一（#27 修复）
-- Workspace Skills/MCP/Hooks 持久化命令未注册（#28 修复）
-- Hooks UI 仅只读，需升级为可启停管理（#28 修复）
-- `j-agent` crate 集成（jcli 仓库已发布，见 #22 agent-engine-jagent）
+- 前端/后端 Channel 数据模型统一（#27，P0 阻塞）
+- Workspace Skills/MCP/Hooks 持久化命令未注册（#28）
+- Hooks UI 仅只读，需升级为可启停管理（#28）
+- `j-agent` crate 集成（#29，jcli 仓库已发布 crate）
+- 环境检测结果不持久化（#21 error-toast 可顺带处理）
 
 ## 双源架构（Skills / MCP / Hooks）
 
@@ -118,12 +135,13 @@ tags: [tauri, desktop, j-cli, chat, agent]
 
 j-gui 当前与 jcli 重度耦合：22 个导入点跨越 10 个内部模块。必须在功能继续堆积前建立 trait 抽象层——每多一个 feature，解耦难度成倍增加。
 
-**30. kernel-trait-abstraction** — jcli 公开 API 抽象层 ⭐ 优先于 #27
+**30. ~~kernel-trait-abstraction~~** ✅ — jcli 公开 API 抽象层（2026-05-10 完成）
 
-- **现状**：j-gui 直接导入 jcli 内部模块（22 处），无抽象层，无 semver 缓冲。
-- **目标**：定义 trait 族 → 写适配器（包装现有 jcli 调用）→ j-gui 剩余模块迁移到 trait。ChatKernel / ConfigKernel / GovernanceKernel / SessionKernel，覆盖：Chat 流式调用、会话 CRUD、Provider 配置读写、Skills/Hooks/MCP 查询与启停、Alias CRUD、System Prompt 读写、YamlConfig 访问。
-- **收益**：后续 #27/#28 及其他 feature 全部基于 trait 实现，不再引入新的 jcli 内部导入；可 mock 测试。
-- **不依赖** #27——先抽象，再在上面建 Channel 模型。
+- 3 个 trait（ChatKernel / ConfigKernel / GovernanceKernel）+ JcliAdapter
+- jcli 导入 25→2（仅 governance adapter 依赖函数）
+- 10 个命令文件迁移为 _impl 模式（MockConfigKernel 可测试）
+- 115 Rust + 54 前端 tests，cargo check/clippy/fmt 零新告警
+- 验收报告：`.codestable/features/2026-05-10-kernel-trait-abstraction/kernel-trait-abstraction-acceptance.md`
 
 ### Phase E: Agent 引擎升级 (P2)
 
@@ -158,11 +176,13 @@ jcli 仓库已发布 `j-agent` crate，当前 j-gui 的 Agent 模式通过 CC SD
 
 ## 架构决策
 
-- **Chat 后端**: j-cli 直接调用 (`call_llm_stream_async`)
-- **Agent 后端**: CC SDK CLI 子进程 (当前) + j-agent crate (计划)
+- **Chat 后端**: j-cli 直接调用 (`call_llm_stream_async`)，通过 `ChatKernel` trait 抽象
+- **Agent 后端**: CC SDK CLI 子进程 (当前) + j-agent crate (计划 #29)
+- **Kernel 抽象层** (#30 已完成): `ChatKernel` / `ConfigKernel` / `GovernanceKernel` 三个 trait，`JcliAdapter` 是唯一 jcli 导入点。命令通过 Tauri State `Arc<JcliAdapter>` 注入
 - **IPC**: Tauri `invoke()` + `Channel<T>` (流式) + EventBus (事件分发)
-- **存储**：Chat/Agent 会话走 jcl i 路径 (`~/.jdata/`)；j-gui 自有配置（Channel、工作区 Skills/MCP）走 `%APPDATA%/j-gui/` (Windows) / `~/.jgui/` (Unix)
-- **jcli 解耦**：j-gui 不修改 jcli 源代码，但写入 jcli 数据目录（`~/.jdata/`）以保持 CLI/GUI 数据同步。GUI 独有配置走 `~/.jgui/`。详见 `.codestable/compound/2026-05-10-decision-jgui-jcli-decouple.md`
+- **存储**：Chat/Agent 会话走 jcli 路径 (`~/.jdata/`)；j-gui 自有配置（Channel、工作区 Skills/MCP）走 `%APPDATA%/j-gui/` (Windows) / `~/.jgui/` (Unix)
+- **jcli 解耦**：j-gui 不修改 jcli 源代码，但写入 jcli 数据目录（`~/.jdata/`）以保持 CLI/GUI 数据同步。详见 `.codestable/compound/2026-05-10-decision-jgui-jcli-decouple.md`
+- **测试模式**: 命令层拆分 _impl 函数（接收 `&dyn Trait`），可通过 `MockConfigKernel` / `MockGovernanceKernel` 独立测试
 - **状态**: Jotai atoms，前端不引入 React Router
 - **Skills/MCP/Hooks**: j-cli 源和 CC SDK 源各自独立路径，UI 区分展示，全局 Skills 只读导入
 - **Rust 编码规约**：强制遵守 `.codestable/compound/2026-05-08-decision-rust-coding-conventions.md`（CLAUDE.md 已内联关键规则）
@@ -179,9 +199,9 @@ jcli 仓库已发布 `j-agent` crate，当前 j-gui 的 Agent 模式通过 CC SD
 
 ## 变更日志
 
-- 2026-05-10 (Phase B+ 审计补丁): 基于审计和实际使用发现的问题新增 Phase B+（2 条）—— #27 `channel-model-unify`（前后端 Channel 数据模型不兼容） + #28 `governance-bidirectional-sync`（Skills/MCP/Hooks 持久化命令补全 + 双向同步）。Phase A #1 标 ⚠️（端到端不可用），Phase B #12 标 ⚠️（待升级为可管理），Phase C #18 合并入 #28。Governance 命令数 6→8。
-- 2026-05-10 (Phase B 完成): Phase B 8 项全部 TDD 实现。后端 57/57 + 前端 54/54 测试通过。
-- 2026-05-10 (更新): Phase A 全部完成 (9/9)；命令数 38→51；新增双源架构约束
+- 2026-05-10 (#30 完成): kernel trait 抽象层实现——3 trait + JcliAdapter，jcli 导入 25→2，命令层 _impl 测试模式。命令数 51→65，架构决策节更新。
+- 2026-05-10 (Phase B+ 审计补丁): 新增 #27 channel-model-unify + #28 governance-bidirectional-sync
+- 2026-05-10 (Phase B 完成): Phase B 8 项全部 TDD 实现
 
 ## 致谢
 
