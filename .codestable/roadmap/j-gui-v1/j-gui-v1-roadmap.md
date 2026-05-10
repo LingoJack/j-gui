@@ -5,9 +5,7 @@ status: active
 created: 2026-05-10
 last_reviewed: 2026-05-10
 
-# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 2/2 | Phase C 3/3 | Phase D 5/5 | Phase E 1/2 | Phase F 0/1
-
-> **Phase E #29 备注**：jcli 的 agent 能力嵌入在 `agent_loop.rs` 模块中（非独立 crate）。当前 AgentEngine 通过 Claude CLI 子进程运行。直接集成 agent_loop 是深度架构改动，需单独 design+impl session。
+# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 2/2 | Phase C 3/3 | Phase D 5/5 | Phase E 2/2 | Phase F 0/1
 
 > **Phase A/B 完成口径**：基础链路已实现并通过测试，但存在前后端数据模型不兼容的端到端问题（详见 #27 说明）。
 tags: [tauri, desktop, j-cli, chat, agent]
