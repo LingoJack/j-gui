@@ -413,10 +413,91 @@ impl GovernanceKernel for JcliAdapter {
             .collect())
     }
 
-    fn toggle_hook(&self, _unique_id: &str, _enabled: bool) -> Result<(), KernelError> {
-        Err(KernelError::Unsupported(
-            "toggle_hook: will be added in #28".into(),
-        ))
+    fn toggle_hook(&self, unique_id: &str, enabled: bool) -> Result<(), KernelError> {
+        let mut config = load_agent_config();
+        if enabled {
+            config.disabled_hooks.retain(|d| d != unique_id);
+        } else if !config.disabled_hooks.iter().any(|d| d == unique_id) {
+            config.disabled_hooks.push(unique_id.to_string());
+        }
+        if save_agent_config(&config) {
+            Ok(())
+        } else {
+            Err(KernelError::Config("保存 agent_config 失败".into()))
+        }
+    }
+
+    fn read_skill_content(&self, _workspace_slug: &str, _skill_slug: &str) -> Result<String, KernelError> {
+        Err(KernelError::Unsupported("read_skill_content: will be implemented in step 2".into()))
+    }
+
+    fn write_skill_content(
+        &self,
+        _workspace_slug: &str,
+        _skill_slug: &str,
+        _content: &str,
+    ) -> Result<(), KernelError> {
+        Err(KernelError::Unsupported("write_skill_content: will be implemented in step 2".into()))
+    }
+
+    fn toggle_workspace_skill(
+        &self,
+        _workspace_slug: &str,
+        _skill_slug: &str,
+        _enabled: bool,
+    ) -> Result<(), KernelError> {
+        Err(KernelError::Unsupported("toggle_workspace_skill: will be implemented in step 2".into()))
+    }
+
+    fn delete_workspace_skill(&self, _workspace_slug: &str, _skill_slug: &str) -> Result<(), KernelError> {
+        Err(KernelError::Unsupported("delete_workspace_skill: will be implemented in step 2".into()))
+    }
+
+    fn get_workspace_skills(&self, _workspace_slug: &str) -> Result<Vec<KernelSkillInfo>, KernelError> {
+        Err(KernelError::Unsupported("get_workspace_skills: will be implemented in step 2".into()))
+    }
+
+    fn get_workspace_skills_dir(&self, _workspace_slug: &str) -> Result<String, KernelError> {
+        Err(KernelError::Unsupported("get_workspace_skills_dir: will be implemented in step 2".into()))
+    }
+
+    fn get_other_workspace_skills(&self, _workspace_slug: &str) -> Result<Vec<KernelSkillInfo>, KernelError> {
+        Err(KernelError::Unsupported("get_other_workspace_skills: will be implemented in step 2".into()))
+    }
+
+    fn import_skill_from_workspace(
+        &self,
+        _from_slug: &str,
+        _to_slug: &str,
+        _skill_slug: &str,
+    ) -> Result<(), KernelError> {
+        Err(KernelError::Unsupported("import_skill_from_workspace: will be implemented in step 2".into()))
+    }
+
+    fn get_workspace_mcp_config(
+        &self,
+        _workspace_slug: &str,
+    ) -> Result<KernelMcpWorkspaceConfig, KernelError> {
+        Err(KernelError::Unsupported("get_workspace_mcp_config: will be implemented in step 2".into()))
+    }
+
+    fn save_workspace_mcp_config(
+        &self,
+        _workspace_slug: &str,
+        _config: &KernelMcpWorkspaceConfig,
+    ) -> Result<(), KernelError> {
+        Err(KernelError::Unsupported("save_workspace_mcp_config: will be implemented in step 2".into()))
+    }
+
+    fn import_cc_sdk_hooks(&self) -> Result<Vec<KernelHookInfo>, KernelError> {
+        Err(KernelError::Unsupported("import_cc_sdk_hooks: will be implemented in step 2".into()))
+    }
+
+    fn import_cc_sdk_mcp(
+        &self,
+        _workspace_slug: &str,
+    ) -> Result<Vec<KernelMcpServerConfig>, KernelError> {
+        Err(KernelError::Unsupported("import_cc_sdk_mcp: will be implemented in step 2".into()))
     }
 
     fn list_mcp_servers(&self) -> Result<Vec<KernelMcpServerConfig>, KernelError> {

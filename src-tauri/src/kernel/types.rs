@@ -89,6 +89,13 @@ pub struct KernelMcpServerConfig {
     pub disabled: bool,
 }
 
+/// Per-workspace MCP configuration.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KernelMcpWorkspaceConfig {
+    pub servers: Vec<KernelMcpServerConfig>,
+}
+
 /// Built-in tool info.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
