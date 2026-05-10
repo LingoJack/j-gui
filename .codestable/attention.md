@@ -27,3 +27,4 @@
 
 - Rust 编码规约详见 `compound/2026-05-08-decision-rust-coding-conventions.md`
 - **Roadmap 进度报告**：每完成一个 roadmap item 并提交后，必须输出量化进度（已完成/总数、P0 完成数、当前解锁的下游项）
+- **jcli 已知警告**：`jcli/src/command/chat/remote/bridge.rs` 有 `unused import: std::process::Child`，每次编译 j-gui 都会显示 `warning: j-cli (lib) generated 1 warning`——这是 jcli 仓库代码，j-gui 不能修，忽略即可
