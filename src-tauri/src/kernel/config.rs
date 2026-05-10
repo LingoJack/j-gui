@@ -5,7 +5,7 @@ use super::error::KernelError;
 use super::types::{KernelAliasEntry, KernelProvider};
 
 /// Config + Alias + System Prompt + YamlConfig + System kernel trait.
-#[cfg_attr(test, mockall::automock)]
+// TODO: add #[cfg_attr(test, mockall::automock)] when types are mock-compatible
 pub trait ConfigKernel: Send + Sync {
     // -- Provider/Channel --
 

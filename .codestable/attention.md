@@ -19,7 +19,7 @@
 
 ### 路径与目录约定
 
-- j-cli 源码位于 `E:\Coding\AI\j`，j-gui 通过 `j-cli = { path = "../../j" }` 依赖
+- j-cli 源码位于 `E:\Coding\AI\jcli`，j-gui 通过 `j-cli = { path = "../../jcli" }` 依赖
 - j-cli 的数据目录为 `~/.jdata/`（由 `j_cli::constants` 定义）
 - j-cli 的 agent 配置位于 `~/.jdata/agent/data/agent_config.json`
 

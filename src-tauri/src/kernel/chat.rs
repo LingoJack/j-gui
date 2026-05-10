@@ -5,7 +5,7 @@ use super::error::KernelError;
 use super::types::{KernelChatMessage, KernelProvider, KernelSessionEvent, KernelSessionSummary};
 
 /// Chat + Session kernel trait.
-#[cfg_attr(test, mockall::automock)]
+// TODO: add #[cfg_attr(test, mockall::automock)] when types are mock-compatible
 #[async_trait]
 pub trait ChatKernel: Send + Sync {
     /// Stream LLM response via Channel<String>. Each chunk is a text delta.

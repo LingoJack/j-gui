@@ -19,7 +19,14 @@ fn user_profile_path() -> PathBuf {
 }
 
 pub(crate) fn dirs_next() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join("j-gui"))
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("APPDATA").ok().map(|d| PathBuf::from(d).join("j-gui"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::env::var("HOME").ok().map(|d| PathBuf::from(d).join(".jgui"))
+    }
 }
 
 // ============================================================

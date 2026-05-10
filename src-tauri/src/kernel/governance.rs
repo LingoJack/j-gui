@@ -2,7 +2,7 @@ use super::error::KernelError;
 use super::types::{KernelHookInfo, KernelMcpServerConfig, KernelSkillInfo, KernelToolInfo};
 
 /// Skills + Hooks + MCP + Chat Tools governance kernel trait.
-#[cfg_attr(test, mockall::automock)]
+// TODO: add #[cfg_attr(test, mockall::automock)] when types are mock-compatible
 pub trait GovernanceKernel: Send + Sync {
     // -- Skills --
 
