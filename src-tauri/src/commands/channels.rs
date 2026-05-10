@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::kernel::types::KernelProvider;
+use crate::kernel::types::{current_timestamp, KernelChannelModel, KernelProvider};
 use crate::kernel::{ConfigKernel, JcliAdapter};
 
 // ---------------------------------------------------------------------------
@@ -100,9 +100,13 @@ fn provider_to_channel_info(idx: usize, p: &KernelProvider) -> ChannelInfo {
     ChannelInfo {
         id: idx,
         name: p.name.clone(),
-        provider: infer_provider(&p.api_base),
+        provider: if p.provider.is_empty() {
+            infer_provider(&p.api_base)
+        } else {
+            p.provider.clone()
+        },
         api_base: p.api_base.clone(),
-        models: vec![p.model.clone()],
+        models: p.models.iter().map(|m| m.id.clone()).collect(),
     }
 }
 
@@ -280,11 +284,20 @@ fn create_channel_impl(
 ) -> Result<ChannelInfo, String> {
     let mut providers = config.load_providers().map_err(|e| e.to_string())?;
     providers.push(KernelProvider {
+        id: String::new(),
         name: input.name,
+        provider: infer_provider(&input.api_base),
         api_base: input.api_base,
         api_key: input.api_key,
-        model: input.model,
+        models: vec![KernelChannelModel {
+            id: input.model.clone(),
+            name: input.model.clone(),
+            enabled: true,
+        }],
+        enabled: true,
         supports_vision: input.supports_vision.unwrap_or(false),
+        created_at: current_timestamp(),
+        updated_at: current_timestamp(),
     });
     let idx = providers.len() - 1;
     config
@@ -314,11 +327,20 @@ fn update_channel_impl(
     };
 
     providers[input.index] = KernelProvider {
+        id: String::new(),
         name: input.name,
+        provider: infer_provider(&input.api_base),
         api_base: input.api_base,
         api_key,
-        model: input.model,
+        models: vec![KernelChannelModel {
+            id: input.model.clone(),
+            name: input.model.clone(),
+            enabled: true,
+        }],
+        enabled: true,
         supports_vision: input.supports_vision.unwrap_or(false),
+        created_at: current_timestamp(),
+        updated_at: current_timestamp(),
     };
 
     config
@@ -469,7 +491,7 @@ fn parse_models(body: &str) -> Vec<ModelOption> {
 mod tests {
     use super::*;
     use crate::kernel::config::MockConfigKernel;
-    use crate::kernel::types::KernelProvider;
+    use crate::kernel::types::{KernelChannelModel, KernelProvider};
 
     // --- mask_api_key ---
 
@@ -496,11 +518,20 @@ mod tests {
     #[test]
     fn provider_to_channel_info_maps_fields() {
         let p = KernelProvider {
+            id: String::new(),
             name: "GPT-4o".into(),
+            provider: String::new(),
             api_base: "https://api.openai.com/v1".into(),
             api_key: "sk-secret1234".into(),
-            model: "gpt-4o".into(),
+            models: vec![KernelChannelModel {
+                id: "gpt-4o".into(),
+                name: "gpt-4o".into(),
+                enabled: true,
+            }],
+            enabled: true,
             supports_vision: true,
+            created_at: 0,
+            updated_at: 0,
         };
         let info = provider_to_channel_info(2, &p);
         assert_eq!(info.id, 2);
@@ -528,11 +559,20 @@ mod tests {
         let mut mock = MockConfigKernel::new();
         mock.expect_load_providers().returning(|| {
             Ok(vec![KernelProvider {
+                id: String::new(),
                 name: "My Provider".into(),
+                provider: String::new(),
                 api_base: "https://api.deepseek.com".into(),
                 api_key: "sk-secret".into(),
-                model: "deepseek-chat".into(),
+                models: vec![KernelChannelModel {
+                    id: "deepseek-chat".into(),
+                    name: "deepseek-chat".into(),
+                    enabled: true,
+                }],
+                enabled: true,
                 supports_vision: false,
+                created_at: 0,
+                updated_at: 0,
             }])
         });
 
@@ -579,11 +619,20 @@ mod tests {
         let mut mock = MockConfigKernel::new();
         mock.expect_load_providers().returning(|| {
             Ok(vec![KernelProvider {
+                id: String::new(),
                 name: "Old".into(),
+                provider: String::new(),
                 api_base: "https://old.com".into(),
                 api_key: "sk-old-key".into(),
-                model: "gpt-3.5".into(),
+                models: vec![KernelChannelModel {
+                    id: "gpt-3.5".into(),
+                    name: "gpt-3.5".into(),
+                    enabled: true,
+                }],
+                enabled: true,
                 supports_vision: false,
+                created_at: 0,
+                updated_at: 0,
             }])
         });
         mock.expect_save_providers()
@@ -613,11 +662,20 @@ mod tests {
         let mut mock = MockConfigKernel::new();
         mock.expect_load_providers().returning(|| {
             Ok(vec![KernelProvider {
+                id: String::new(),
                 name: "Old".into(),
+                provider: String::new(),
                 api_base: "https://old.com".into(),
                 api_key: "sk-real-secret-key".into(),
-                model: "gpt-3.5".into(),
+                models: vec![KernelChannelModel {
+                    id: "gpt-3.5".into(),
+                    name: "gpt-3.5".into(),
+                    enabled: true,
+                }],
+                enabled: true,
                 supports_vision: false,
+                created_at: 0,
+                updated_at: 0,
             }])
         });
         mock.expect_save_providers()
@@ -668,18 +726,36 @@ mod tests {
         mock.expect_load_providers().returning(|| {
             Ok(vec![
                 KernelProvider {
+                    id: String::new(),
                     name: "First".into(),
+                    provider: String::new(),
                     api_base: "https://a.com".into(),
                     api_key: "k1".into(),
-                    model: "m1".into(),
+                    models: vec![KernelChannelModel {
+                        id: "m1".into(),
+                        name: "m1".into(),
+                        enabled: true,
+                    }],
+                    enabled: true,
                     supports_vision: false,
+                    created_at: 0,
+                    updated_at: 0,
                 },
                 KernelProvider {
+                    id: String::new(),
                     name: "Second".into(),
+                    provider: String::new(),
                     api_base: "https://b.com".into(),
                     api_key: "k2".into(),
-                    model: "m2".into(),
+                    models: vec![KernelChannelModel {
+                        id: "m2".into(),
+                        name: "m2".into(),
+                        enabled: true,
+                    }],
+                    enabled: true,
                     supports_vision: false,
+                    created_at: 0,
+                    updated_at: 0,
                 },
             ])
         });

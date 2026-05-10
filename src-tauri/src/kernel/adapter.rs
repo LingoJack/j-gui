@@ -48,13 +48,66 @@ impl JcliAdapter {
 
 // ===== Helpers =====
 
+/// Path to agent_config.json (jcli data directory).
+fn agent_config_path() -> PathBuf {
+    YamlConfig::data_dir()
+        .join("agent")
+        .join("data")
+        .join("agent_config.json")
+}
+
+/// Load agent_config.json as a generic JSON value returns Ok(None) if file missing.
+fn read_agent_config_value() -> Result<Option<serde_json::Value>, KernelError> {
+    let path = agent_config_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(&path)?;
+    serde_json::from_str(&content)
+        .map(Some)
+        .map_err(|e| KernelError::Config(format!("解析 agent_config.json 失败: {e}")))
+}
+
+/// Detect whether the stored config uses the new format (V1) or old format (V0).
+fn is_v1_format(config: &serde_json::Value) -> bool {
+    if let Some(version) = config.get("version").and_then(|v| v.as_u64()) {
+        if version >= 1 {
+            return true;
+        }
+    }
+    if let Some(providers) = config.get("providers").and_then(|p| p.as_array()) {
+        if let Some(first) = providers.first() {
+            if first.get("models").is_some() || first.get("id").is_some() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Migrate a single old-format KernelProvider (empty id) to new format.
+fn migrate_provider(p: &mut KernelProvider) {
+    if p.id.is_empty() {
+        p.id = uuid::Uuid::new_v4().to_string();
+    }
+    if p.provider.is_empty() {
+        p.provider = infer_provider(&p.api_base);
+    }
+    if p.created_at == 0 {
+        p.created_at = current_timestamp();
+    }
+    if p.updated_at == 0 {
+        p.updated_at = current_timestamp();
+    }
+}
+
 #[allow(dead_code)]
 fn to_jcli_provider(p: &KernelProvider) -> ModelProvider {
     ModelProvider {
         name: p.name.clone(),
         api_base: p.api_base.clone(),
         api_key: p.api_key.clone(),
-        model: p.model.clone(),
+        model: p.models.first().map(|m| m.id.clone()).unwrap_or_default(),
         supports_vision: p.supports_vision,
     }
 }
@@ -62,11 +115,20 @@ fn to_jcli_provider(p: &KernelProvider) -> ModelProvider {
 #[allow(dead_code)]
 fn from_jcli_provider(p: &ModelProvider) -> KernelProvider {
     KernelProvider {
+        id: String::new(),
         name: p.name.clone(),
+        provider: String::new(),
         api_base: p.api_base.clone(),
         api_key: p.api_key.clone(),
-        model: p.model.clone(),
+        models: vec![KernelChannelModel {
+            id: p.model.clone(),
+            name: p.model.clone(),
+            enabled: true,
+        }],
+        enabled: true,
         supports_vision: p.supports_vision,
+        created_at: 0,
+        updated_at: 0,
     }
 }
 
@@ -109,6 +171,31 @@ impl ConfigKernel for JcliAdapter {
         } else {
             Err(KernelError::Config("保存 provider 配置失败".into()))
         }
+    }
+
+    fn create_channel(
+        &self,
+        _input: KernelCreateChannelInput,
+    ) -> Result<KernelProvider, KernelError> {
+        Err(KernelError::Unsupported(
+            "create_channel: will be implemented in step 3".into(),
+        ))
+    }
+
+    fn update_channel(
+        &self,
+        _id: &str,
+        _input: KernelUpdateChannelInput,
+    ) -> Result<KernelProvider, KernelError> {
+        Err(KernelError::Unsupported(
+            "update_channel: will be implemented in step 3".into(),
+        ))
+    }
+
+    fn delete_channel(&self, _id: &str) -> Result<(), KernelError> {
+        Err(KernelError::Unsupported(
+            "delete_channel: will be implemented in step 3".into(),
+        ))
     }
 
     fn list_aliases(&self) -> Result<Vec<KernelAliasEntry>, KernelError> {
@@ -345,6 +432,101 @@ impl ChatKernel for JcliAdapter {
     }
 }
 
+// ===== Workspace helpers =====
+
+fn home_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("USERPROFILE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("C:\\"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/tmp"))
+    }
+}
+
+fn workspace_dir(slug: &str) -> PathBuf {
+    home_dir()
+        .join(".jgui")
+        .join("agent-workspaces")
+        .join(slug)
+}
+
+fn workspace_skills_dir(slug: &str) -> PathBuf {
+    workspace_dir(slug).join("skills")
+}
+
+fn workspace_mcp_config_path(slug: &str) -> PathBuf {
+    workspace_dir(slug).join("mcp.json")
+}
+
+fn sdk_config_dir() -> PathBuf {
+    YamlConfig::data_dir().join("agent").join("sdk-config")
+}
+
+fn parse_skill_frontmatter(content: &str) -> Option<(String, String)> {
+    let trimmed = content.trim_start();
+    if !trimmed.starts_with("---") {
+        return None;
+    }
+    let rest = &trimmed[3..];
+    let end_idx = rest.find("\n---")?;
+    let fm_str = rest[..end_idx].trim();
+
+    let mut name = None;
+    let mut description = None;
+    for line in fm_str.lines() {
+        let line = line.trim();
+        if let Some((key, value)) = line.split_once(':') {
+            match key.trim() {
+                "name" => name = Some(value.trim().to_string()),
+                "description" => description = Some(value.trim().to_string()),
+                _ => {}
+            }
+        }
+    }
+    Some((name?, description.unwrap_or_default()))
+}
+
+fn scan_workspace_skills_dir(skills_dir: &std::path::Path) -> Vec<KernelSkillInfo> {
+    if !skills_dir.is_dir() {
+        return Vec::new();
+    }
+    let mut skills = Vec::new();
+    let entries = match std::fs::read_dir(skills_dir) {
+        Ok(e) => e,
+        Err(_) => return skills,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let skill_md = path.join("SKILL.md");
+        let content = match std::fs::read_to_string(&skill_md) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        if let Some((name, description)) = parse_skill_frontmatter(&content) {
+            let slug = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            skills.push(KernelSkillInfo {
+                name,
+                description,
+                source: format!("workspace:{}", slug),
+                dir_path: path.to_string_lossy().to_string(),
+            });
+        }
+    }
+    skills
+}
+
 // ===== GovernanceKernel impl =====
 
 impl GovernanceKernel for JcliAdapter {
@@ -427,77 +609,198 @@ impl GovernanceKernel for JcliAdapter {
         }
     }
 
-    fn read_skill_content(&self, _workspace_slug: &str, _skill_slug: &str) -> Result<String, KernelError> {
-        Err(KernelError::Unsupported("read_skill_content: will be implemented in step 2".into()))
+    fn read_skill_content(&self, workspace_slug: &str, skill_slug: &str) -> Result<String, KernelError> {
+        let path = workspace_skills_dir(workspace_slug)
+            .join(skill_slug)
+            .join("SKILL.md");
+        if !path.exists() {
+            return Err(KernelError::Governance(format!(
+                "SKILL.md not found: {}",
+                path.display()
+            )));
+        }
+        Ok(std::fs::read_to_string(&path)?)
     }
 
     fn write_skill_content(
         &self,
-        _workspace_slug: &str,
-        _skill_slug: &str,
-        _content: &str,
+        workspace_slug: &str,
+        skill_slug: &str,
+        content: &str,
     ) -> Result<(), KernelError> {
-        Err(KernelError::Unsupported("write_skill_content: will be implemented in step 2".into()))
+        let path = workspace_skills_dir(workspace_slug)
+            .join(skill_slug)
+            .join("SKILL.md");
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        Ok(std::fs::write(&path, content)?)
     }
 
     fn toggle_workspace_skill(
         &self,
         _workspace_slug: &str,
-        _skill_slug: &str,
-        _enabled: bool,
+        skill_slug: &str,
+        enabled: bool,
     ) -> Result<(), KernelError> {
-        Err(KernelError::Unsupported("toggle_workspace_skill: will be implemented in step 2".into()))
+        let mut config = load_agent_config();
+        if enabled {
+            config.disabled_skills.retain(|d| d != skill_slug);
+        } else if !config.disabled_skills.iter().any(|d| d == skill_slug) {
+            config.disabled_skills.push(skill_slug.to_string());
+        }
+        if save_agent_config(&config) {
+            Ok(())
+        } else {
+            Err(KernelError::Config("保存 agent_config 失败".into()))
+        }
     }
 
-    fn delete_workspace_skill(&self, _workspace_slug: &str, _skill_slug: &str) -> Result<(), KernelError> {
-        Err(KernelError::Unsupported("delete_workspace_skill: will be implemented in step 2".into()))
+    fn delete_workspace_skill(&self, workspace_slug: &str, skill_slug: &str) -> Result<(), KernelError> {
+        let path = workspace_skills_dir(workspace_slug).join(skill_slug);
+        if path.exists() {
+            std::fs::remove_dir_all(&path)?;
+        }
+        Ok(())
     }
 
-    fn get_workspace_skills(&self, _workspace_slug: &str) -> Result<Vec<KernelSkillInfo>, KernelError> {
-        Err(KernelError::Unsupported("get_workspace_skills: will be implemented in step 2".into()))
+    fn get_workspace_skills(&self, workspace_slug: &str) -> Result<Vec<KernelSkillInfo>, KernelError> {
+        let skills_dir = workspace_skills_dir(workspace_slug);
+        Ok(scan_workspace_skills_dir(&skills_dir))
     }
 
-    fn get_workspace_skills_dir(&self, _workspace_slug: &str) -> Result<String, KernelError> {
-        Err(KernelError::Unsupported("get_workspace_skills_dir: will be implemented in step 2".into()))
+    fn get_workspace_skills_dir(&self, workspace_slug: &str) -> Result<String, KernelError> {
+        let dir = workspace_skills_dir(workspace_slug);
+        std::fs::create_dir_all(&dir)?;
+        Ok(dir.to_string_lossy().to_string())
     }
 
-    fn get_other_workspace_skills(&self, _workspace_slug: &str) -> Result<Vec<KernelSkillInfo>, KernelError> {
-        Err(KernelError::Unsupported("get_other_workspace_skills: will be implemented in step 2".into()))
+    fn get_other_workspace_skills(&self, workspace_slug: &str) -> Result<Vec<KernelSkillInfo>, KernelError> {
+        let base = home_dir().join(".jgui").join("agent-workspaces");
+        if !base.is_dir() {
+            return Ok(Vec::new());
+        }
+        let mut skills = Vec::new();
+        let entries = match std::fs::read_dir(&base) {
+            Ok(e) => e,
+            Err(_) => return Ok(skills),
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let slug = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if slug == workspace_slug {
+                continue;
+            }
+            let skills_dir = path.join("skills");
+            skills.extend(scan_workspace_skills_dir(&skills_dir));
+        }
+        Ok(skills)
     }
 
     fn import_skill_from_workspace(
         &self,
-        _from_slug: &str,
-        _to_slug: &str,
-        _skill_slug: &str,
+        from_slug: &str,
+        to_slug: &str,
+        skill_slug: &str,
     ) -> Result<(), KernelError> {
-        Err(KernelError::Unsupported("import_skill_from_workspace: will be implemented in step 2".into()))
+        let from = workspace_skills_dir(from_slug)
+            .join(skill_slug)
+            .join("SKILL.md");
+        if !from.exists() {
+            return Err(KernelError::Governance(format!(
+                "源 SKILL.md 不存在: {}",
+                from.display()
+            )));
+        }
+        let to = workspace_skills_dir(to_slug)
+            .join(skill_slug)
+            .join("SKILL.md");
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(&from, &to)?;
+        Ok(())
     }
 
     fn get_workspace_mcp_config(
         &self,
-        _workspace_slug: &str,
+        workspace_slug: &str,
     ) -> Result<KernelMcpWorkspaceConfig, KernelError> {
-        Err(KernelError::Unsupported("get_workspace_mcp_config: will be implemented in step 2".into()))
+        let path = workspace_mcp_config_path(workspace_slug);
+        if !path.exists() {
+            return Ok(KernelMcpWorkspaceConfig {
+                servers: Vec::new(),
+            });
+        }
+        let content = std::fs::read_to_string(&path)?;
+        let servers: Vec<KernelMcpServerConfig> =
+            serde_json::from_str(&content).map_err(|e| {
+                KernelError::Governance(format!("解析 MCP 配置失败: {}", e))
+            })?;
+        Ok(KernelMcpWorkspaceConfig { servers })
     }
 
     fn save_workspace_mcp_config(
         &self,
-        _workspace_slug: &str,
-        _config: &KernelMcpWorkspaceConfig,
+        workspace_slug: &str,
+        config: &KernelMcpWorkspaceConfig,
     ) -> Result<(), KernelError> {
-        Err(KernelError::Unsupported("save_workspace_mcp_config: will be implemented in step 2".into()))
+        let path = workspace_mcp_config_path(workspace_slug);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let content = serde_json::to_string_pretty(&config.servers).map_err(|e| {
+            KernelError::Governance(format!("序列化 MCP 配置失败: {}", e))
+        })?;
+        Ok(std::fs::write(&path, content)?)
     }
 
     fn import_cc_sdk_hooks(&self) -> Result<Vec<KernelHookInfo>, KernelError> {
-        Err(KernelError::Unsupported("import_cc_sdk_hooks: will be implemented in step 2".into()))
+        let hooks_dir = sdk_config_dir().join("hooks");
+        if !hooks_dir.is_dir() {
+            return Ok(Vec::new());
+        }
+        let mut hooks = Vec::new();
+        let entries = match std::fs::read_dir(&hooks_dir) {
+            Ok(e) => e,
+            Err(_) => return Ok(hooks),
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map(|e| e != "json").unwrap_or(true) {
+                continue;
+            }
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            if let Ok(hook) = serde_json::from_str::<KernelHookInfo>(&content) {
+                hooks.push(hook);
+            }
+        }
+        Ok(hooks)
     }
 
     fn import_cc_sdk_mcp(
         &self,
         _workspace_slug: &str,
     ) -> Result<Vec<KernelMcpServerConfig>, KernelError> {
-        Err(KernelError::Unsupported("import_cc_sdk_mcp: will be implemented in step 2".into()))
+        let path = sdk_config_dir().join("mcp_config.json");
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let content = std::fs::read_to_string(&path)?;
+        let servers: Vec<KernelMcpServerConfig> =
+            serde_json::from_str(&content).map_err(|e| {
+                KernelError::Governance(format!("解析 SDK MCP 配置失败: {}", e))
+            })?;
+        Ok(servers)
     }
 
     fn list_mcp_servers(&self) -> Result<Vec<KernelMcpServerConfig>, KernelError> {

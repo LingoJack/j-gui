@@ -6,16 +6,62 @@
 //! All types derive Clone + Debug + PartialEq for mockall compatibility.
 
 use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+// ---------------------------------------------------------------------------
+// Provider / Channel types
+// ---------------------------------------------------------------------------
+
+/// Model entry within a provider/channel.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KernelChannelModel {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+}
 
 /// Provider configuration for LLM calls.
+/// Fields are kept snake_case for agent_config.json backward compat with jcli;
+/// new fields use explicit #[serde(rename)] for camelCase.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct KernelProvider {
+    pub id: String,
     pub name: String,
+    pub provider: String,
     pub api_base: String,
     pub api_key: String,
-    pub model: String,
+    pub models: Vec<KernelChannelModel>,
+    pub enabled: bool,
     pub supports_vision: bool,
+    #[serde(rename = "createdAt")]
+    pub created_at: u64,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: u64,
+}
+
+/// Input for creating a new channel.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KernelCreateChannelInput {
+    pub name: String,
+    pub provider: String,
+    pub api_base: String,
+    pub api_key: String,
+    pub models: Vec<KernelChannelModel>,
+    pub enabled: bool,
+}
+
+/// Input for updating an existing channel (all fields optional).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KernelUpdateChannelInput {
+    pub name: Option<String>,
+    pub provider: Option<String>,
+    pub api_base: Option<String>,
+    pub api_key: Option<String>,
+    pub models: Option<Vec<KernelChannelModel>>,
+    pub enabled: Option<bool>,
 }
 
 /// Chat message.
@@ -63,7 +109,7 @@ pub struct KernelSkillInfo {
 }
 
 /// Hook info.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelHookInfo {
     pub name: Option<String>,
@@ -103,4 +149,49 @@ pub struct KernelToolInfo {
     pub name: String,
     pub description: String,
     pub enabled: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Helpers (shared between adapter and commands)
+// ---------------------------------------------------------------------------
+
+/// Current unix timestamp in milliseconds.
+pub fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// Infer provider type string from an API base URL.
+pub fn infer_provider(api_base: &str) -> String {
+    let base = api_base.to_lowercase();
+    if base.contains("deepseek") {
+        return "deepseek".into();
+    }
+    if base.contains("openai") {
+        return "openai".into();
+    }
+    if base.contains("anthropic") || base.contains("claude") {
+        return "anthropic".into();
+    }
+    if base.contains("google") || base.contains("gemini") {
+        return "google".into();
+    }
+    if base.contains("moonshot") || base.contains("kimi") {
+        return "moonshot".into();
+    }
+    if base.contains("zhipu") || base.contains("chatglm") {
+        return "zhipu".into();
+    }
+    if base.contains("minimax") {
+        return "minimax".into();
+    }
+    if base.contains("doubao") || base.contains("volc") {
+        return "doubao".into();
+    }
+    if base.contains("qwen") || base.contains("tongyi") {
+        return "tongyi".into();
+    }
+    "custom".into()
 }

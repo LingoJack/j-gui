@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::kernel::types::KernelProvider;
+use crate::kernel::types::{KernelChannelModel, KernelProvider};
 use crate::kernel::{ConfigKernel, JcliAdapter};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -104,7 +104,7 @@ fn get_agent_config_impl(config: &dyn ConfigKernel) -> Result<AgentConfigInfo, S
                     name: p.name.clone(),
                     api_base: p.api_base.clone(),
                     api_key: masked_key,
-                    model: p.model.clone(),
+                    model: p.models.first().map(|m| m.id.clone()).unwrap_or_default(),
                     supports_vision: p.supports_vision,
                 }
             })
@@ -131,11 +131,20 @@ fn set_agent_config_impl(config: &dyn ConfigKernel, input: AgentConfigInfo) -> R
                 p.api_key.clone()
             };
             KernelProvider {
+                id: String::new(),
                 name: p.name.clone(),
+                provider: String::new(),
                 api_base: p.api_base.clone(),
                 api_key,
-                model: p.model.clone(),
+                models: vec![KernelChannelModel {
+                    id: p.model.clone(),
+                    name: p.model.clone(),
+                    enabled: true,
+                }],
+                enabled: true,
                 supports_vision: p.supports_vision,
+                created_at: 0,
+                updated_at: 0,
             }
         })
         .collect();
@@ -261,11 +270,20 @@ mod tests {
         let mut mock = MockConfigKernel::new();
         mock.expect_load_providers().returning(|| {
             Ok(vec![KernelProvider {
+                id: String::new(),
                 name: "My Provider".into(),
+                provider: String::new(),
                 api_base: "https://api.openai.com".into(),
                 api_key: "sk-1234567890abcdef".into(),
-                model: "gpt-4o".into(),
+                models: vec![KernelChannelModel {
+                    id: "gpt-4o".into(),
+                    name: "gpt-4o".into(),
+                    enabled: true,
+                }],
+                enabled: true,
                 supports_vision: true,
+                created_at: 0,
+                updated_at: 0,
             }])
         });
         mock.expect_load_active_index().returning(|| Ok(0));
@@ -337,11 +355,20 @@ mod tests {
         // old provider has the real key
         mock.expect_load_providers().returning(|| {
             Ok(vec![KernelProvider {
+                id: "test-id".into(),
                 name: "Old".into(),
+                provider: "openai".into(),
                 api_base: "https://old.com".into(),
                 api_key: "sk-real-secret-key-123".into(),
-                model: "gpt-3.5".into(),
+                models: vec![KernelChannelModel {
+                    id: "gpt-3.5".into(),
+                    name: "gpt-3.5".into(),
+                    enabled: true,
+                }],
+                enabled: true,
                 supports_vision: false,
+                created_at: 0,
+                updated_at: 0,
             }])
         });
         mock.expect_save_providers()
