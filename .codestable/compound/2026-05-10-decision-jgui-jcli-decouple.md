@@ -62,3 +62,59 @@ j-gui 当前通过 path dependency 直接依赖 jcli crate，Channel 管理直�
 - j-gui `Channels` 模块不再调用 `j_cli::command::chat::storage::load_agent_config/save_agent_config`
 - 新增文件：`~/.jgui/channels.json`（j-gui 的 Channel 数据存储）
 - Chat/Agent Engine 需新增 `Channel → ModelProvider` 映射函数
+
+## jcli 升级应对
+
+trait 抽象层实现后，jcli 升级时 **仅修改 adapter 内部，j-gui 其余模块不变**。
+
+### 场景 1：jcli 小版本（API 签名不变）
+
+```
+jcli v1.0.0 → v1.1.0
+  更新 Cargo.toml → cargo check 通过 → 验证完成
+```
+
+零改动。
+
+### 场景 2：jcli API 签名变化
+
+```
+jcli 改动内部 API 签名
+  ↓
+adapter 内部委托调用编译报错
+  ↓
+修改 adapter 内部实现，适配新签名
+  ↓
+trait 签名保持稳定 → 所有调用方零改动
+```
+
+影响范围：**仅 adapter 文件**。
+
+### 场景 3：jcli 新增功能
+
+```
+方案 A：不涉及现有 trait → j-gui 无需改动
+        （仅 CLI 用户可用，GUI 后续按需加 UI）
+
+方案 B：需要 GUI 支持
+  1. 对应 trait 加方法（如 ChatKernel::generate_report），默认返回 Err(Unsupported)
+  2. adapter 实现该方法
+  3. 前端按需加 UI 入口
+  4. 不影响其他 trait 方法
+```
+
+### 场景 4：jcli 废弃功能
+
+```
+adapter 对应方法编译报错
+  ↓
+评估 trait 方法是否仍需保留
+  - 是 → adapter 改用替代实现
+  - 否 → trait 方法标 #[deprecated] → 搜索调用点 → 移除 UI → 下一版本删方法
+```
+
+### 约束
+
+- trait 签名变更必须有 deprecation 周期
+- adapter 是 jcli 变更的**唯一影响面**——此约束写入 CLAUDE.md
+- 新 trait 方法应提供默认实现（返回 `Err(KernelError::Unsupported(...))`），不强制 breaking change
