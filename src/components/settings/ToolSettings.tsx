@@ -52,6 +52,7 @@ export function BuiltinToolsSection(): React.ReactElement {
       )
     } catch (err) {
       console.error('[内置工具] 切换失败:', err)
+      toast.error('切换工具状态失败')
     }
   }
 
@@ -447,6 +448,7 @@ function CustomToolsSection(): React.ReactElement | null {
       await refreshChatTools(setChatTools)
     } catch (error) {
       console.error('[自定义工具] 切换失败:', error)
+      toast.error('切换工具状态失败')
     }
   }
 

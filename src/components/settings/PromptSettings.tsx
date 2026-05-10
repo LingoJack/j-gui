@@ -8,6 +8,7 @@
 
 import * as React from 'react'
 import { useAtom, useAtomValue } from 'jotai'
+import { toast } from 'sonner'
 import { Plus, Trash2, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -81,6 +82,7 @@ export function PromptSettings(): React.ReactElement {
       setSelectedId(created.id)
     } catch (error) {
       console.error('[提示词设置] 创建失败:', error)
+      toast.error('创建提示词失败')
     }
   }
 
@@ -99,6 +101,7 @@ export function PromptSettings(): React.ReactElement {
       }
     } catch (error) {
       console.error('[提示词设置] 删除失败:', error)
+      toast.error('删除提示词失败')
     }
   }
 
@@ -109,6 +112,7 @@ export function PromptSettings(): React.ReactElement {
       setConfig((prev) => ({ ...prev, defaultPromptId: id }))
     } catch (error) {
       console.error('[提示词设置] 设置默认失败:', error)
+      toast.error('设置默认提示词失败')
     }
   }
 
@@ -132,6 +136,7 @@ export function PromptSettings(): React.ReactElement {
           }))
         } catch (error) {
           console.error('[提示词设置] 保存失败:', error)
+          toast.error('保存提示词失败')
         }
       }, DEBOUNCE_DELAY)
     },
@@ -161,6 +166,7 @@ export function PromptSettings(): React.ReactElement {
       setConfig((prev) => ({ ...prev, appendDateTimeAndUserName: enabled }))
     } catch (error) {
       console.error('[提示词设置] 更新追加设置失败:', error)
+      toast.error('更新追加设置失败')
     }
   }
 

@@ -9,11 +9,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { BuiltinToolsSection } from '@/components/settings/ToolSettings'
 import * as ipc from '@/lib/ipc'
+import { toast } from 'sonner'
 
 // Mock the IPC module used by BuiltinToolsSection
 vi.mock('@/lib/ipc', () => ({
   listChatTools: vi.fn(),
   setToolEnabled: vi.fn(),
+}))
+
+// Mock sonner toast for #21 error-toast verification
+vi.mock('sonner', () => ({
+  toast: {
+    error: vi.fn(),
+  },
 }))
 
 const mockTools: Array<{ name: string; description: string; enabled: boolean }> = [
@@ -118,5 +126,28 @@ describe('BuiltinToolsSection', () => {
       expect(screen.getByText(/加载失败/)).toBeInTheDocument()
     })
     expect(screen.getByText(/Failed to fetch tools/)).toBeInTheDocument()
+  })
+
+  it('shows error toast when toggle fails (#21 error-toast)', async () => {
+    ;(ipc.listChatTools as any).mockResolvedValue(mockTools)
+    ;(ipc.setToolEnabled as any).mockRejectedValue(
+      new Error('Toggle failed')
+    )
+
+    render(<BuiltinToolsSection />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Bash')).toBeInTheDocument()
+    })
+
+    // Toggle a tool to trigger the error path
+    const switches = screen.getAllByRole('switch')
+    fireEvent.click(switches[0])
+
+    // Wait for the toast.error to be called
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalled()
+    })
+    expect(vi.mocked(toast.error).mock.calls[0][0]).toContain('切换')
   })
 })

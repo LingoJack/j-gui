@@ -8,6 +8,7 @@
 import * as React from 'react'
 import { useAtom } from 'jotai'
 import { Camera, ImagePlus, Volume2 } from 'lucide-react'
+import { toast } from 'sonner'
 import Picker from '@emoji-mart/react'
 import data from '@emoji-mart/data'
 import {
@@ -83,6 +84,7 @@ export function GeneralSettings(): React.ReactElement {
       await ipc.updateSettings({ archiveAfterDays: days })
     } catch (error) {
       console.error('[通用设置] 更新归档天数失败:', error)
+      toast.error('更新归档天数失败')
     }
   }
 
@@ -94,6 +96,7 @@ export function GeneralSettings(): React.ReactElement {
       setShowEmojiPicker(false)
     } catch (error) {
       console.error('[通用设置] 更新头像失败:', error)
+      toast.error('更新头像失败')
     }
   }
 
@@ -122,6 +125,7 @@ export function GeneralSettings(): React.ReactElement {
       setIsEditingName(false)
     } catch (error) {
       console.error('[通用设置] 更新用户名失败:', error)
+      toast.error('更新用户名失败')
     }
   }
 

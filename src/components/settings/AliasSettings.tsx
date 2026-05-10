@@ -10,6 +10,7 @@ import { Plus, Trash2, Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SettingsSection, SettingsCard } from './primitives'
+import { toast } from 'sonner'
 import * as ipc from '@/lib/ipc'
 
 // ============================================================
@@ -234,6 +235,7 @@ export function AliasSettings(): React.ReactElement {
       await loadAliases()
     } catch (err) {
       console.error('[别名设置] 添加失败:', err)
+      toast.error('添加别名失败')
     }
   }
 
@@ -244,6 +246,7 @@ export function AliasSettings(): React.ReactElement {
       await loadAliases()
     } catch (err) {
       console.error('[别名设置] 删除失败:', err)
+      toast.error('删除别名失败')
     }
   }
 

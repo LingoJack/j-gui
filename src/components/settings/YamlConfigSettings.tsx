@@ -10,6 +10,7 @@ import { ChevronDown, Plus, Trash2, Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SettingsSection, SettingsCard } from './primitives'
+import { toast } from 'sonner'
 import * as ipc from '@/lib/ipc'
 
 // ============================================================
@@ -361,6 +362,7 @@ export function YamlConfigSettings(): React.ReactElement {
       await loadConfig()
     } catch (err) {
       console.error('[YAML配置] 保存失败:', err)
+      toast.error('保存配置项失败')
     }
   }
 
@@ -381,6 +383,7 @@ export function YamlConfigSettings(): React.ReactElement {
       await loadConfig()
     } catch (err) {
       console.error('[YAML配置] 添加失败:', err)
+      toast.error('添加配置项失败')
     }
   }
 
@@ -405,6 +408,7 @@ export function YamlConfigSettings(): React.ReactElement {
       await loadConfig()
     } catch (err) {
       console.error('[YAML配置] 删除失败:', err)
+      toast.error('删除配置项失败')
     }
   }
 

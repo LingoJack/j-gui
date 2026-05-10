@@ -420,6 +420,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
       }
     } catch (error) {
       console.error('[侧边栏] 创建对话失败:', error)
+      toast.error('创建对话失败')
     }
   }
 

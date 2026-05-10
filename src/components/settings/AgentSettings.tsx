@@ -253,6 +253,7 @@ ${skillList}
       setSettingsOpen(false)
     } catch (error) {
       console.error('[Agent 设置] 创建配置会话失败:', error)
+      toast.error('创建配置会话失败')
     }
   }
 
@@ -270,6 +271,7 @@ ${skillList}
       bumpCapabilitiesVersion((v) => v + 1)
     } catch (error) {
       console.error('[Agent 设置] 删除 MCP 服务器失败:', error)
+      toast.error('删除 MCP 服务器失败')
     }
   }
 
@@ -285,6 +287,7 @@ ${skillList}
       bumpCapabilitiesVersion((v) => v + 1)
     } catch (error) {
       console.error('[Agent 设置] 切换 MCP 服务器状态失败:', error)
+      toast.error('切换 MCP 服务器状态失败')
     }
   }
 
@@ -298,6 +301,7 @@ ${skillList}
       bumpCapabilitiesVersion((v) => v + 1)
     } catch (error) {
       console.error('[Agent 设置] 删除 Skill 失败:', error)
+      toast.error('删除 Skill 失败')
     }
   }
 
@@ -308,6 +312,7 @@ ${skillList}
       bumpCapabilitiesVersion((v) => v + 1)
     } catch (error) {
       console.error('[Agent 设置] 切换 Skill 状态失败:', error)
+      toast.error('切换 Skill 状态失败')
     }
   }
 

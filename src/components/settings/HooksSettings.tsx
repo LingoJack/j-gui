@@ -5,6 +5,7 @@
  */
 
 import * as React from 'react'
+import { toast } from 'sonner'
 import { SettingsSection, SettingsCard } from './primitives'
 import { Switch } from '@/components/ui/switch'
 import * as ipc from '@/lib/ipc'
@@ -227,6 +228,7 @@ export function HooksSettings(): React.ReactElement {
         )
       } catch (err) {
         console.error('[钩子设置] 切换失败:', err)
+        toast.error('切换钩子状态失败')
       } finally {
         setTogglingSet((prev) => {
           const next = new Set(prev)
