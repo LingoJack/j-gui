@@ -150,7 +150,7 @@ items:
   - slug: channel-model-unify
     description: 增强 j-cli ModelProvider 为完整 Channel 模型——UUID id、ProviderType、models 数组、enabled、API Key 加密。升级 agent_config.json 格式并向后兼容迁移。前后端 IPC 对齐
     depends_on: []
-    status: in-progress
+    status: done
     feature: 2026-05-10-channel-model-unify
     minimal_loop: true
     notes: ⭐ 最小闭环——修好后渠道创建/列表/选中端到端可用。涉及 jcli + j-gui 两个仓库

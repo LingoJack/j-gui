@@ -5,7 +5,7 @@ status: active
 created: 2026-05-10
 last_reviewed: 2026-05-10
 
-# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5 | Phase E 1/2 | Phase F 0/1
+# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 2/2 | Phase C 0/3 | Phase D 0/5 | Phase E 1/2 | Phase F 0/1
 
 > **Phase A/B 完成口径**：基础链路已实现并通过测试，但存在前后端数据模型不兼容的端到端问题（详见 #27 说明）。
 tags: [tauri, desktop, j-cli, chat, agent]
