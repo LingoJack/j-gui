@@ -5,7 +5,7 @@ status: active
 created: 2026-05-10
 last_reviewed: 2026-05-10
 
-# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5 | Phase E 0/2
+# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5 | Phase E 0/2 | Phase F 0/1
 
 > **Phase A/B 完成口径**：基础链路已实现并通过测试，但存在前后端数据模型不兼容的端到端问题（详见 #27 说明）。
 tags: [tauri, desktop, j-cli, chat, agent]
@@ -129,6 +129,19 @@ jcli 仓库已发布 `j-agent` crate，当前 j-gui 的 Agent 模式通过 CC SD
 ### Phase E: Agent 引擎升级 (P2)
 
 jcli 仓库已发布 `j-agent` crate，当前 j-gui 的 Agent 模式通过 CC SDK CLI 子进程运行。集成 j-agent crate 可获得：原生 Rust 控制、无子进程开销、完整的 `AgentBackend` trait 实现、更细粒度的中断/工具/流式控制。
+
+### Phase F: 移动端远程连接 (P4 远期)
+
+jcli 已有 `remote` 模块（WS/HTTP bridge），桌面端启远程服务 → 生成二维码 → 手机扫码进入局域网 Web UI → 操作路由到 jcli 执行。手机无需安装 App。
+
+**31. remote-mobile-access** — 桌面远程服务 + 移动端 Web UI
+
+- **现状**：jcli `command::chat::remote` 提供 WS bridge 能力，j-gui 未集成
+- **目标**：j-gui 设置页新增"远程访问"tab——启动/停止远程服务、显示局域网地址+二维码、PIN 码确认、连接设备列表。手机扫码后打开 Web UI，通过局域网操作桌面端的 Chat/Agent
+- **安全**：仅局域网可访问、PIN 码 + Token 双重确认、超时自动断开
+- **依赖**：#30 kernel-trait-abstraction（远程服务通过 trait 调用内核）
+
+---
 
 **29. agent-engine-jagent** — 替换 CC SDK CLI 子进程为 j-agent crate
 
