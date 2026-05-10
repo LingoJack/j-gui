@@ -113,14 +113,18 @@ tags: [tauri, desktop, j-cli, chat, agent]
 
 ### Phase E: 内核解耦 & Agent 升级 (P2)
 
-j-gui 当前与 jcli 重度耦合：22 个导入点跨越 10 个内部模块，无抽象层，path dependency 无 semver 缓冲。需建立 trait 抽象层使 j-gui 仅依赖接口不依赖实现，同时集成 j-agent crate。
+j-gui 当前与 jcli 重度耦合：22 个导入点跨越 10 个内部模块。必须在功能继续堆积前建立 trait 抽象层——每多一个 feature，解耦难度成倍增加。
 
-**30. kernel-trait-abstraction** — jcli 公开 API 抽象层
+**30. kernel-trait-abstraction** — jcli 公开 API 抽象层 ⭐ 优先于 #27
 
-- **现状**：j-gui 直接导入 jcli 内部模块（`j_cli::command::chat::storage`、`j_cli::command::chat::infra::hook::types` 等 22 处），jcli 改任意签名 j-gui 编译报错。
-- **目标**：jcli 暴露 `JcliKernel` trait（或各领域 trait：`ChatKernel` / `ConfigKernel` / `GovernanceKernel`），j-gui 仅依赖 trait，不依赖 impl。包含：Chat 流式调用、会话 CRUD、Provider 配置读写、Skills/Hooks 查询、Alias CRUD、System Prompt 读写、YamlConfig 访问。
-- **收益**：jcli 内部重构不影响 j-gui；j-gui 编译不再依赖 jcli 源码；可切换到 mock 实现做测试。
-- **依赖**：#27 channel-model-unify（Channel 模型稳定后再抽象）
+- **现状**：j-gui 直接导入 jcli 内部模块（22 处），无抽象层，无 semver 缓冲。
+- **目标**：定义 trait 族 → 写适配器（包装现有 jcli 调用）→ j-gui 剩余模块迁移到 trait。ChatKernel / ConfigKernel / GovernanceKernel / SessionKernel，覆盖：Chat 流式调用、会话 CRUD、Provider 配置读写、Skills/Hooks/MCP 查询与启停、Alias CRUD、System Prompt 读写、YamlConfig 访问。
+- **收益**：后续 #27/#28 及其他 feature 全部基于 trait 实现，不再引入新的 jcli 内部导入；可 mock 测试。
+- **不依赖** #27——先抽象，再在上面建 Channel 模型。
+
+### Phase E: Agent 引擎升级 (P2)
+
+jcli 仓库已发布 `j-agent` crate，当前 j-gui 的 Agent 模式通过 CC SDK CLI 子进程运行。集成 j-agent crate 可获得：原生 Rust 控制、无子进程开销、完整的 `AgentBackend` trait 实现、更细粒度的中断/工具/流式控制。
 
 ### Phase E: Agent 引擎升级 (P2)
 

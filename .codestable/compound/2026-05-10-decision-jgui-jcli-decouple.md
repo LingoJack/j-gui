@@ -41,7 +41,14 @@ j-gui 当前通过 path dependency 直接依赖 jcli crate，Channel 管理直�
 - **无抽象层**：j-gui 直接导入 jcli 内部实现（`j_cli::command::chat::agent::api::call_llm_stream_async`、`j_cli::command::chat::infra::hook::types::HookEvent` 等）
 - **最脆弱点**：`HookEvent` 13 变体全量枚举匹配 + `ModelProvider` 裸字段构造 × 2 处
 - **path dependency 无 semver**：`j-cli = { path = "../../jcli" }`，jcli 任意改动立即触发 j-gui 编译错误
-- **长期解决方案**：Phase E `kernel-trait-abstraction`（#30）——定义 `JcliKernel` trait 族，j-gui 仅依赖接口
+- **长期解决方案**：Phase E `kernel-trait-abstraction`（#30）——⭐ 提前到 #27 之前执行。先建 trait 抽象层，后续所有 feature 基于 trait 实现。每延迟一个 feature，解耦成本成倍增加。
+
+### 实施路径（#30）
+
+1. **定义 trait 族**（j-gui 侧）：`ChatKernel` / `ConfigKernel` / `GovernanceKernel` / `SessionKernel` / `SystemKernel`
+2. **写适配器**：`JcliAdapter` 实现全部 trait，内部包装现有 jcli 调用（不改 jcli 代码）
+3. **迁移调用点**：逐个替换 j-gui 模块中的直接 jcli 导入为 trait 方法调用
+4. **退出标准**：`grep -r "j_cli::" src-tauri/src/` 仅剩 `adapters/` 目录下的适配器文件
 
 ## 考虑过的替代方案
 
