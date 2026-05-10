@@ -108,7 +108,7 @@ tags: [tauri, desktop, j-cli, chat, agent]
 22. **file-browser** — 文件树操作 (open/delete/rename)
 23. **branding-cleanup** — @proma/* 包名重命名为 @jgui/*
 24. **readme-docs** — README 完善 + 用户指南
-25. **build-packaging** — Tauri bundle (Windows/macOS/Linux)
+25. **build-packaging** — Tauri bundle (Windows/macOS/Linux)，首版需三个平台全部验证通过
 26. **tdd-coverage** — 测试覆盖达标 (前端 vitest + 后端 cargo test) + Rust 编码规约合规收口（90 个 pub item 缺 `///` 文档 + 6 处长路径引用 + 9 处魔法值提取 + 1 处 `.clone()` 优化 + clippy `#![deny(clippy::all)]` 门禁）
 
 ### Phase E: 内核解耦 & Agent 升级 (P2)
@@ -132,12 +132,13 @@ jcli 仓库已发布 `j-agent` crate，当前 j-gui 的 Agent 模式通过 CC SD
 
 ### Phase F: 移动端远程连接 (P4 远期)
 
-jcli 已有 `remote` 模块（WS/HTTP bridge），桌面端启远程服务 → 生成二维码 → 手机扫码进入局域网 Web UI → 操作路由到 jcli 执行。手机无需安装 App。
+**决策**：移动端不另起项目，在 j-gui 内添加移动端 Web UI（PWA）。手机扫码 → 局域网连接 → 桌面 j-gui 作为 WS 服务端 → 移动 Web UI 作为客户端。不涉及原生 Android/iOS 开发。
 
 **31. remote-mobile-access** — 桌面远程服务 + 移动端 Web UI
 
-- **现状**：jcli `command::chat::remote` 提供 WS bridge 能力，j-gui 未集成
-- **目标**：j-gui 设置页新增"远程访问"tab——启动/停止远程服务、显示局域网地址+二维码、PIN 码确认、连接设备列表。手机扫码后打开 Web UI，通过局域网操作桌面端的 Chat/Agent
+- **现状**：jcli `command::chat::remote` 提供 WS bridge 能力，j-gui 未集成。移动端无 App——需通过扫码 PC 桌面端进入 Web UI
+- **目标**：j-gui 桌面端——设置页"远程访问"tab：启动/停止 WS 服务、局域网地址+二维码、PIN 码确认、连接设备列表。移动端——同一项目内新增 `src-mobile/` React Web UI（PWA），通过 WS 连接桌面端操作 Chat/Agent，响应式适配手机屏幕
+- **不另起项目**：移动 Web UI 在 j-gui monorepo 内，复用 `packages/shared` 类型和 IPC 模式，仅通过网络层替换 Tauri invoke
 - **安全**：仅局域网可访问、PIN 码 + Token 双重确认、超时自动断开
 - **依赖**：#30 kernel-trait-abstraction（远程服务通过 trait 调用内核）
 

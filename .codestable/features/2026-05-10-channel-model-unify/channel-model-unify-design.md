@@ -2,12 +2,15 @@
 doc_type: feature-design
 feature: 2026-05-10-channel-model-unify
 status: draft
-summary: j-gui 自建 Channel 数据模型与 channels.json 存储，从 jcli 单向导入已有 provider，调用时动态映射 ModelProvider。解耦 jcli，消除前后端类型不兼容。
+summary: 基于 #30 kernel traits 的 Channel 数据模型统一——通过 ConfigKernel 读写 jcli provider 数据，前端 Channel 类型对齐后端，API Key 加密存储。
 tags: [channel, data-model, decouple, backend, frontend]
 roadmap: j-gui-v1
 roadmap_item: channel-model-unify
 requirement: null
+depends_on: [kernel-trait-abstraction]
 ---
+
+> **前置依赖**：`2026-05-10-kernel-trait-abstraction` (#30)。本 feature 基于 `ConfigKernel` trait 实现，不再直接导入 jcli 内部模块。
 
 # channel-model-unify — j-gui 自建 Channel 模型，解耦 jcli
 
