@@ -68,7 +68,7 @@ src-tauri/src/kernel/
 - **源 A (j-cli)**: Skills/MCP/Hooks 存储于 `~/.jdata/agent/`，已有 list/save 命令
 - **源 B (CC SDK)**: Skills/MCP 存储于 `~/.jdata/agent/sdk-config/` + 工作区目录
 - **全局 Skills**: `~/.claude/agents/skills/` 和 `~/.agent/skills/`（npx 安装），需 UI 扫描 + 导入
-- **数据同源原则**: Chat/Agent 会话走 j-cli 原生路径；Provider 配置走 `agent_config.json`；GUI 独有配置走 `%APPDATA%/j-gui/`
+- **数据同源原则**: j-gui 是 jcli 的管理壳——Channel/Provider、Alias、Skills、MCP、Hooks、System Prompt 全部写入 jcli 数据目录（`~/.jdata/`），CLI 用户看到相同状态。仅 GUI 独有配置（窗口/主题偏好）和 CC SDK Agent 配置走 `~/AppData/Roaming/j-gui/`
 
 ## 子 Feature 清单
 
@@ -105,14 +105,16 @@ src-tauri/src/kernel/
 - **方案**：j-gui 自建 `channels.json`（`~/.jgui/`），首次从 jcli 单向导入已有 provider，调用时 `Channel → ModelProvider` 动态映射。API Key 自加密存储。
 - **不涉及 jcli 仓库**——仅改动 j-gui 的 channels.rs + chat_engine.rs + agent_engine.rs + 前端 IPC。
 
-**28. governance-bidirectional-sync** — 治理命令补全 + 工作区 ↔ j-cli 双向同步
+**28. governance-bidirectional-sync** — 治理命令补全 + jcli 配置管理 UI 升级
 
 合并原 Phase C #18 `workspace-mcp`。
 
-- **Skills 持久化**：注册 `write_skill_content` / `read_skill_content` / `toggle_workspace_skill` / `delete_workspace_skill` / `import_skill_from_workspace` / `update_skill_from_source` / `get_workspace_skills` / `get_workspace_skills_dir` / `get_other_workspace_skills`
-- **MCP 持久化**：注册 `save_workspace_mcp_config` / `get_workspace_mcp_config`
-- **Hooks 升级**：从只读升级为可管理——注册 `toggle_hook` / `list_hooks_with_status`，UI 增加启停开关 + 按事件/来源筛选
-- **单向导入**：j-gui 读取 jcli Skill/Hook/MCP 数据作为"源 A"（只读展示），j-gui 自有工作区存储作为"源 B"（可读写）。写操作仅写 j-gui 自有存储，不写回 jcli 配置
+j-gui 是 jcli 的桌面管理壳——Skills、MCP、Hooks 的全部管理操作通过 j-gui UI 完成，数据写入 jcli 存储。
+
+- **Skills 管理**：查看 jcli Skills + CC SDK Workspace Skills + 全局 Skills（`~/.claude/agents/skills/` / `~/.agent/skills/`），支持启停、导入、内容编辑。注册 `write_skill_content` / `read_skill_content` / `toggle_workspace_skill` / `delete_workspace_skill` 等命令
+- **MCP 管理**：查看/编辑 jcli MCP（`mcp_config.json`）+ CC SDK 工作区 MCP（`mcp.json`），注册 `save_workspace_mcp_config` / `get_workspace_mcp_config`
+- **Hooks 升级**：从只读升级为可启停管理——注册 `toggle_hook`，UI 增加启停开关 + 按事件/来源筛选。写入 jcli `disabled_hooks`
+- **CC SDK 配置导入**：从用户本地 Claude Code CLI 导入 Agent SDK 配置（Skills/MCP/Hooks），UI 区分 jcli 源 / CC SDK 源 / 全局源
 
 ### Phase C: 体验追平 (P2)
 
