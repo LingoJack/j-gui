@@ -1,7 +1,7 @@
 ---
 doc_type: feature-design
 feature: 2026-05-10-governance-bidirectional-sync
-status: draft
+status: approved
 summary: 注册缺失的 Skills/MCP/Hooks 后端命令，升级 Hooks UI 为可启停管理，支持从 Claude Code CLI 导入 CC SDK Agent 配置。j-gui 作为 jcli 管理壳，所有写操作写入 jcli 数据目录。
 tags: [governance, skills, mcp, hooks, kernel, backend]
 roadmap: j-gui-v1

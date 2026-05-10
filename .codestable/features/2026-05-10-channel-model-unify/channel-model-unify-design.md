@@ -1,7 +1,7 @@
 ---
 doc_type: feature-design
 feature: 2026-05-10-channel-model-unify
-status: draft
+status: approved
 summary: 基于 #30 ConfigKernel trait 扩展 Channel 数据模型——agent_config.json 中 providers 升级为完整 Channel 结构（UUID/provider/models数组/enabled/时间戳），前端 IPC 对齐。j-gui 写入 jcli 数据目录，CLI/GUI 数据同步。
 tags: [channel, data-model, kernel, backend, frontend]
 roadmap: j-gui-v1

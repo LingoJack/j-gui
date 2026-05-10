@@ -1,0 +1,57 @@
+feature: 2026-05-10-channel-model-unify
+roadmap: j-gui-v1
+roadmap_item: channel-model-unify
+created: 2026-05-10
+status: ready
+
+steps:
+  - id: step-1
+    paradigm: data-model
+    description: kernel/types.rs 扩展 KernelProvider (+4 字段) + 新增 KernelChannelModel
+    exit: cargo check 通过
+    status: pending
+  - id: step-2
+    paradigm: data-model
+    description: ConfigKernel trait 新增 create_channel/update_channel/delete_channel
+    exit: cargo check 通过
+    status: pending
+  - id: step-3
+    paradigm: adapter
+    description: JcliAdapter 实现新方法 + agent_config.json 格式迁移逻辑
+    exit: cargo test 通过
+    status: pending
+  - id: step-4
+    paradigm: backend
+    description: channels.rs 命令适配新 Channel 结构 (id: String, models: Vec<ChannelModel>)
+    exit: cargo test 通过
+    status: pending
+  - id: step-5
+    paradigm: frontend
+    description: 前端 IPC + ChannelSettings UI 对齐新字段名
+    exit: bun run test 通过
+    status: pending
+  - id: step-6
+    paradigm: verification
+    description: 端到端验证 — 渠道创建/列表/选中/Chat 可用
+    exit: 手动验收
+    status: pending
+
+checks:
+  - id: check-kernel-types
+    description: KernelProvider 含 id/provider/models/enabled/created_at/updated_at
+    target: step-1
+  - id: check-config-trait
+    description: ConfigKernel 新增 3 方法签名正确
+    target: step-2
+  - id: check-adapter-migration
+    description: JcliAdapter load_providers 自动迁移旧格式
+    target: step-3
+  - id: check-channels-commands
+    description: channels.rs ChannelInfo 使用 String id 和 Vec<ChannelModel>
+    target: step-4
+  - id: check-frontend-ipc
+    description: 前端 Channel 类型与后端一致
+    target: step-5
+  - id: check-e2e
+    description: 端到端渠道 CRUD + Chat 可用
+    target: step-6
