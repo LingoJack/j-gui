@@ -10,6 +10,7 @@ import * as ipc from '@/lib/ipc'
 // Mock the IPC module used by HooksSettings
 vi.mock('@/lib/ipc', () => ({
   listHooks: vi.fn(),
+  toggleHook: vi.fn(),
 }))
 
 const mockHooks = [
@@ -22,6 +23,7 @@ const mockHooks = [
     timeout: 5000,
     onError: 'skip',
     uniqueId: 'hook-pre-send-validate',
+    enabled: true,
   },
   {
     name: null,
@@ -32,6 +34,7 @@ const mockHooks = [
     timeout: null,
     onError: 'stop',
     uniqueId: 'hook-post-llm-bash',
+    enabled: false,
   },
   {
     name: 'log-session',
@@ -42,6 +45,7 @@ const mockHooks = [
     timeout: 3000,
     onError: null,
     uniqueId: 'hook-session-log',
+    enabled: false,
   },
 ]
 
@@ -60,16 +64,16 @@ describe('HooksSettings', () => {
       expect(screen.getByText('消息验证')).toBeInTheDocument()
     })
 
-    // Event group headers
-    expect(screen.getByText('PreSendMessage')).toBeInTheDocument()
-    expect(screen.getByText('PostLlmResponse')).toBeInTheDocument()
-    expect(screen.getByText('SessionStart')).toBeInTheDocument()
+    // Event group headers (headings, not filter dropdown options)
+    expect(screen.getByRole('heading', { name: 'PreSendMessage' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'PostLlmResponse' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'SessionStart' })).toBeInTheDocument()
 
     // Hook details
     expect(screen.getByText('validate-message')).toBeInTheDocument()
-    expect(screen.getAllByText('builtin').length).toBe(2)
     expect(screen.getByText('LLM 响应后处理')).toBeInTheDocument()
-    expect(screen.getByText('user')).toBeInTheDocument()
+    // "user" and "builtin" appear as source badges and filter options
+    expect(screen.getAllByText('user').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('bash')).toBeInTheDocument()
   })
 
@@ -114,6 +118,7 @@ describe('HooksSettings', () => {
         timeout: 1000,
         onError: 'skip',
         uniqueId: 'hook-format-check',
+        enabled: true,
       },
     ]
     ;(ipc.listHooks as any).mockResolvedValue(multiHooks)

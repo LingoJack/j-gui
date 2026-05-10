@@ -575,9 +575,13 @@ export interface HookInfo {
   timeout: number | null
   onError: string | null
   uniqueId: string
+  enabled: boolean
 }
 
 export const listHooks = () => tryInvoke<HookInfo[]>('list_hooks', undefined, [])
+
+export const toggleHook = (uniqueId: string, enabled: boolean) =>
+  tryInvoke('toggle_hook', { uniqueId, enabled })
 
 // ============================================================
 // Yaml Config
