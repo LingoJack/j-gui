@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::ipc::Channel;
 
 // ---------------------------------------------------------------------------
 // Provider / Channel types
@@ -204,4 +205,16 @@ pub fn infer_provider(api_base: &str) -> String {
         return "tongyi".into();
     }
     "custom".into()
+}
+
+/// Parameters for running the jcli agent loop directly through ChatKernel.
+#[derive(Clone)]
+pub struct KernelAgentParams {
+    pub session_id: String,
+    pub messages: Vec<KernelChatMessage>,
+    pub system_prompt: Option<String>,
+    pub permission_mode: String,
+    /// Channel for streaming agent events as JSON strings.
+    /// The frontend should parse each string as JSON.
+    pub on_event: Channel<String>,
 }

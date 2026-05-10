@@ -4,6 +4,7 @@
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use super::chat::ChatKernel;
 use super::config::ConfigKernel;
@@ -13,17 +14,28 @@ use super::types::*;
 
 // ===== jcli imports — ONLY place in project =====
 use j_cli::command::chat::agent::api::call_llm_stream_async;
+use j_cli::command::chat::agent::config::{AgentLoopConfig, AgentLoopSharedState};
+use j_cli::command::chat::agent::{run_main_agent_loop, MainAgentLoopParams};
+use j_cli::command::chat::app::types::{AskRequest, StreamMsg, ToolResultMsg};
+use j_cli::command::chat::context::compact::new_invoked_skills_map;
 use j_cli::command::chat::infra::hook::manager::HookManager;
 use j_cli::command::chat::infra::hook::types::OnError;
 use j_cli::command::chat::infra::skill::load_all_skills;
+use j_cli::command::chat::permission::JcliConfig;
 use j_cli::command::chat::storage::session::{list_sessions, SessionPaths};
 use j_cli::command::chat::storage::{
     self, load_agent_config, load_system_prompt as jcli_load_system_prompt, save_agent_config,
     save_system_prompt as jcli_save_system_prompt, ChatMessage as JcliChatMessage, DisplayHint,
     MessageRole, ModelProvider,
 };
+use j_cli::command::chat::tools::background::BackgroundManager;
+use j_cli::command::chat::tools::definition::ToolRegistry;
+use j_cli::command::chat::tools::derived_shared::SubAgentMetrics;
+use j_cli::command::chat::tools::task::TaskManager;
+use j_cli::command::chat::tools::todo::TodoManager;
 use j_cli::config::YamlConfig;
 use j_cli::theme::ThemeName;
+use tokio_util::sync::CancellationToken;
 
 // ===== JcliAdapter =====
 
@@ -415,6 +427,143 @@ impl ChatKernel for JcliAdapter {
         call_llm_stream_async(&jcli_provider, &jcli_messages, system_prompt, on_chunk)
             .await
             .map_err(|e| KernelError::Chat(Box::new(std::io::Error::other(e.to_string()))))
+    }
+
+    async fn run_agent_loop(&self, params: KernelAgentParams) -> Result<(), KernelError> {
+        // 1. Load provider and config
+        let agent_config = load_agent_config();
+        let provider = agent_config
+            .providers
+            .get(agent_config.active_index)
+            .cloned()
+            .ok_or_else(|| KernelError::Config("No active provider configured".into()))?;
+
+        // 2. Build Arc shared infrastructure
+        let streaming_content: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+        let streaming_reasoning_content: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+        let pending_user_messages: Arc<Mutex<Vec<JcliChatMessage>>> =
+            Arc::new(Mutex::new(Vec::new()));
+        let background_manager = Arc::new(BackgroundManager::new());
+        let display_messages: Arc<Mutex<Vec<JcliChatMessage>>> = Arc::new(Mutex::new(Vec::new()));
+        let context_messages: Arc<Mutex<Vec<JcliChatMessage>>> = Arc::new(Mutex::new(Vec::new()));
+        let estimated_context_tokens = Arc::new(Mutex::new(0usize));
+        let invoked_skills = new_invoked_skills_map();
+        let derived_system_prompt = Arc::new(Mutex::new(params.system_prompt.clone()));
+        let deferred_tools_vec = agent_config.deferred_tools.clone();
+        let deferred_tools = Arc::new(Mutex::new(deferred_tools_vec));
+        let session_loaded_deferred: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let sub_agent_metrics = Arc::new(Mutex::new(SubAgentMetrics::default()));
+
+        // 3. Build ToolRegistry (requires skills + infrastructure)
+        let skills = load_all_skills();
+        let (ask_tx, ask_rx) = std::sync::mpsc::channel::<AskRequest>();
+        let task_manager = Arc::new(TaskManager::new());
+        let hook_manager_for_tools = Arc::new(Mutex::new(HookManager::load()));
+
+        // todos file path — mirrors TodoManager::new() internal logic
+        let todos_file_path = {
+            let config_dir = JcliConfig::find_config_dir().or_else(JcliConfig::ensure_config_dir);
+            match config_dir {
+                Some(dir) => {
+                    let _ = std::fs::create_dir_all(&dir);
+                    dir.join("todos.json")
+                }
+                None => {
+                    let data_dir = YamlConfig::data_dir();
+                    let dir = data_dir.join("agent").join("data");
+                    let _ = std::fs::create_dir_all(&dir);
+                    dir.join("todos.json")
+                }
+            }
+        };
+
+        let tool_registry = Arc::new(ToolRegistry::new(
+            skills,
+            ask_tx,
+            Arc::clone(&background_manager),
+            Arc::clone(&task_manager),
+            Arc::clone(&hook_manager_for_tools),
+            Arc::clone(&invoked_skills),
+            todos_file_path,
+        ));
+
+        // 4. Discard AskTool requests in background (no TUI in GUI mode)
+        std::thread::spawn(move || {
+            while let Ok(req) = ask_rx.recv() {
+                let _ = req
+                    .response_tx
+                    .send("Ask tool not available in GUI agent mode".to_string());
+            }
+        });
+
+        // 5. Build AgentLoopConfig
+        let hook_manager = HookManager::load();
+        let agent_config_for_loop = AgentLoopConfig {
+            provider,
+            max_llm_rounds: agent_config.max_tool_rounds,
+            compact_config: agent_config.compact.clone(),
+            hook_manager,
+            disabled_hooks: agent_config.disabled_hooks.clone(),
+            cancel_token: CancellationToken::new(),
+        };
+
+        // 6. Build AgentLoopSharedState
+        let todo_manager = Arc::new(TodoManager::new());
+        let agent_shared = AgentLoopSharedState {
+            streaming_content: Arc::clone(&streaming_content),
+            streaming_reasoning_content: Arc::clone(&streaming_reasoning_content),
+            pending_user_messages: Arc::clone(&pending_user_messages),
+            background_manager: Arc::clone(&background_manager),
+            todo_manager,
+            display_messages: Arc::clone(&display_messages),
+            context_messages: Arc::clone(&context_messages),
+            estimated_context_tokens: Arc::clone(&estimated_context_tokens),
+            invoked_skills: Arc::clone(&invoked_skills),
+            session_id: params.session_id.clone(),
+            derived_system_prompt: Arc::clone(&derived_system_prompt),
+            tool_registry: Arc::clone(&tool_registry),
+            disabled_tools: agent_config.disabled_tools.clone(),
+            deferred_tools: Arc::clone(&deferred_tools),
+            session_loaded_deferred,
+            tools_enabled: agent_config.tools_enabled,
+            sub_agent_metrics: Arc::clone(&sub_agent_metrics),
+        };
+
+        // 7. Convert chat messages to jcli format
+        let jcli_messages = to_jcli_messages(&params.messages);
+
+        // 8. Build system_prompt_fn (fixed prompt from params)
+        let system_prompt_value = params.system_prompt.clone();
+        let system_prompt_fn: Arc<dyn Fn() -> Option<String> + Send + Sync> =
+            Arc::new(move || system_prompt_value.clone());
+
+        // 9. Create mpsc channels + spawn bridge thread
+        let (tx, rx) = std::sync::mpsc::channel::<StreamMsg>();
+        let (_tool_result_tx, tool_result_rx) = std::sync::mpsc::channel::<ToolResultMsg>();
+
+        let on_event = params.on_event;
+        std::thread::spawn(move || {
+            while let Ok(msg) = rx.recv() {
+                let json = stream_msg_to_json_string(&msg);
+                if on_event.send(json).is_err() {
+                    break;
+                }
+            }
+        });
+
+        // 10. Run the agent loop
+        let loop_params = MainAgentLoopParams {
+            config: agent_config_for_loop,
+            shared: agent_shared,
+            messages: jcli_messages,
+            system_prompt_fn,
+            tx,
+            tool_result_rx,
+        };
+
+        run_main_agent_loop(loop_params).await;
+
+        Ok(())
     }
 
     fn append_message(
@@ -1115,6 +1264,47 @@ impl GovernanceKernel for JcliAdapter {
     }
 }
 
+// ===== Agent loop channel bridge =====
+
+/// Convert a jcli `StreamMsg` to a JSON string for the frontend `Channel<String>`.
+fn stream_msg_to_json_string(msg: &StreamMsg) -> String {
+    let value = match msg {
+        StreamMsg::Chunk => serde_json::json!({"type": "chunk"}),
+        StreamMsg::ToolCallRequest(tools) => serde_json::json!({
+            "type": "toolCallRequest",
+            "tools": tools.iter().map(|t| serde_json::json!({
+                "id": t.id,
+                "name": t.name,
+                "arguments": t.arguments,
+            })).collect::<Vec<_>>(),
+        }),
+        StreamMsg::Done => serde_json::json!({"type": "done"}),
+        StreamMsg::Error(err) => serde_json::json!({
+            "type": "error",
+            "message": err.to_string(),
+        }),
+        StreamMsg::Cancelled => serde_json::json!({"type": "cancelled"}),
+        StreamMsg::Retrying {
+            attempt,
+            max_attempts,
+            delay_ms,
+            error,
+        } => serde_json::json!({
+            "type": "retrying",
+            "attempt": attempt,
+            "maxAttempts": max_attempts,
+            "delayMs": delay_ms,
+            "error": error,
+        }),
+        StreamMsg::Compacting => serde_json::json!({"type": "compacting"}),
+        StreamMsg::Compacted { messages_before } => serde_json::json!({
+            "type": "compacted",
+            "messagesBefore": messages_before,
+        }),
+    };
+    value.to_string()
+}
+
 // ===== Tests =====
 
 #[cfg(test)]
@@ -1122,6 +1312,87 @@ mod tests {
     use super::*;
     use j_cli::command::chat::storage::session::sessions_dir;
     use std::fs;
+
+    // ── stream_msg_to_json_string tests ──
+
+    #[test]
+    fn stream_msg_chunk_serialization() {
+        let json = stream_msg_to_json_string(&StreamMsg::Chunk);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["type"], "chunk");
+    }
+
+    #[test]
+    fn stream_msg_done_serialization() {
+        let json = stream_msg_to_json_string(&StreamMsg::Done);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["type"], "done");
+    }
+
+    #[test]
+    fn stream_msg_error_serialization() {
+        let err = j_cli::command::chat::error::ChatError::Other("test error".into());
+        let json = stream_msg_to_json_string(&StreamMsg::Error(err));
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["type"], "error");
+        assert!(v["message"].as_str().unwrap().contains("test error"));
+    }
+
+    #[test]
+    fn stream_msg_tool_call_request_serialization() {
+        let tools = vec![j_cli::command::chat::storage::ToolCallItem {
+            id: "tool1".into(),
+            name: "Bash".into(),
+            arguments: r#"{"command":"ls"}"#.into(),
+        }];
+        let json = stream_msg_to_json_string(&StreamMsg::ToolCallRequest(tools));
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["type"], "toolCallRequest");
+        assert_eq!(v["tools"][0]["id"], "tool1");
+        assert_eq!(v["tools"][0]["name"], "Bash");
+    }
+
+    #[test]
+    fn stream_msg_cancelled_serialization() {
+        let json = stream_msg_to_json_string(&StreamMsg::Cancelled);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["type"], "cancelled");
+    }
+
+    #[test]
+    fn stream_msg_retrying_serialization() {
+        let json = stream_msg_to_json_string(&StreamMsg::Retrying {
+            attempt: 2,
+            max_attempts: 3,
+            delay_ms: 1000,
+            error: "timeout".into(),
+        });
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["type"], "retrying");
+        assert_eq!(v["attempt"], 2);
+        assert_eq!(v["maxAttempts"], 3);
+        assert_eq!(v["delayMs"], 1000);
+        assert_eq!(v["error"], "timeout");
+    }
+
+    #[test]
+    fn stream_msg_compacting_serialization() {
+        let json = stream_msg_to_json_string(&StreamMsg::Compacting);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["type"], "compacting");
+    }
+
+    #[test]
+    fn stream_msg_compacted_serialization() {
+        let json = stream_msg_to_json_string(&StreamMsg::Compacted {
+            messages_before: 42,
+        });
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["type"], "compacted");
+        assert_eq!(v["messagesBefore"], 42);
+    }
+
+    // ── Existing tests ──
 
     /// toggle_session_bool_field returns error when transcript is missing
     /// (should not create phantom meta file for non-existent session)

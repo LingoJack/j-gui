@@ -3,7 +3,9 @@
 use async_trait::async_trait;
 
 use super::error::KernelError;
-use super::types::{KernelChatMessage, KernelProvider, KernelSessionEvent, KernelSessionSummary};
+use super::types::{
+    KernelAgentParams, KernelChatMessage, KernelProvider, KernelSessionEvent, KernelSessionSummary,
+};
 
 /// Chat + Session kernel trait.
 /// Requires Send + Sync so Arc<dyn ChatKernel> is Send (needed for thread::spawn).
@@ -19,6 +21,12 @@ pub trait ChatKernel: Send + Sync {
         system_prompt: Option<&str>,
         on_chunk: &mut dyn for<'a> FnMut(&'a str),
     ) -> Result<String, KernelError>;
+
+    /// Run the jcli agent loop directly through the kernel.
+    /// The agent loop handles multi-round tool calling, streaming,
+    /// auto-compact, and interrupt handling.
+    /// Events are streamed as JSON strings through `params.on_event`.
+    async fn run_agent_loop(&self, params: KernelAgentParams) -> Result<(), KernelError>;
 
     /// Persist a message event to the session transcript.
     fn append_message(
