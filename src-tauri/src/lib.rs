@@ -45,6 +45,8 @@ pub fn run() {
             commands::chat::delete_message,
             commands::chat::clear_session,
             commands::chat::stop_generation,
+            commands::chat::toggle_pin_conversation,
+            commands::chat::toggle_archive_conversation,
             commands::config::get_config,
             commands::config::set_config,
             commands::config::get_agent_config,

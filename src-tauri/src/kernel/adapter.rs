@@ -440,11 +440,34 @@ impl ChatKernel for JcliAdapter {
         let sessions = list_sessions();
         Ok(sessions
             .into_iter()
-            .map(|s| KernelSessionSummary {
-                id: s.id,
-                title: s.title,
-                message_count: s.message_count,
-                updated_at: s.updated_at,
+            .map(|s| {
+                // Read pinned/archived from session.json metadata
+                let meta_path = SessionPaths::new(&s.id).meta_file();
+                let (pinned, archived) = if meta_path.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&meta_path) {
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                            (
+                                val.get("pinned").and_then(|v| v.as_bool()).unwrap_or(false),
+                                val.get("archived").and_then(|v| v.as_bool()).unwrap_or(false),
+                            )
+                        } else {
+                            (false, false)
+                        }
+                    } else {
+                        (false, false)
+                    }
+                } else {
+                    (false, false)
+                };
+
+                KernelSessionSummary {
+                    id: s.id,
+                    title: s.title,
+                    message_count: s.message_count,
+                    updated_at: s.updated_at,
+                    pinned,
+                    archived,
+                }
             })
             .collect())
     }
@@ -521,6 +544,14 @@ impl ChatKernel for JcliAdapter {
             return Err(KernelError::Config("清除会话失败".into()));
         }
         Ok(())
+    }
+
+    fn toggle_pin(&self, session_id: &str) -> Result<KernelSessionSummary, KernelError> {
+        toggle_session_bool_field(session_id, "pinned")
+    }
+
+    fn toggle_archive(&self, session_id: &str) -> Result<KernelSessionSummary, KernelError> {
+        toggle_session_bool_field(session_id, "archived")
     }
 }
 
@@ -614,6 +645,71 @@ fn scan_workspace_skills_dir(skills_dir: &std::path::Path) -> Vec<KernelSkillInf
         }
     }
     skills
+}
+
+// ===== Session metadata helpers =====
+
+/// Toggle a boolean field in session.json metadata.
+/// Reads the current value, flips it, writes back, and returns the updated summary.
+fn toggle_session_bool_field(session_id: &str, field: &str) -> Result<KernelSessionSummary, KernelError> {
+    let meta_path = SessionPaths::new(session_id).meta_file();
+
+    // Read existing meta or create default
+    let mut meta: serde_json::Value = if meta_path.exists() {
+        let content = std::fs::read_to_string(&meta_path)?;
+        serde_json::from_str(&content).unwrap_or_else(|_| {
+            serde_json::json!({
+                "id": session_id,
+                "title": "",
+                "message_count": 0,
+                "created_at": 0,
+                "updated_at": 0,
+            })
+        })
+    } else {
+        serde_json::json!({
+            "id": session_id,
+            "title": "",
+            "message_count": 0,
+            "created_at": 0,
+            "updated_at": 0,
+        })
+    };
+
+    // Toggle the field
+    let current = meta.get(field).and_then(|v| v.as_bool()).unwrap_or(false);
+    meta[field] = serde_json::json!(!current);
+
+    // Update timestamp
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    meta["updated_at"] = serde_json::json!(now);
+
+    // Write back
+    if let Some(parent) = meta_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let json =
+        serde_json::to_string_pretty(&meta).map_err(|e| KernelError::Config(e.to_string()))?;
+    std::fs::write(&meta_path, json)?;
+
+    // Build summary
+    let pinned = meta.get("pinned").and_then(|v| v.as_bool()).unwrap_or(false);
+    let archived = meta.get("archived").and_then(|v| v.as_bool()).unwrap_or(false);
+    let title = meta.get("title").and_then(|v| v.as_str()).map(|s| {
+        if s.is_empty() { None } else { Some(s.to_string()) }
+    }).unwrap_or(None);
+
+    Ok(KernelSessionSummary {
+        id: session_id.to_string(),
+        title,
+        message_count: meta.get("message_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+        updated_at: now,
+        pinned,
+        archived,
+    })
 }
 
 // ===== GovernanceKernel impl =====

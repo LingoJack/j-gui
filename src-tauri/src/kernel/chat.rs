@@ -36,6 +36,12 @@ pub trait ChatKernel: Send + Sync {
     fn delete_session(&self, session_id: &str) -> Result<(), KernelError>;
     fn delete_message(&self, session_id: &str, pair_index: usize) -> Result<(), KernelError>;
     fn clear_session(&self, session_id: &str) -> Result<(), KernelError>;
+
+    /// Toggle the pinned state of a session. Returns the updated summary.
+    fn toggle_pin(&self, session_id: &str) -> Result<KernelSessionSummary, KernelError>;
+
+    /// Toggle the archived state of a session. Returns the updated summary.
+    fn toggle_archive(&self, session_id: &str) -> Result<KernelSessionSummary, KernelError>;
 }
 
 // Unit tests

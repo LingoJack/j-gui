@@ -63,6 +63,66 @@ pub fn stop_generation(session_id: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn toggle_pin_conversation(session_id: String) -> Result<SessionInfo, String> {
+    ChatEngine::new().toggle_pin(&session_id)
+}
+
+#[tauri::command]
+pub fn toggle_archive_conversation(session_id: String) -> Result<SessionInfo, String> {
+    ChatEngine::new().toggle_archive(&session_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Cleanup(String);
+
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = ChatEngine::new().delete_session(&self.0);
+        }
+    }
+
+    #[test]
+    fn test_toggle_pin_cycle() {
+        let engine = ChatEngine::new();
+        let id = engine.create_session();
+        let _cleanup = Cleanup(id.clone());
+
+        // Toggle on
+        let info = engine.toggle_pin(&id).unwrap();
+        assert!(info.pinned, "session should be pinned after toggle");
+
+        // Toggle off
+        let info = engine.toggle_pin(&id).unwrap();
+        assert!(!info.pinned, "session should be unpinned after second toggle");
+    }
+
+    #[test]
+    fn test_toggle_archive_cycle() {
+        let engine = ChatEngine::new();
+        let id = engine.create_session();
+        let _cleanup = Cleanup(id.clone());
+
+        // Toggle on
+        let info = engine.toggle_archive(&id).unwrap();
+        assert!(info.archived, "session should be archived after toggle");
+
+        // Toggle off
+        let info = engine.toggle_archive(&id).unwrap();
+        assert!(!info.archived, "session should be unarchived after second toggle");
+    }
+
+    #[test]
+    fn test_toggle_invalid_session() {
+        let engine = ChatEngine::new();
+        let result = engine.toggle_pin("invalid-session-id!");
+        assert!(result.is_err(), "invalid session id should fail");
+    }
+}
+
 /// Checked by the chat engine's streaming loop.
 pub fn is_session_stopped(session_id: &str) -> bool {
     STOPPED_SESSIONS

@@ -33,6 +33,10 @@ pub struct SessionInfo {
     pub title: Option<String>,
     pub message_count: usize,
     pub updated_at: u64,
+    #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
+    pub archived: bool,
 }
 
 pub struct ChatEngine {
@@ -210,6 +214,8 @@ impl ChatEngine {
                 title: s.title,
                 message_count: s.message_count,
                 updated_at: s.updated_at,
+                pinned: s.pinned,
+                archived: s.archived,
             })
             .collect())
     }
@@ -273,5 +279,37 @@ impl ChatEngine {
         self.chat_kernel
             .delete_session(session_id)
             .map_err(|e| e.to_string())
+    }
+
+    pub fn toggle_pin(&self, session_id: &str) -> Result<SessionInfo, String> {
+        Self::validate_session_id(session_id)?;
+        let summary = self
+            .chat_kernel
+            .toggle_pin(session_id)
+            .map_err(|e| e.to_string())?;
+        Ok(SessionInfo {
+            id: summary.id,
+            title: summary.title,
+            message_count: summary.message_count,
+            updated_at: summary.updated_at,
+            pinned: summary.pinned,
+            archived: summary.archived,
+        })
+    }
+
+    pub fn toggle_archive(&self, session_id: &str) -> Result<SessionInfo, String> {
+        Self::validate_session_id(session_id)?;
+        let summary = self
+            .chat_kernel
+            .toggle_archive(session_id)
+            .map_err(|e| e.to_string())?;
+        Ok(SessionInfo {
+            id: summary.id,
+            title: summary.title,
+            message_count: summary.message_count,
+            updated_at: summary.updated_at,
+            pinned: summary.pinned,
+            archived: summary.archived,
+        })
     }
 }

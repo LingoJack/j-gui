@@ -79,6 +79,10 @@ pub struct KernelSessionSummary {
     pub title: Option<String>,
     pub message_count: usize,
     pub updated_at: u64,
+    #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
+    pub archived: bool,
 }
 
 /// Session event from transcript.
