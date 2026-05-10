@@ -472,7 +472,14 @@ mod tests {
         assert_eq!(info.provider, "openai");
         // api_base is NOT masked
         assert_eq!(info.base_url, "https://api.openai.com/v1");
-        assert_eq!(info.models, vec![KernelChannelModel { id: "gpt-4o".into(), name: "gpt-4o".into(), enabled: true }]);
+        assert_eq!(
+            info.models,
+            vec![KernelChannelModel {
+                id: "gpt-4o".into(),
+                name: "gpt-4o".into(),
+                enabled: true
+            }]
+        );
     }
 
     // --- list_channels_impl ---
@@ -517,7 +524,14 @@ mod tests {
         assert_eq!(channels[0].name, "My Provider");
         assert_eq!(channels[0].provider, "deepseek");
         assert_eq!(channels[0].base_url, "https://api.deepseek.com");
-        assert_eq!(channels[0].models, vec![KernelChannelModel { id: "deepseek-chat".into(), name: "deepseek-chat".into(), enabled: true }]);
+        assert_eq!(
+            channels[0].models,
+            vec![KernelChannelModel {
+                id: "deepseek-chat".into(),
+                name: "deepseek-chat".into(),
+                enabled: true
+            }]
+        );
     }
 
     // --- create_channel_impl ---

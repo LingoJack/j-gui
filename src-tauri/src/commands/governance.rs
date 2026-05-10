@@ -1,6 +1,6 @@
 use j_cli::command::chat::storage::{load_agent_config, save_agent_config};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -99,18 +99,6 @@ pub struct McpServerConfig {
     pub disabled: bool,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct McpServerConfigPayload {
-    name: String,
-    transport: String,
-    command: Option<String>,
-    args: Option<Vec<String>>,
-    url: Option<String>,
-    env: Option<HashMap<String, String>>,
-    disabled: bool,
-}
-
 fn mcp_config_path() -> PathBuf {
     j_cli::config::YamlConfig::data_dir()
         .join("agent")
@@ -147,62 +135,52 @@ pub fn save_mcp_servers(servers: Vec<McpServerConfig>) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
     }
-    let existing_items = if path.exists() {
+    let existing = if path.exists() {
         let content = fs::read_to_string(&path).map_err(|e| format!("读取 MCP 配置失败: {}", e))?;
-        match serde_json::from_str::<Value>(&content) {
-            Ok(Value::Array(items)) => items,
-            Ok(_) => return Err("MCP 配置格式错误: 顶层必须是数组".to_string()),
-            Err(e) => return Err(format!("解析 MCP 配置失败: {}", e)),
-        }
+        serde_json::from_str::<Vec<McpServerConfig>>(&content)
+            .map_err(|e| format!("解析 MCP 配置失败: {}", e))?
     } else {
         Vec::new()
     };
 
-    let mut existing_by_name: HashMap<String, Value> = existing_items
-        .into_iter()
-        .filter_map(|item| {
-            let name = item
-                .get("name")
-                .and_then(Value::as_str)
-                .map(ToOwned::to_owned)?;
-            Some((name, item))
-        })
-        .collect();
-
-    let merged_items: Result<Vec<Value>, String> = servers
-        .into_iter()
-        .map(|server| {
-            let payload = McpServerConfigPayload {
-                name: server.name.clone(),
-                transport: server.transport.clone(),
-                command: server.command.clone(),
-                args: server.args.clone(),
-                url: server.url.clone(),
-                env: server.env.clone(),
-                disabled: server.disabled,
-            };
-            let payload_value =
-                serde_json::to_value(payload).map_err(|e| format!("序列化失败: {}", e))?;
-            let payload_object = payload_value
-                .as_object()
-                .ok_or_else(|| "MCP 配置序列化结果无效".to_string())?;
-
-            let mut merged = match existing_by_name.remove(&server.name) {
-                Some(Value::Object(map)) => map,
-                Some(_) | None => Map::new(),
-            };
-
-            for (key, value) in payload_object {
-                merged.insert(key.clone(), value.clone());
-            }
-
-            Ok(Value::Object(merged))
-        })
-        .collect();
-
+    let merged = merge_mcp_config(&existing, &servers);
     let content =
-        serde_json::to_string_pretty(&merged_items?).map_err(|e| format!("序列化失败: {}", e))?;
+        serde_json::to_string_pretty(&merged).map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(&path, content).map_err(|e| format!("写入 MCP 配置失败: {}", e))
+}
+
+/// Merge incoming MCP server configs into existing ones by name.
+/// Existing servers not present in `incoming` are removed from the result.
+/// For servers with the same name, incoming values overwrite existing ones;
+/// existing values are preserved only where incoming has `None` for optional fields.
+fn merge_mcp_config(
+    existing: &[McpServerConfig],
+    incoming: &[McpServerConfig],
+) -> Vec<McpServerConfig> {
+    let mut by_name: HashMap<&str, &McpServerConfig> = HashMap::new();
+    for s in existing {
+        by_name.entry(s.name.as_str()).or_insert(s);
+    }
+
+    incoming
+        .iter()
+        .map(|server| {
+            if let Some(existing_server) = by_name.get(server.name.as_str()) {
+                McpServerConfig {
+                    command: server
+                        .command
+                        .clone()
+                        .or_else(|| existing_server.command.clone()),
+                    args: server.args.clone().or_else(|| existing_server.args.clone()),
+                    url: server.url.clone().or_else(|| existing_server.url.clone()),
+                    env: server.env.clone().or_else(|| existing_server.env.clone()),
+                    ..server.clone()
+                }
+            } else {
+                server.clone()
+            }
+        })
+        .collect()
 }
 
 // ===== Chat Tools =====

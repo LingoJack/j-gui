@@ -63,8 +63,7 @@ pub fn stop_generation(session_id: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Checked by the chat engine's streaming loop (TODO: integrate in send_message).
-#[allow(dead_code)]
+/// Checked by the chat engine's streaming loop.
 pub fn is_session_stopped(session_id: &str) -> bool {
     STOPPED_SESSIONS
         .lock()
@@ -73,8 +72,7 @@ pub fn is_session_stopped(session_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Cleared after the engine acknowledges the stop (TODO: integrate in send_message completion).
-#[allow(dead_code)]
+/// Cleared after the engine acknowledges the stop.
 pub fn clear_stopped_session(session_id: &str) {
     if let Ok(mut guard) = STOPPED_SESSIONS.lock() {
         if let Some(set) = guard.as_mut() {

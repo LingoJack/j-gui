@@ -18,7 +18,8 @@ fn safe_path(allowed_dir: &PathBuf, user_path: &str) -> Result<PathBuf, String> 
         .ok_or("无效的文件名")?
         .to_os_string();
     let resolved = allowed_dir.join(&clean);
-    let canonical = std::fs::canonicalize(allowed_dir).unwrap_or_else(|_| allowed_dir.clone());
+    let canonical = std::fs::canonicalize(allowed_dir)
+        .map_err(|_| "附件目录不存在，请先创建目录".to_string())?;
     if !resolved.starts_with(&canonical) {
         return Err("路径穿越被拒绝".into());
     }

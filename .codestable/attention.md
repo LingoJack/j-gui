@@ -26,5 +26,6 @@
 ### 其他
 
 - Rust 编码规约详见 `compound/2026-05-08-decision-rust-coding-conventions.md`
+- **Agent API key 环境变量泄露风险**：Claude CLI 子进程的 `ANTHROPIC_API_KEY` 通过 `cmd.env()` 设置，当前用户下的其他进程可通过 `/proc/<pid>/environ`（Linux）或进程环境 API（Windows）读取该 key。已知 tradeoff = 《Claude CLI 的官方认证方式》，子进程生命周期短，单用户桌面场景可接受
 - **Roadmap 进度报告**：每完成一个 roadmap item 并提交后，必须输出量化进度（已完成/总数、P0 完成数、当前解锁的下游项）
 - **jcli 已知警告**：`jcli/src/command/chat/remote/bridge.rs` 有 `unused import: std::process::Child`，每次编译 j-gui 都会显示 `warning: j-cli (lib) generated 1 warning`——这是 jcli 仓库代码，j-gui 不能修，忽略即可

@@ -67,10 +67,10 @@ impl AgentEngine {
         if !api_base.is_empty() {
             cmd.env("ANTHROPIC_BASE_URL", api_base);
         }
-        // API key is passed via env var as required by the Claude CLI.
-        // On a single-user desktop this is acceptable; on shared systems,
-        // /proc/<pid>/environ (Linux) or process environment APIs (Windows)
-        // could leak the key to same-user processes.
+        // SAFETY: This is the documented Claude CLI authentication method.
+        // The process is short-lived and on a single-user desktop this is acceptable.
+        // On shared systems, /proc/<pid>/environ (Linux) or process environment APIs
+        // (Windows) could leak the key to same-user processes. This is a known tradeoff.
         if !api_key.is_empty() {
             cmd.env("ANTHROPIC_API_KEY", api_key);
         }
@@ -403,11 +403,6 @@ fn parse_assistant_event(v: &serde_json::Value) -> Vec<AgentEvent> {
                     if tool_name.is_empty() {
                         tool_name = "Tool".to_string();
                     }
-                    // Write item to temp for debugging
-                    let _ = std::fs::write(
-                        std::env::temp_dir().join("jgui-agent-tooluse.json"),
-                        serde_json::to_string(item).unwrap_or_default(),
-                    );
                     let tool_input = item["input"].to_string();
                     events.push(AgentEvent::ToolUse {
                         tool_id,
