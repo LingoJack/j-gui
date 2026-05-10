@@ -220,7 +220,7 @@ export const listAgentSessions = () => tryInvoke<any[]>('list_agent_sessions', u
 export const createAgentSession = (title?: string, channelId?: string, workspaceId?: string) =>
   tryInvoke<any>('create_agent_session', { title, channelId, workspaceId })
 export const getAgentSessionSDKMessages = (id: string) => tryInvoke<any[]>('get_agent_session_sdk_messages', { id }, [])
-export async function updateAgentSessionTitle(id: string, title: string) { return invoke<any>('update_agent_session_title', { id, title }) }
+export async function updateAgentSessionTitle(id: string, title: string) { return invoke<any>('update_agent_session_title', { sessionId: id, title }) }
 export const deleteAgentSession = (id: string) => tryInvoke('delete_agent_session', { id })
 export const migrateChatToAgent = (conversationId: string, agentSessionId: string) =>
   tryInvoke('migrate_chat_to_agent', { conversationId, agentSessionId })
