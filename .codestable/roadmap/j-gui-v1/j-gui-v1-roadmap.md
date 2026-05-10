@@ -5,7 +5,7 @@ status: active
 created: 2026-05-10
 last_reviewed: 2026-05-10
 
-# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5
+# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5 | Phase E 0/1
 
 > **Phase A/B 完成口径**：基础链路已实现并通过测试，但存在前后端数据模型不兼容的端到端问题（详见 #27 说明）。
 tags: [tauri, desktop, j-cli, chat, agent]
@@ -18,7 +18,7 @@ tags: [tauri, desktop, j-cli, chat, agent]
 基于 Proma UI/UX 重构的 Tauri 桌面 AI 客户端，后端集成 j-cli 引擎。
 
 - **Chat**: j-cli 流式对话引擎
-- **Agent**: CC SDK CLI + j-agent (jcli 仓库)
+- **Agent**: CC SDK CLI 子进程（当前）+ j-agent crate（计划，jcli 仓库已发布 `j-agent` crate）
 - **UI**: Proma React 前端 (致谢: [Proma](https://github.com/ErlichLiu/Proma), Apache-2.0)
 
 ## 后端能力现状
@@ -38,11 +38,11 @@ tags: [tauri, desktop, j-cli, chat, agent]
 | Alias (commands/alias.rs) | 3 | 工作 (j-cli) |
 
 关键缺口:
-- API Key 加密存储（j-cli `agent_config.json` 中明文）
-- j-agent 集成 (jcli 仓库 j-agent crate)
-- 前端/后端 Channel 数据模型统一（类型不兼容导致端到端不可用）
-- Workspace Skills/MCP/Hooks 持久化命令未注册
-- Hooks UI 仅只读，需升级为可启停管理
+- API Key 加密存储（#27 修复）
+- 前端/后端 Channel 数据模型统一（#27 修复）
+- Workspace Skills/MCP/Hooks 持久化命令未注册（#28 修复）
+- Hooks UI 仅只读，需升级为可启停管理（#28 修复）
+- `j-agent` crate 集成（jcli 仓库已发布，见 #22 agent-engine-jagent）
 
 ## 双源架构（Skills / MCP / Hooks）
 
@@ -110,6 +110,17 @@ tags: [tauri, desktop, j-cli, chat, agent]
 24. **readme-docs** — README 完善 + 用户指南
 25. **build-packaging** — Tauri bundle (Windows/macOS/Linux)
 26. **tdd-coverage** — 测试覆盖达标 (前端 vitest + 后端 cargo test) + Rust 编码规约合规收口（90 个 pub item 缺 `///` 文档 + 6 处长路径引用 + 9 处魔法值提取 + 1 处 `.clone()` 优化 + clippy `#![deny(clippy::all)]` 门禁）
+
+### Phase E: Agent 引擎升级 (P2)
+
+jcli 仓库已发布 `j-agent` crate，当前 j-gui 的 Agent 模式通过 CC SDK CLI 子进程运行。集成 j-agent crate 可获得：原生 Rust 控制、无子进程开销、完整的 `AgentBackend` trait 实现、更细粒度的中断/工具/流式控制。
+
+**29. agent-engine-jagent** — 替换 CC SDK CLI 子进程为 j-agent crate
+
+- **现状**：`AgentEngine` 通过 `std::process::Command` 启动 Claude CLI 子进程，stdin/stdout JSON 行协议通信。`AgentBackend` trait 已预留但仅 CLI 实现。
+- **目标**：新增 `JAgentBackend` 实现 `AgentBackend` trait，直接调用 `j-agent` crate API。支持：流式 Agent Loop、工具审批/回传、中断处理（Permission/AskUser/Plan）、会话 resume。
+- **依赖**：#27 channel-model-unify（j-agent 需要完整的 provider 配置）
+- **回退**：保留 CLI 实现，通过 `AgentBackend` trait 切换（开发期可并行，稳定后 CLI 实现标 deprecated）
 
 ## 架构决策
 

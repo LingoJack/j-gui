@@ -4,7 +4,7 @@ last_reviewed: 2026-05-10
 
 last_reviewed: 2026-05-10
 
-# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5
+# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5 | Phase E 0/1
 # ⚠️ Phase A #1 后端通过测试但端到端不可用（前后端类型不兼容），由 #27 修复
 
 items:
@@ -187,6 +187,15 @@ items:
     feature: null
     minimal_loop: false
     notes:
+
+  # ===== Phase E: Agent 引擎升级 (P2) =====
+  - slug: agent-engine-jagent
+    description: 替换 CC SDK CLI 子进程为 j-agent crate——新增 JAgentBackend 实现 AgentBackend trait，支持流式 Agent Loop、工具审批/回传、中断处理、会话 resume。依赖 #27
+    depends_on: [channel-model-unify]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: jcli 仓库已发布 j-agent crate。保留 CLI 实现作为 fallback，通过 AgentBackend trait 切换
 
   # ===== Phase D: 发布就绪 (P3) =====
   - slug: file-browser
