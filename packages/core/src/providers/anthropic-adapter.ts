@@ -22,7 +22,7 @@
  * - 禁止伪造 User-Agent（违反服务条款可能导致会员停权）
  */
 
-import type { ProviderType } from '@proma/shared'
+import type { ProviderType } from '@jgui/shared'
 import type {
   ProviderAdapter,
   ProviderRequest,
@@ -362,9 +362,9 @@ export class AnthropicAdapter implements ProviderAdapter {
 
     const requestBody = JSON.stringify(body)
 
-    // 调试：开启 PROMA_DEBUG_REQUEST 时打印请求体，便于排查思考+工具场景的消息结构
+    // 调试：开启 JGUI_DEBUG_REQUEST 时打印请求体，便于排查思考+工具场景的消息结构
     const procReq = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
-    if (procReq?.env?.PROMA_DEBUG_REQUEST) {
+    if (procReq?.env?.JGUI_DEBUG_REQUEST) {
       console.log('[Request]', this.providerType, input.modelId, '→', requestBody.slice(0, 4000))
     }
 
@@ -380,9 +380,9 @@ export class AnthropicAdapter implements ProviderAdapter {
       const event = JSON.parse(jsonLine) as AnthropicSSEEvent
       const events: StreamEvent[] = []
 
-      // 调试：开启 PROMA_DEBUG_SSE 时打印原始事件，便于排查 Provider 的 SSE 格式差异
+      // 调试：开启 JGUI_DEBUG_SSE 时打印原始事件，便于排查 Provider 的 SSE 格式差异
       const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
-      if (proc?.env?.PROMA_DEBUG_SSE) {
+      if (proc?.env?.JGUI_DEBUG_SSE) {
         console.log('[SSE]', jsonLine.slice(0, 400))
       }
 

@@ -11,7 +11,7 @@ import { ReactRenderer } from '@tiptap/react'
 import type { SuggestionOptions, SuggestionProps } from '@tiptap/suggestion'
 import { FileMentionList } from './FileMentionList'
 import type { FileMentionRef } from './FileMentionList'
-import type { FileIndexEntry, FileSearchResult } from '@proma/shared'
+import type { FileIndexEntry, FileSearchResult } from '@jgui/shared'
 import { createMentionPopup, positionPopup } from '@/components/agent/mention-popup-utils'
 import * as ipc from '@/lib/ipc'
 

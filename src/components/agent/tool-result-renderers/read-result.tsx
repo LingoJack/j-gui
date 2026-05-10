@@ -5,8 +5,8 @@
  */
 
 import * as React from 'react'
-import { highlightToTokens } from '@proma/core'
-import type { HighlightToken } from '@proma/core'
+import { highlightToTokens } from '@jgui/core'
+import type { HighlightToken } from '@jgui/core'
 import { cn } from '@/lib/utils'
 import { inferLanguageFromPath } from '../tool-utils'
 import { CollapsibleResult } from './collapsible-result'

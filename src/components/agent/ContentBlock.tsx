@@ -34,7 +34,7 @@ import type {
   SDKUserMessage,
   SDKToolResultBlock,
   SDKSystemMessage,
-} from '@proma/shared'
+} from '@jgui/shared'
 
 // ===== useToolResult Hook =====
 

@@ -17,7 +17,7 @@ import { chatToolsAtom } from '@/atoms/chat-tool-atoms'
 import { settingsTabAtom, settingsOpenAtom } from '@/atoms/settings-tab'
 import { appModeAtom } from '@/atoms/app-mode'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import type { AgentWorkspace } from '@proma/shared'
+import type { AgentWorkspace } from '@jgui/shared'
 import { invoke } from '@tauri-apps/api/core'
 
 // ===== Mock Data =====

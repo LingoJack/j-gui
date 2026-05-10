@@ -118,7 +118,7 @@ import EmbeddingLogo from '@/assets/models/embedding.png'
 
 // ===== 供应商类型 =====
 
-import type { ProviderType } from '@proma/shared'
+import type { ProviderType } from '@jgui/shared'
 
 // ===== 正则匹配映射 =====
 
@@ -342,7 +342,7 @@ export function getChannelLogo(baseUrl: string): string {
  * 优先返回别名（name !== id），未找到则返回原始 modelId。
  * 用于将 SDK 返回的 model ID 转为用户友好的显示名称。
  */
-export function resolveModelDisplayName(modelId: string, channels: import('@proma/shared').Channel[]): string {
+export function resolveModelDisplayName(modelId: string, channels: import('@jgui/shared').Channel[]): string {
   for (const channel of channels) {
     for (const model of channel.models) {
       if (model.id === modelId && model.name && model.name !== model.id) {

@@ -11,12 +11,12 @@ import { useAtom, useAtomValue } from 'jotai'
 import { Zap, Compass, Map as MapIcon } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { agentPermissionModeMapAtom, agentDefaultPermissionModeAtom, sessionPersistedPermissionModeAtom, sessionExistsAtom } from '@/atoms/agent-atoms'
-import type { PromaPermissionMode } from '@proma/shared'
-import { PROMA_PERMISSION_MODE_ORDER } from '@proma/shared'
+import type { JguiPermissionMode } from '@jgui/shared'
+import { JGUI_PERMISSION_MODE_ORDER } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 
 /** 模式配置 */
-const MODE_CONFIG: Record<PromaPermissionMode, {
+const MODE_CONFIG: Record<JguiPermissionMode, {
   icon: React.ComponentType<{ className?: string }>
   label: string
   description: string
@@ -56,7 +56,7 @@ export function PermissionModeSelector({ sessionId }: PermissionModeSelectorProp
   React.useEffect(() => {
     if (!sessionExistsInList) return
 
-    setModeMap((prev: Map<string, PromaPermissionMode>) => {
+    setModeMap((prev: Map<string, JguiPermissionMode>) => {
       if (prev.has(sessionId)) return prev
       const next = new Map(prev)
       next.set(sessionId, persistedSessionMode ?? defaultMode)
@@ -66,13 +66,13 @@ export function PermissionModeSelector({ sessionId }: PermissionModeSelectorProp
 
   /** 循环切换模式 */
   const cycleMode = React.useCallback(async () => {
-    const currentIndex = PROMA_PERMISSION_MODE_ORDER.indexOf(mode)
-    const nextIndex = (currentIndex + 1) % PROMA_PERMISSION_MODE_ORDER.length
-    const nextMode = PROMA_PERMISSION_MODE_ORDER[nextIndex]!
+    const currentIndex = JGUI_PERMISSION_MODE_ORDER.indexOf(mode)
+    const nextIndex = (currentIndex + 1) % JGUI_PERMISSION_MODE_ORDER.length
+    const nextMode = JGUI_PERMISSION_MODE_ORDER[nextIndex]!
     const prevMode = mode
 
     // 乐观更新当前 session 的模式
-    setModeMap((prev: Map<string, PromaPermissionMode>) => {
+    setModeMap((prev: Map<string, JguiPermissionMode>) => {
       const next = new Map(prev)
       next.set(sessionId, nextMode)
       return next
@@ -83,7 +83,7 @@ export function PermissionModeSelector({ sessionId }: PermissionModeSelectorProp
       await ipc.updateSessionPermissionMode(sessionId, nextMode)
     } catch (error) {
       console.error('[PermissionModeSelector] 运行中切换权限模式失败，回滚 UI:', error)
-      setModeMap((prev: Map<string, PromaPermissionMode>) => {
+      setModeMap((prev: Map<string, JguiPermissionMode>) => {
         const next = new Map(prev)
         next.set(sessionId, prevMode)
         return next

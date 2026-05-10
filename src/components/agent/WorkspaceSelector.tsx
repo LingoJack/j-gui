@@ -25,7 +25,7 @@ import {
   currentAgentWorkspaceIdAtom,
 } from '@/atoms/agent-atoms'
 import { workspaceListHeightAtom } from '@/atoms/sidebar-atoms'
-import type { AgentWorkspace } from '@proma/shared'
+import type { AgentWorkspace } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 
 export function WorkspaceSelector(): React.ReactElement {

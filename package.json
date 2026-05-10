@@ -19,9 +19,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@proma/core": "workspace:*",
-    "@proma/shared": "workspace:*",
-    "@proma/ui": "workspace:*",
+    "@jgui/core": "workspace:*",
+    "@jgui/shared": "workspace:*",
+    "@jgui/ui": "workspace:*",
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
     "@radix-ui/react-alert-dialog": "^1.1.15",

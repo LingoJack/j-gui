@@ -8,7 +8,7 @@
  *   左侧：Paperclip 附件按钮、ModelSelector、ThinkingButton、ContextSettingsPopover、ClearContextButton
  *   右侧：Send/Stop 按钮
  * - 拖放文件支持（onDragOver/onDragLeave/onDrop）
- * - 监听 proma:clear-context 和 proma:focus-input 自定义事件
+ * - 监听 j-gui:clear-context 和 j-gui:focus-input 自定义事件
  * - 卡片式容器样式
  */
 

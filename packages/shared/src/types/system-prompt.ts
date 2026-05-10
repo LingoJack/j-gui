@@ -21,7 +21,7 @@ export interface SystemPrompt {
   updatedAt: number
 }
 
-/** 系统提示词配置（存储在 ~/.proma/system-prompts.json） */
+/** 系统提示词配置（存储在 ~/.jdata/system-prompts.json） */
 export interface SystemPromptConfig {
   /** 提示词列表 */
   prompts: SystemPrompt[]
@@ -46,8 +46,8 @@ export interface SystemPromptUpdateInput {
 /** 内置默认提示词 ID */
 export const BUILTIN_DEFAULT_ID = 'builtin-default'
 
-/** Proma 内置默认提示词内容 */
-export const BUILTIN_DEFAULT_PROMPT_STRING = `你首先是某个大模型，这我们当然知道，你现在的任务是作为 Proma AI 助手，来帮助我解决实际问题。 
+/** j-gui 内置默认提示词内容 */
+export const BUILTIN_DEFAULT_PROMPT_STRING = `你首先是某个大模型，这我们当然知道，你现在的任务是作为 j-gui AI 助手，来帮助我解决实际问题。 
 
 你需要在以下一些方面上保持关注：
 
@@ -109,10 +109,10 @@ export const BUILTIN_DEFAULT_PROMPT_STRING = `你首先是某个大模型，这�
 
 
 
-/** Proma 内置默认提示词 */
+/** j-gui 内置默认提示词 */
 export const BUILTIN_DEFAULT_PROMPT: SystemPrompt = {
   id: BUILTIN_DEFAULT_ID,
-  name: 'Proma 内置提示词',
+  name: 'j-gui 内置提示词',
   content: BUILTIN_DEFAULT_PROMPT_STRING,
   isBuiltin: true,
   createdAt: 0,

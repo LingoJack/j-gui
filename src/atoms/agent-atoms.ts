@@ -7,7 +7,7 @@
 
 import { atom } from 'jotai'
 import { atomFamily } from 'jotai/utils'
-import type { AgentSessionMeta, AgentEvent, AgentWorkspace, AgentPendingFile, RetryAttempt, PromaPermissionMode, PermissionRequest, AskUserRequest, ExitPlanModeRequest, ThinkingConfig, AgentEffort, TaskUsage, SDKMessage } from '@proma/shared'
+import type { AgentSessionMeta, AgentEvent, AgentWorkspace, AgentPendingFile, RetryAttempt, JguiPermissionMode, PermissionRequest, AskUserRequest, ExitPlanModeRequest, ThinkingConfig, AgentEffort, TaskUsage, SDKMessage } from '@jgui/shared'
 import { calculateDockBadgeCount, countPendingRequests } from '@/lib/dock-badge-count'
 
 /** 活动状态 */
@@ -322,14 +322,14 @@ export const RECENTLY_MODIFIED_TTL_MS = 60_000
 // ===== 权限系统 Atoms =====
 
 /** 新会话默认权限模式 */
-export const agentDefaultPermissionModeAtom = atom<PromaPermissionMode>('bypassPermissions')
+export const agentDefaultPermissionModeAtom = atom<JguiPermissionMode>('bypassPermissions')
 
-/** Per-session 权限模式 Map — sessionId → PromaPermissionMode */
-export const agentPermissionModeMapAtom = atom<Map<string, PromaPermissionMode>>(new Map())
+/** Per-session 权限模式 Map — sessionId → JguiPermissionMode */
+export const agentPermissionModeMapAtom = atom<Map<string, JguiPermissionMode>>(new Map())
 
 /**
  * 按 sessionId 派生该 session 的持久化权限模式。
- * 返回 `undefined`（session 不存在或未设置）或具体的 PromaPermissionMode 字符串，
+ * 返回 `undefined`（session 不存在或未设置）或具体的 JguiPermissionMode 字符串，
  * jotai 用 === 比较，只有值真正变化时才通知下游——避免流式中无关字段更新引发 re-render。
  */
 export const sessionPersistedPermissionModeAtom = atomFamily((sessionId: string) =>

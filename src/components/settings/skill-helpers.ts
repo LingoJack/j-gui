@@ -5,7 +5,7 @@
  * direct imports from test files.
  */
 
-import type { SkillMeta } from '@proma/shared'
+import type { SkillMeta } from '@jgui/shared'
 
 // ===== Types =====
 

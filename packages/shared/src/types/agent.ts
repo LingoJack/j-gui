@@ -498,12 +498,12 @@ export type AgentEvent =
   | { type: 'waiting_resume'; message: string }
   | { type: 'resume_start'; messageId: string }
   // 权限模式变更（Plan → bypassPermissions 等）
-  | { type: 'permission_mode_changed'; mode: PromaPermissionMode }
+  | { type: 'permission_mode_changed'; mode: JguiPermissionMode }
 
-// ===== Proma 内部事件（SDK 不覆盖的场景） =====
+// ===== j-gui 内部事件（SDK 不覆盖的场景） =====
 
-/** Proma 内部事件类型 */
-export type PromaEvent =
+/** j-gui 内部事件类型 */
+export type JguiEvent =
   | { type: 'permission_request'; request: PermissionRequest }
   | { type: 'permission_resolved'; requestId: string; behavior: 'allow' | 'deny' }
   | { type: 'ask_user_request'; request: AskUserRequest }
@@ -515,20 +515,20 @@ export type PromaEvent =
   | { type: 'model_resolved'; model: string }
   | { type: 'waiting_resume'; message: string }
   | { type: 'resume_start'; messageId: string }
-  | { type: 'permission_mode_changed'; mode: PromaPermissionMode }
+  | { type: 'permission_mode_changed'; mode: JguiPermissionMode }
 
 
 /** IPC 传输的统一 payload（替代 AgentEvent） */
 export type AgentStreamPayload =
   | { kind: 'sdk_message'; message: SDKMessage }
-  | { kind: 'proma_event'; event: PromaEvent }
+  | { kind: 'jgui_event'; event: JguiEvent }
 
 // ===== Agent 会话管理 =====
 
 /**
  * Agent 会话轻量索引项
  *
- * 存储在 ~/.proma/agent-sessions.json 中，
+ * 存储在 ~/.jdata/agent-sessions.json 中，
  * 类似 ConversationMeta，独立存储。
  */
 export interface AgentSessionMeta {
@@ -548,7 +548,7 @@ export interface AgentSessionMeta {
   archived?: boolean
   /** 附加的外部目录路径列表（绝对路径，作为 SDK additionalDirectories 传递） */
   attachedDirectories?: string[]
-  /** 分叉来源：源会话的 Proma 工作目录（SDK session 文件在此目录的项目空间中，首次 resume 后清除） */
+  /** 分叉来源：源会话的 j-gui 工作目录（SDK session 文件在此目录的项目空间中，首次 resume 后清除） */
   forkSourceDir?: string
   /** 分叉来源：源会话的 SDK session ID（用于 rewind 时读取源会话的 file-history-snapshot 和备份文件） */
   forkSourceSdkSessionId?: string
@@ -559,7 +559,7 @@ export interface AgentSessionMeta {
   /** 最后一次流式执行是否被用户主动中断 */
   stoppedByUser?: boolean
   /** 该会话当前的权限模式（持久化到磁盘，重启后恢复）。未设置时新会话默认 bypassPermissions */
-  permissionMode?: PromaPermissionMode
+  permissionMode?: JguiPermissionMode
   /** 创建时间戳 */
   createdAt: number
   /** 更新时间戳 */
@@ -569,7 +569,7 @@ export interface AgentSessionMeta {
 /**
  * Agent 持久化消息
  *
- * 存储在 ~/.proma/agent-sessions/{id}.jsonl 中。
+ * 存储在 ~/.jdata/agent-sessions/{id}.jsonl 中。
  */
 export interface AgentMessage {
   /** 消息唯一标识 */
@@ -733,7 +733,7 @@ export interface AgentSendInput {
   /** 动态注入的 MCP 服务器（仅在本次会话中生效，如飞书群聊工具） */
   customMcpServers?: Record<string, Record<string, unknown>>
   /** 强制覆盖权限模式（飞书等无 UI 交互场景下强制 'bypassPermissions'） */
-  permissionModeOverride?: PromaPermissionMode
+  permissionModeOverride?: JguiPermissionMode
   /** 用户通过 /skill:xxx 引用的 Skill slug 列表 */
   mentionedSkills?: string[]
   /** 用户通过 #mcp:xxx 引用的 MCP 服务器名称列表 */
@@ -774,7 +774,7 @@ export interface MoveSessionToWorkspaceInput {
 
 /** Fork（分叉）会话输入 */
 export interface ForkSessionInput {
-  /** Proma 会话 ID */
+  /** j-gui 会话 ID */
   sessionId: string
   /** SDK 消息 uuid（截断点，inclusive）。省略时复制全部历史 */
   upToMessageUuid?: string
@@ -782,7 +782,7 @@ export interface ForkSessionInput {
 
 /** 快照回退输入（同一会话内回退到指定点） */
 export interface RewindSessionInput {
-  /** Proma 会话 ID */
+  /** j-gui 会话 ID */
   sessionId: string
   /** 回退到哪条 assistant message（inclusive，截断该消息之后的一切） */
   assistantMessageUuid: string
@@ -1032,16 +1032,16 @@ export interface ExitPlanModeResponse {
 
 // ===== 权限系统类型 =====
 
-/** Proma 权限模式（直接映射 SDK 原生模式） */
-export type PromaPermissionMode = 'auto' | 'bypassPermissions' | 'plan'
+/** j-gui 权限模式（直接映射 SDK 原生模式） */
+export type JguiPermissionMode = 'auto' | 'bypassPermissions' | 'plan'
 
 /** 权限模式定义顺序（用于循环切换） */
-export const PROMA_PERMISSION_MODE_ORDER: readonly PromaPermissionMode[] = ['auto', 'bypassPermissions', 'plan']
+export const JGUI_PERMISSION_MODE_ORDER: readonly JguiPermissionMode[] = ['auto', 'bypassPermissions', 'plan']
 
 /** 迁移旧权限模式值到新模式 */
-export function migratePermissionMode(mode: string): PromaPermissionMode {
+export function migratePermissionMode(mode: string): JguiPermissionMode {
   if (mode === 'auto' || mode === 'bypassPermissions' || mode === 'plan') return mode
-  const migration: Record<string, PromaPermissionMode> = {
+  const migration: Record<string, JguiPermissionMode> = {
     acceptEdits: 'auto',
     smart: 'auto',
     supervised: 'auto',
@@ -1062,7 +1062,7 @@ export interface PermissionRequest {
   toolName: string
   /** 工具输入参数 */
   toolInput: Record<string, unknown>
-  /** 操作描述（人类可读，Proma 生成） */
+  /** 操作描述（人类可读，j-gui 生成） */
   description: string
   /** 具体命令（Bash 工具时有值��� */
   command?: string

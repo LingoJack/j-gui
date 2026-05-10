@@ -9,7 +9,7 @@ import { ChevronDown, ChevronRight, Sparkles, FolderOpen, RefreshCw, Trash2 } fr
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { groupSkillsByPrefix, shortName, getSkillSourceBadge } from './skill-helpers'
-import type { SkillMeta } from '@proma/shared'
+import type { SkillMeta } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 
 // ===== Props =====

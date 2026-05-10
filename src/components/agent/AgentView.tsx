@@ -73,14 +73,14 @@ import { channelsAtom, thinkingExpandedAtom } from '@/atoms/chat-atoms'
 import { useOpenSession } from '@/hooks/useOpenSession'
 import { AgentSessionProvider } from '@/contexts/session-context'
 import { sendWithCmdEnterAtom } from '@/atoms/shortcut-atoms'
-import type { ModelOption } from '@proma/shared'
+import type { ModelOption } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 import { useAgentSendMessage } from './useAgentSendMessage'
 
 // ===== 思考模式 Hover Popover =====
 
 interface AgentThinkingPopoverProps {
-  agentThinking: import('@proma/shared').ThinkingConfig | undefined
+  agentThinking: import('@jgui/shared').ThinkingConfig | undefined
   onToggle: () => void
 }
 

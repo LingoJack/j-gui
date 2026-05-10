@@ -48,7 +48,7 @@ import type {
   SDKToolUseBlock,
   SDKToolResultBlock,
   RecoveryAction,
-} from '@proma/shared'
+} from '@jgui/shared'
 import type { ToolActivity } from '@/atoms/agent-atoms'
 import * as ipc from '@/lib/ipc'
 

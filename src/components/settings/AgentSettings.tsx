@@ -29,7 +29,7 @@ import {
 } from '@/atoms/agent-atoms'
 import { settingsOpenAtom } from '@/atoms/settings-tab'
 import { appModeAtom } from '@/atoms/app-mode'
-import type { McpServerEntry, SkillMeta, OtherWorkspaceSkillsGroup, WorkspaceMcpConfig } from '@proma/shared'
+import type { McpServerEntry, SkillMeta, OtherWorkspaceSkillsGroup, WorkspaceMcpConfig } from '@jgui/shared'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
 import { McpServerForm } from './McpServerForm'
 import { SkillListPanel } from './SkillListPanel'

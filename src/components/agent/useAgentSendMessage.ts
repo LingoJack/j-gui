@@ -41,7 +41,7 @@ import type { AgentContextStatus } from '@/atoms/agent-atoms'
 import { channelsAtom } from '@/atoms/chat-atoms'
 import { useOpenSession } from '@/hooks/useOpenSession'
 import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
-import type { AgentSendInput, AgentPendingFile, SDKMessage } from '@proma/shared'
+import type { AgentSendInput, AgentPendingFile, SDKMessage } from '@jgui/shared'
 import { fileToBase64 } from '@/lib/file-utils'
 import * as ipc from '@/lib/ipc'
 
@@ -388,7 +388,7 @@ export function useAgentSendMessage(sessionId: string) {
 
       const localUuid = crypto.randomUUID()
 
-      const syntheticMsg: import('@proma/shared').SDKMessage = {
+      const syntheticMsg: import('@jgui/shared').SDKMessage = {
         type: 'user',
         uuid: localUuid,
         message: {
@@ -396,7 +396,7 @@ export function useAgentSendMessage(sessionId: string) {
         },
         parent_tool_use_id: null,
         _createdAt: Date.now(),
-      } as unknown as import('@proma/shared').SDKMessage
+      } as unknown as import('@jgui/shared').SDKMessage
 
       store.set(liveMessagesMapAtom, (prev) => {
         const map = new Map(prev)
@@ -581,7 +581,7 @@ export function useAgentSendMessage(sessionId: string) {
     const streamStartedAt = Date.now()
     const localUuid = crypto.randomUUID()
 
-    const syntheticMsg: import('@proma/shared').SDKMessage = {
+    const syntheticMsg: import('@jgui/shared').SDKMessage = {
       type: 'user',
       uuid: localUuid,
       message: {
@@ -589,7 +589,7 @@ export function useAgentSendMessage(sessionId: string) {
       },
       parent_tool_use_id: null,
       _createdAt: streamStartedAt,
-    } as unknown as import('@proma/shared').SDKMessage
+    } as unknown as import('@jgui/shared').SDKMessage
 
     store.set(liveMessagesMapAtom, (prev) => {
       const map = new Map(prev)

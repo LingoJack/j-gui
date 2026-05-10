@@ -52,7 +52,7 @@ import type {
   ChatSendInput,
   FileAttachment,
   AttachmentSaveInput,
-} from '@proma/shared'
+} from '@jgui/shared'
 
 interface ChatViewProps {
   conversationId: string

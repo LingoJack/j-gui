@@ -12,7 +12,7 @@ import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
 import { SettingsCard } from './primitives'
 import { extractSkillBody, rebuildSkillMd } from './skill-helpers'
-import type { SkillMeta } from '@proma/shared'
+import type { SkillMeta } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 
 // ===== Props =====

@@ -9,7 +9,7 @@ import * as React from 'react'
 import { Pin, PinOff, Trash2, Pencil, ChevronDown, ChevronRight, Archive, ArchiveRestore, ArrowRightLeft, Hammer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { ConversationMeta, AgentSessionMeta } from '@proma/shared'
+import type { ConversationMeta, AgentSessionMeta } from '@jgui/shared'
 import type { SessionIndicatorStatus } from '@/atoms/agent-atoms'
 
 /** 日期分组标签 */

@@ -78,7 +78,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import type { ActiveView } from '@/atoms/active-view'
-import type { ConversationMeta, AgentSessionMeta, WorkspaceCapabilities } from '@proma/shared'
+import type { ConversationMeta, AgentSessionMeta, WorkspaceCapabilities } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 import { SessionListItems, type SessionListItemsProps, groupByDate } from './SessionListItems'
 

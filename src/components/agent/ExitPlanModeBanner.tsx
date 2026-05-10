@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { allPendingExitPlanRequestsAtom, agentStreamingStatesAtom, finalizeStreamingActivities } from '@/atoms/agent-atoms'
-import type { ExitPlanModeAction, ExitPlanAllowedPrompt } from '@proma/shared'
+import type { ExitPlanModeAction, ExitPlanAllowedPrompt } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 
 /** 选项定义 */

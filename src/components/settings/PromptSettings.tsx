@@ -24,7 +24,7 @@ import {
   selectedPromptIdAtom,
   defaultPromptIdAtom,
 } from '@/atoms/system-prompt-atoms'
-import type { SystemPrompt, SystemPromptCreateInput, SystemPromptUpdateInput } from '@proma/shared'
+import type { SystemPrompt, SystemPromptCreateInput, SystemPromptUpdateInput } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 
 /** 防抖保存延迟 (ms) */
