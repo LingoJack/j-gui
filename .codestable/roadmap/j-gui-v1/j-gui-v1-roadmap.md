@@ -82,13 +82,11 @@ tags: [tauri, desktop, j-cli, chat, agent]
 
 从审计和实际使用中发现的问题，阻塞了基础功能的正常使用。
 
-**27. channel-model-unify** — 增强 j-cli `AgentConfig.providers` 为完整 Channel 模型
+**27. channel-model-unify** — j-gui 自建 Channel 模型，解耦 jcli
 
-- **现状**：j-cli `ModelProvider` 仅 `{ name, api_base, api_key, model(String), supports_vision }`，id 为数组下标。前端 `Channel` 期望 `{ id: Uuid, provider, baseUrl, apiKey(加密), models: ChannelModel[], enabled, createdAt, updatedAt }`。类型完全不对齐，导致渠道创建、列表显示、选中切换全部异常。
-- **后端 (jcli)**：扩展 `ModelProvider` → `{ id: Uuid, name, provider: ProviderType, api_base, api_key, models: Vec<ChannelModel>, enabled, created_at, updated_at, supports_vision }`。`agent_config.json` 格式升级，向后兼容旧格式自动迁移。
-- **后端 (j-gui)**：Channel CRUD 命令输出对齐新结构。API Key 加密存储。
-- **前端 (j-gui)**：IPC 封装与后端对齐，去掉所有兼容适配/类型转换。
-- **涉及仓库**：`jcli` + `j-gui`
+- **现状**：前端 `Channel` 类型与 jcli `ModelProvider` 结构不兼容。j-gui 不应修改 jcli 代码。
+- **方案**：j-gui 自建 `channels.json`（`~/.jgui/`），首次从 jcli 单向导入已有 provider，调用时 `Channel → ModelProvider` 动态映射。API Key 自加密存储。
+- **不涉及 jcli 仓库**——仅改动 j-gui 的 channels.rs + chat_engine.rs + agent_engine.rs + 前端 IPC。
 
 **28. governance-bidirectional-sync** — 治理命令补全 + 工作区 ↔ j-cli 双向同步
 
@@ -97,7 +95,7 @@ tags: [tauri, desktop, j-cli, chat, agent]
 - **Skills 持久化**：注册 `write_skill_content` / `read_skill_content` / `toggle_workspace_skill` / `delete_workspace_skill` / `import_skill_from_workspace` / `update_skill_from_source` / `get_workspace_skills` / `get_workspace_skills_dir` / `get_other_workspace_skills`
 - **MCP 持久化**：注册 `save_workspace_mcp_config` / `get_workspace_mcp_config`
 - **Hooks 升级**：从只读升级为可管理——注册 `toggle_hook` / `list_hooks_with_status`，UI 增加启停开关 + 按事件/来源筛选
-- **双向同步**：写工作区时同步更新 j-cli 配置（启停 Skill → `disabled_skills`，启停 Hook → `disabled_hooks`，新增 MCP → `mcp_config.json`）
+- **单向导入**：j-gui 读取 jcli Skill/Hook/MCP 数据作为"源 A"（只读展示），j-gui 自有工作区存储作为"源 B"（可读写）。写操作仅写 j-gui 自有存储，不写回 jcli 配置
 
 ### Phase C: 体验追平 (P2)
 
@@ -118,7 +116,8 @@ tags: [tauri, desktop, j-cli, chat, agent]
 - **Chat 后端**: j-cli 直接调用 (`call_llm_stream_async`)
 - **Agent 后端**: CC SDK CLI 子进程 (当前) + j-agent crate (计划)
 - **IPC**: Tauri `invoke()` + `Channel<T>` (流式) + EventBus (事件分发)
-- **存储**: Chat/Agent 会话走 j-cli 路径 (`~/.jdata/`)；GUI 配置走 `%APPDATA%/j-gui/` (Windows) / `~/.j-gui/` (Unix)
+- **存储**：Chat/Agent 会话走 jcl i 路径 (`~/.jdata/`)；j-gui 自有配置（Channel、工作区 Skills/MCP）走 `%APPDATA%/j-gui/` (Windows) / `~/.jgui/` (Unix)
+- **jcli 解耦**：j-gui 不修改 jcli 代码。Channel 自建 `channels.json` 存储，首次从 jcli 单向导入，调用时动态映射 `Channel → ModelProvider`。详见 `.codestable/compound/2026-05-10-decision-jgui-jcli-decouple.md`
 - **状态**: Jotai atoms，前端不引入 React Router
 - **Skills/MCP/Hooks**: j-cli 源和 CC SDK 源各自独立路径，UI 区分展示，全局 Skills 只读导入
 - **Rust 编码规约**：强制遵守 `.codestable/compound/2026-05-08-decision-rust-coding-conventions.md`（CLAUDE.md 已内联关键规则）

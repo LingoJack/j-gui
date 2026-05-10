@@ -2,82 +2,60 @@
 doc_type: feature-design
 feature: 2026-05-10-channel-model-unify
 status: draft
-summary: 增强 j-cli ModelProvider 为完整 Channel 模型——UUID id、显式 provider 类型、models 数组、API Key 加密、启停状态、时间戳。统一前后端数据模型，消除前后端类型不兼容。
-tags: [channel, data-model, j-cli, backend, frontend]
+summary: j-gui 自建 Channel 数据模型与 channels.json 存储，从 jcli 单向导入已有 provider，调用时动态映射 ModelProvider。解耦 jcli，消除前后端类型不兼容。
+tags: [channel, data-model, decouple, backend, frontend]
 roadmap: j-gui-v1
 roadmap_item: channel-model-unify
 requirement: null
 ---
 
-# channel-model-unify — 统一前后端 Channel 数据模型
+# channel-model-unify — j-gui 自建 Channel 模型，解耦 jcli
 
 ## 0. 术语
 
-| 术语 | 含义 | 现名 |
-|------|------|------|
-| **Channel** | 渠道配置实体 | 前端 `Channel`，后端 `ModelProvider`（j-cli）|
-| **ProviderType** | 供应商枚举 | `'anthropic' \| 'openai' \| 'deepseek' \| ...` |
-| **ChannelModel** | 渠道下的单个模型 | `{ id, name, enabled }` |
-| **agent_config.json** | j-cli 全局配置 | `~/.jdata/agent/data/agent_config.json` |
+| 术语 | 含义 |
+|------|------|
+| **Channel** | j-gui 自有渠道配置实体，存储在 `channels.json` |
+| **ModelProvider** | jcli 的 provider 结构 `{ name, api_base, api_key, model, supports_vision }`，j-gui 只读不写 |
+| **单向导入** | 首次启动：jcli providers → j-gui channels（一次性，jcli 源不删） |
+| **调用时映射** | Chat/Agent 需要时：Channel → 临时 ModelProvider |
 
-> 本次统一后，前后端均使用 `Channel` 作为统一类型名，废弃 `ModelProvider`（j-cli）和 `ChannelInfo`（j-gui 后端）。
+> 架构约束见 `.codestable/compound/2026-05-10-decision-jgui-jcli-decouple.md`。
 
 ## 1. 决策与约束
 
-### 1.1 为什么不新建 channels.json
+### 1.1 核心约束
 
-选项 A：j-gui 单独维护 `channels.json`，与 j-cli `agent_config.json` 并存。
-选项 B：扩展 j-cli `ModelProvider` 结构，仍存储在 `agent_config.json`。
-
-**决策：选 B**。理由：
-- Channel 的底层用途就是 j-cli 的 provider 配置，两份文件会给"哪个是真实来源"制造歧义
-- j-cli Chat/Agent 链路已经消费 `agent_config.json.providers`，独立文件需要额外同步
-- 格式升级向后兼容：旧 `ModelProvider` 字段都在，新增字段有默认值，旧配置文件读取不报错
+- **j-gui 不修改 jcli 代码**——jcli 由独立仓库/团队维护
+- **j-gui 自有存储**：`~/.jgui/channels.json`，不复用 jcli `agent_config.json`
+- **单向数据流**：jcli → j-gui（导入），j-gui → jcli（调用时映射），j-gui ↛ jcli（不写回）
 
 ### 1.2 明确不做
 
-- 不改变 j-cli Chat 调用链路（仍通过 `active_index` 选 provider）
-- 不在 j-gui 内实现 provider 安装向导或 marketplace
-- 不碰 Agent 渠道选择逻辑（已有 `agentChannelIdsAtom`）
-- API Key 加密仅做 base64 混淆（非密钥派生，j-cli 调用链路需要明文）
-
-### 1.3 涉及仓库
-
-- `jcli`（`E:\Coding\AI\jcli`）：`ModelProvider` 结构升级 + `agent_config.json` 格式兼容迁移
-- `j-gui`（`E:\Coding\AI\j-gui`）：后端命令输出对齐 + 前端 IPC 适配
+- 不修改 jcli `ModelProvider` 结构
+- 不写入 jcli `agent_config.json`
+- 不引入 WS/HTTP 远程协议（仍通过 crate path dependency 直接调用）
+- API Key 加密仅 base64 混淆（jcli 调用需要明文）
+- 首次导入后不自动同步 jcli 变更（用户手动触发"从 jcli 刷新"）
 
 ## 2. 方案
 
 ### 2.1 名词层
 
-**现状**（j-cli `ModelProvider`）：
+**现状**（j-gui 直接操作 jcli 的 `ModelProvider`）：
 
 ```rust
-// jcli/src/command/chat/storage/config.rs
+// jcli — j-gui 不应修改此结构
 pub struct ModelProvider {
-    pub name: String,           // e.g. "My Anthropic"
-    pub api_base: String,       // e.g. "https://api.anthropic.com"
-    pub api_key: String,        // 明文
-    pub model: String,          // 单个模型 ID
+    pub name: String,
+    pub api_base: String,
+    pub api_key: String,
+    pub model: String,           // 单字符串
     pub supports_vision: bool,
 }
-// providers: Vec<ModelProvider>, id = 数组下标
 ```
 
-**现状**（j-gui 后端 `ChannelInfo`）：
-
-```rust
-// j-gui/src-tauri/src/commands/channels.rs
-pub struct ChannelInfo {
-    pub id: usize,              // 数组下标，不是稳定标识
-    pub name: String,
-    pub provider: String,       // 从 api_base URL 推断，不准确
-    pub api_base: String,
-    pub models: Vec<String>,    // 仅模型 ID 字符串
-}
-```
-
-**现状**（前端 `Channel`）：
+**现状**（前端 `Channel` 类型）：
 
 ```typescript
 // packages/shared/src/types/channel.ts
@@ -86,7 +64,7 @@ interface Channel {
   name: string
   provider: ProviderType
   baseUrl: string
-  apiKey: string       // 加密（base64）
+  apiKey: string       // base64 混淆
   models: ChannelModel[]
   enabled: boolean
   createdAt: number
@@ -96,20 +74,21 @@ interface Channel {
 
 ---
 
-**变化**（统一后的 `Channel`）：
+**变化**（j-gui 自建 Channel 存储）：
 
 ```rust
-// jcli: 扩展 ModelProvider → 重命名为 Channel
+// j-gui: src-tauri/src/commands/channels.rs — 数据模型
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Channel {
-    pub id: String,                   // UUID v4，稳定标识
+    pub id: String,                   // UUID v4
     pub name: String,
-    pub provider: String,             // 显式字段："anthropic" | "openai" | ...
+    pub provider: String,             // "anthropic" | "openai" | "deepseek" | ...
     pub api_base: String,
-    pub api_key: String,              // 明文（j-cli 调用需要），传输时 base64 混淆
-    pub models: Vec<ChannelModel>,    // [ { id, name, enabled } ]
-    pub enabled: bool,                // 默认 true
+    pub api_key: String,              // base64 混淆存储
+    pub models: Vec<ChannelModel>,
+    pub enabled: bool,
     pub supports_vision: bool,
     pub created_at: u64,              // unix timestamp millis
     pub updated_at: u64,
@@ -124,96 +103,147 @@ pub struct ChannelModel {
 }
 ```
 
-**agent_config.json 格式升级**：
+**存储位置**：`~/.jgui/channels.json`
 
-```jsonc
-// 旧格式 → 新格式（自动迁移）
+```json
 {
-  "providers": [
-    // 旧: { "name": "x", "api_base": "https://...", "api_key": "sk-...", "model": "gpt-4", "supports_vision": false }
-    // 新: { "id": "uuid", "name": "x", "provider": "openai", "api_base": "https://...", "api_key": "sk-...", "models": [{"id":"gpt-4","name":"GPT-4","enabled":true}], "enabled": true, "supports_vision": false, "createdAt": 1700000000000, "updatedAt": 1700000000000 }
+  "version": 1,
+  "channels": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "DeepSeek",
+      "provider": "deepseek",
+      "apiBase": "https://api.deepseek.com/anthropic",
+      "apiKey": "c2st...base64...",
+      "models": [
+        { "id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "enabled": true }
+      ],
+      "enabled": true,
+      "supportsVision": false,
+      "createdAt": 1715340000000,
+      "updatedAt": 1715340000000
+    }
   ]
 }
 ```
 
-**迁移逻辑**（jcli 侧 `load_agent_config()`）：
-1. 读取 `agent_config.json` → 检查 `providers` 数组首个元素的格式
-2. 若含 `id` 字段且为 UUID 格式 → 已是新格式，直接反序列化
-3. 否则 → 逐条迁移：生成 UUID、`model` 字符串转为 `models[0]`、`provider` 从 `api_base` 推断、补默认时间戳
-4. 写回 `agent_config.json`（自动升级）
+**首次导入**（jcli `agent_config.json` → j-gui `channels.json`）：
+
+```rust
+fn import_from_jcli() -> Vec<Channel> {
+    // 1. 读 jcli agent_config.json（只读）
+    let config = j_cli::command::chat::storage::load_agent_config();
+    // 2. 遍历 providers，逐条映射为 Channel
+    config.providers.iter().enumerate().map(|(i, p)| Channel {
+        id: Uuid::new_v4().to_string(),
+        name: p.name.clone(),
+        provider: infer_provider(&p.api_base),  // 从 URL 推断
+        api_base: p.api_base.clone(),
+        api_key: base64_encode(&p.api_key),
+        models: vec![ChannelModel {
+            id: p.model.clone(),
+            name: p.model.clone(),
+            enabled: true,
+        }],
+        enabled: i == config.active_index,
+        supports_vision: p.supports_vision,
+        created_at: now_ms(),
+        updated_at: now_ms(),
+    }).collect()
+}
+```
+
+**调用时映射**（Channel → ModelProvider）：
+
+```rust
+fn channel_to_provider(ch: &Channel) -> ModelProvider {
+    let default_model = ch.models.iter()
+        .find(|m| m.enabled)
+        .map(|m| m.id.clone())
+        .unwrap_or_default();
+    ModelProvider {
+        name: ch.name.clone(),
+        api_base: ch.api_base.clone(),
+        api_key: base64_decode(&ch.api_key),
+        model: default_model,
+        supports_vision: ch.supports_vision,
+    }
+}
+```
 
 ### 2.2 编排层
 
-**主流程**：
-
 ```mermaid
 flowchart TD
-    A[前端 ChannelSettings] -->|listChannels| B[j-gui list_channels 命令]
-    B -->|load_agent_config| C[jcli: agent_config.json]
-    C -->|格式检测| D{新格式?}
-    D -->|是| E[返回 Vec&lt;Channel&gt;]
-    D -->|否| F[迁移旧格式 → 写回]
-    F --> E
-    E -->|JSON| B
-    B -->|序列化| A
+    subgraph jgui["j-gui"]
+        A[前端 ChannelSettings]
+        B[j-gui channels.rs CRUD]
+        C[j-gui channels.json]
+        D[Chat/Agent Engine]
+    end
+
+    subgraph jcli["jcli (只读)"]
+        E[jcli agent_config.json]
+        F[jcli Chat Engine]
+    end
+
+    G[首次启动] -->|load_agent_config| E
+    E -->|单向导入| C
     
-    A -->|createChannel| G[j-gui create_channel 命令]
-    G -->|push + save| C
+    A -->|list/create/update/delete| B
+    B -->|读写| C
     
-    A -->|updateChannel| H[j-gui update_channel 命令]
-    H -->|按 UUID 找 + merge + save| C
+    A -->|选中渠道| D
+    D -->|Channel → ModelProvider| F
+    F -->|流式响应| D
 ```
 
-**Channel CRUD 命令**（j-gui `commands/channels.rs`，替换现有实现）：
+**Channel CRUD 命令**（替换现有 channels.rs 实现）：
 
 ```
 list_channels() → Vec<Channel>
-create_channel(input: CreateChannelInput) → Channel
-  // input: { name, provider, apiBase, apiKey, model?, supportsVision? }
-  // 生成 UUID，models 初始为单条（如果有 model），createdAt/updatedAt = now
-update_channel(input: UpdateChannelInput) → Channel
-  // input: { id, name?, provider?, apiBase?, apiKey?, models?, enabled?, supportsVision? }
-  // 按 UUID 查找，merge 非 null 字段，apiKey 含 "..." 则保留旧值
-delete_channel(id: String) → ()
-  // 按 UUID 查找并移除，调整 active_index
-test_channel_direct(input: TestChannelInput) → TestChannelResult  // 不变
-fetch_models(apiBase, apiKey) → FetchModelsResult                 // 不变
-```
+  // 读 channels.json，不存在则触发首次导入
 
-**前端 IPC 对齐**：
-- `listChannels()` → `invoke('list_channels')` → 直接返回 `Channel[]`，无需转换
-- `createChannel(input)` → `invoke('create_channel', { input })` — 用后端字段名（`apiBase` 非 `baseUrl`）
-- `ChannelSettings` 中删除"从 ChannelInfo 推断 provider"的兼容代码
+create_channel(input: CreateChannelInput) → Channel
+  // 生成 UUID，补时间戳，API Key base64 编码
+
+update_channel(id: String, input: UpdateChannelInput) → Channel
+  // 按 UUID 查找，merge 非 null 字段，apiKey 含 "..." 则留旧值
+
+delete_channel(id: String) → ()
+
+test_channel_direct(input: TestChannelInput) → TestChannelResult
+  // 不变
+
+fetch_models(apiBase: String, apiKey: String) → FetchModelsResult
+  // 不变
+```
 
 ### 2.3 挂载点
 
 | # | 挂载点 | 说明 |
 |---|--------|------|
-| 1 | jcli `ModelProvider` → `Channel` | jcli 数据结构定义 |
-| 2 | jcli `load_agent_config()` | 格式检测 + 迁移逻辑 |
-| 3 | j-gui `commands/channels.rs` | CRUD 命令实现（id 类型 + 返回结构变更） |
-| 4 | j-gui `lib.rs` | 命令注册（不变，命令名不变） |
-| 5 | 前端 `ipc.ts` | IPC 封装（去 adapter 层） |
-| 6 | 前端 `ChannelSettings` / `ChannelForm` | 去兼容代码 |
+| 1 | `src-tauri/src/commands/channels.rs` | Channel 数据模型 + CRUD + 首次导入 + 映射函数 |
+| 2 | `~/.jgui/channels.json` | j-gui 自有 Channel 存储 |
+| 3 | `src-tauri/src/chat_engine.rs` | 调用时 `channel_to_provider()` 映射 |
+| 4 | `src-tauri/src/agent_engine.rs` | 同上（Agent 链路）|
+| 5 | 前端 `ipc.ts` / `ChannelSettings` | IPC 封装对齐 + 去兼容代码 |
 
-### 2.4 推进策略（按 paradigm 维度切片）
+### 2.4 推进策略
 
 | Step | Paradigm | 内容 | 退出信号 |
 |------|----------|------|---------|
-| 1 | 数据模型 | jcli: 扩展 `ModelProvider` → `Channel`，含迁移逻辑 + 单元测试 | `cargo test -p j-cli` 通过 |
-| 2 | 后端命令 | j-gui: 重写 channels.rs CRUD（UUID id，Channel 返回结构）+ 测试 | `cargo test` channels 模块通过 |
-| 3 | 前端适配 | j-gui: IPC 封装对齐 + ChannelSettings/ChannelForm 去兼容代码 + 测试 | `bun run test` 通过 |
-| 4 | 端到端验证 | 启动应用，创建/编辑/删除渠道，验证持久化 | 渠道 CRUD 端到端可用 |
+| 1 | 数据模型 | j-gui: Channel 结构定义 + channels.json 读写 + 首次导入逻辑 + 单元测试 | `cargo test` channels 模块通过 |
+| 2 | 映射函数 | `channel_to_provider()` + Chat/Agent Engine 适配 + 测试 | chat_engine 测试通过 |
+| 3 | 后端命令 | 重写 channels.rs CRUD（自有存储 + UUID id + API Key 编码）| `cargo test` 全量通过 |
+| 4 | 前端适配 | IPC 封装对齐 + ChannelSettings/ChannelForm 去兼容代码 + 测试 | `bun run test` 通过 |
+| 5 | 端到端 | 创建渠道 → 选中 → Chat 发送消息 → 验证流式响应 | 端到端可用 |
 
-### 2.5 结构健康度与微重构
+### 2.5 结构健康度
 
-**要改的文件**：
-- `jcli/src/command/chat/storage/config.rs` — ModelProvider 定义（~50 行相关），改动集中，文件健康 ✅
-- `j-gui/src-tauri/src/commands/channels.rs` — 重写 CRUD（~200 行），改动集中 ✅
-- `j-gui/src/components/settings/ChannelForm.tsx` — 去兼容逻辑（~10 行改动）✅
-- `j-gui/src/components/settings/ChannelSettings.tsx` — 去兼容逻辑 ✅
-
-**结论：本次不做微重构**。改动集中在数据结构定义和 CRUD 实现，不涉及文件拆分或目录重组。
+- `channels.rs` 重写（~300 行），改动集中，文件健康 ✅
+- 新增 `channels.json` 存储逻辑，各函数单一职责 ✅
+- 本次不做微重构
 
 ## 3. 验收契约
 
@@ -221,43 +251,40 @@ fetch_models(apiBase, apiKey) → FetchModelsResult                 // 不变
 
 | # | 触发 | 期望结果 |
 |---|------|---------|
-| A1 | 首次启动（旧格式 agent_config.json） | 自动迁移为新格式，旧 provider 显示正确（UUID id、provider 类型、models 数组） |
-| A2 | 创建渠道（填写 DeepSeek 预设） | 渠道出现在列表，名称/URL/models 正确，API Key 加密存储 |
-| A3 | 编辑渠道 | 修改保存后刷新列表，字段更新正确 |
-| A4 | 删除渠道 | 渠道从列表移除，active_index 自动调整 |
-| A5 | 切换选中渠道 | ModelSelector 正确切换，Chat 使用选中渠道 |
-| A6 | 测试连接（DeepSeek Anthropic 端点） | 连接测试通过（/messages 端点 + Bearer auth） |
+| A1 | 首次启动（jcli 有旧 provider） | 自动导入到 channels.json，列表显示正确 |
+| A2 | 首次启动（jcli 无 provider） | channels.json 为空，列表为空 |
+| A3 | 创建渠道（DeepSeek 预设） | UUID 生成，API Key base64 编码存储，列表正确显示 |
+| A4 | 编辑渠道 | 按 UUID 更新，apiKey 含 "..." 保留旧值 |
+| A5 | 删除渠道 | 从 channels.json 移除 |
+| A6 | 选中渠道 → Chat 发消息 | `channel_to_provider()` 正确映射，消息发送成功 |
 
 ### 边界场景
 
 | # | 触发 | 期望结果 |
 |---|------|---------|
-| B1 | 旧 providers 数组为空 | 无迁移，启动正常 |
-| B2 | 旧 provider 无 model 字段 | models 初始化为空数组，UI 提示"未配置模型" |
-| B3 | 创建渠道时未填名称 | 前端 toast 提示"请输入配置名称" |
-| B4 | 编辑渠道传已脱敏 API Key（含 "..."） | 后端保留旧 API Key |
+| B1 | channels.json 不存在 | 触发首次导入 |
+| B2 | channels.json 损坏 | 返回空列表，不崩溃 |
+| B3 | 渠道无启用模型 | `channel_to_provider()` 返回空 model 字符串 |
 
 ### 错误场景
 
 | # | 触发 | 期望结果 |
 |---|------|---------|
-| C1 | agent_config.json 损坏 | 返回默认空配置，不崩溃 |
-| C2 | 删除不存在的 UUID | 后端返回错误，前端 toast 提示 |
-| C3 | 更新不存在的 UUID | 后端返回错误 |
+| C1 | 删除不存在的 UUID | 后端返回错误 |
+| C2 | 更新不存在的 UUID | 后端返回错误 |
 
 ### 明确不做反向核对
 
-- [ ] 不引入新的配置文件（仍用 agent_config.json）
-- [ ] 不改变 Chat 调用链路的 provider 选择逻辑
-- [ ] 不改变 Agent 渠道选择逻辑
-- [ ] API Key 不引入密钥派生（保持 j-cli 调用兼容）
+- [ ] 不修改 jcli `ModelProvider` 结构
+- [ ] 不写入 jcli `agent_config.json`
+- [ ] 不引入新的 IPC 协议
+- [ ] API Key 不引入密钥派生
 
 ## 4. 对其他模块的影响
 
 | 模块 | 影响 | 动作 |
 |------|------|------|
-| jcli `chat_engine` | `load_agent_config().providers` 结构变化 | 适配 `model` 字段迁移到 `models[0].id` |
-| jcli Agent 链路 | 同上 | 适配 |
-| j-gui `ChatEngine` | 同上 | 适配 |
-| j-gui `AgentEngine` | 同上 | 适配 |
-| 前端 `ModelSelector` | `Channel` 类型变化 | `baseUrl` → `apiBase`（IPC 层自动映射） |
+| `chat_engine.rs` | 从读 `agent_config.json` 变为读 `channels.json` + `channel_to_provider()` | 适配 |
+| `agent_engine.rs` | 同上 | 适配 |
+| `config.rs` `get_agent_config` | 不再返回 jcli providers | 改为返回 j-gui channels |
+| 前端 `ModelSelector` | `Channel` 类型已对齐 | 去兼容代码 |
