@@ -79,9 +79,9 @@ export function GeneralSettings(): React.ReactElement {
   /** 更新归档天数 */
   const handleArchiveDaysChange = async (value: string): Promise<void> => {
     const days = parseInt(value, 10)
-    setArchiveAfterDays(days)
     try {
       await ipc.updateSettings({ archiveAfterDays: days })
+      setArchiveAfterDays(days)
     } catch (error) {
       console.error('[通用设置] 更新归档天数失败:', error)
       toast.error('更新归档天数失败')
