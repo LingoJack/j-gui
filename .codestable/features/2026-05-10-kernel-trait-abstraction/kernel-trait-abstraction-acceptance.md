@@ -146,6 +146,18 @@ ARCHITECTURE.md 需在 Backend Commands 节描述 kernel trait 层。但本次�
 
 ## 9. 遗留
 
-- 后续优化：Phase E #29 agent-engine-jagent（j-agent crate 集成）、Phase D #26 tdd-coverage（补齐测试 + 文档）
-- 已知限制：governance.rs 保留 2 处 `j_cli::` 导入（adapter 依赖的 list_chat_tools/set_tool_enabled/mcp_config_path）
-- 实现阶段顺手发现：settings.rs 的 `update_settings` 宏化后可进一步统一错误处理（记入观察项）
+### 审计发现汇总（3 方 /cs-audit）
+
+| # | 严重度 | 来源 | 发现 | 处理 |
+|---|--------|------|------|------|
+| 1 | P0 | 架构 | agent_session.rs 仍有 `j_cli::` 导入 | ✅ 已修（env var 替代） |
+| 2 | P1 | 测试 | channels.rs 4 函数缺 KernelError 传播测试 | 记入 Phase D #26 |
+| 3 | P1 | 测试 | config.rs 3 函数缺 KernelError 传播测试 | 记入 Phase D #26 |
+| 4 | P1 | 代码 | adapter.rs 长路径 `crate::commands::governance::McpServerConfig` | 已知取舍（循环依赖） |
+| 5 | P2 | 架构 | chat.rs 绕过 Tauri State 单例，每次 new JcliAdapter | 无状态结构体，无功能影响 |
+| 6 | P2 | 代码 | adapter.rs:161 多余的 `.into_iter().collect()` | 可优化 |
+| 7 | P2 | 架构 | governance.rs list_chat_tools/set_tool_enabled 循环委托 | 功能正确，架构冗余 |
+
+- 后续优化：Phase E #29 agent-engine-jagent、Phase D #26 tdd-coverage
+- 已知限制：governance.rs 保留 2 处 `j_cli::` 导入（adapter 依赖函数），adapter ↔ governance 循环依赖（设计取舍）
+- 实现阶段顺手发现：settings.rs `update_settings` 宏化后可统一错误处理
