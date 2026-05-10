@@ -111,7 +111,7 @@ tags: [tauri, desktop, j-cli, chat, agent]
 23. **branding-cleanup** — @proma/* 包名重命名为 @jgui/*
 24. **readme-docs** — README 完善 + 用户指南
 25. **build-packaging** — Tauri bundle (Windows/macOS/Linux)
-26. **tdd-coverage** — 测试覆盖达标 (前端 vitest + 后端 cargo test)
+26. **tdd-coverage** — 测试覆盖达标 (前端 vitest + 后端 cargo test) + Rust 编码规约合规收口（90 个 pub item 缺 `///` 文档 + 6 处长路径引用 + 9 处魔法值提取 + 1 处 `.clone()` 优化 + clippy `#![deny(clippy::all)]` 门禁）
 
 ## 架构决策
 
@@ -127,11 +127,11 @@ tags: [tauri, desktop, j-cli, chat, agent]
 
 - j-cli `SkillSource` 枚举当前只有 `User | Project`，全局 Skills 导入需扩展 `Global` 变体
 - CC SDK MCP 工作区配置 (`mcp.json`) 与 j-cli MCP 配置 (`mcp_config.json`) 格式可能不同，需确认序列化兼容
-- **Rust 编码规约合规**（2026-05-10 扫描，待修）：
-  - `settings.rs:308` `_ => {}` 通配 — `update_settings` 宏化后仍保留静默忽略，需改为日志记录或拒绝未知 key
-  - `governance.rs` `save_mcp_servers` 字段逐行 `.clone()` — 可改用解构减少 clone
-  - 新增 `pub fn`（`scan_global_skills` / `copy_skill_to_workspace` / `validate_slug` 等）缺 `///` 文档注释
-  - 建议 Phase D `tdd-coverage` 同步加入 clippy `#![deny(clippy::all)]` 门禁
+- **Rust 编码规约合规**（2026-05-10 全量扫描 7 文件 3000 行，已入 Phase D #26）：
+  - P0（0 项）：unwrap/expect 仅测试用、命名全部合规、枚举无 `_ =>` 通配 ✅
+  - P1（96 项）：90 个 pub item 缺 `///` 文档、6 处长路径引用未用 `use`（governance.rs:89-90/124, config.rs:81, agent.rs:238, settings.rs:552, channels.rs:238）
+  - P2（10 项）：9 处魔法值（settings.rs 版本号/URL、channels.rs 超时秒数/token、agent.rs 标题长度/default、alias.rs sections）、1 处不必要 `.clone()`（config.rs:66）
+  - 违规详情见 `.codestable/audits/2026-05-10-phase-b-review/finding-maintainability.md` M4/M5 和本次 convention scan
 
 ## 变更日志
 

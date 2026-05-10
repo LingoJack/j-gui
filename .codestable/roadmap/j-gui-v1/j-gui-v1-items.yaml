@@ -222,9 +222,9 @@ items:
     notes:
 
   - slug: tdd-coverage
-    description: 测试覆盖达标 (前端 vitest + 后端 cargo test)
+    description: 测试覆盖达标 + Rust 编码规约合规收口——90 pub item 补 /// 文档、6 处长路径引用改 use、9 处魔法值提取 const、1 处 .clone() 优化、clippy deny(all) 门禁
     depends_on: []
     status: planned
     feature: null
     minimal_loop: false
-    notes:
+    notes: 2026-05-10 全量扫描结果已入观察项，违规详情见 convention scan 报告
