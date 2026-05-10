@@ -1,8 +1,11 @@
 use crate::agent_session::{self, AgentTimelineItem, InterruptSnapshot, ToolCallSnapshot};
+use crate::kernel::types::{KernelAgentParams, KernelChatMessage};
+use crate::kernel::ChatKernel;
 use serde::Serialize;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use tauri::ipc::Channel;
 
@@ -35,11 +38,25 @@ pub enum AgentEvent {
     },
 }
 
+pub enum AgentBackend {
+    /// Existing Claude CLI subprocess backend.
+    Cli {
+        process: Option<Child>,
+        stdin: Option<ChildStdin>,
+        stdout_thread: Option<JoinHandle<()>>,
+        stderr_thread: Option<JoinHandle<()>>,
+    },
+    /// New j-agent in-process backend (uses ChatKernel::run_agent_loop).
+    JAgent {
+        #[allow(dead_code)]
+        session_id: String,
+        agent_handle: Option<JoinHandle<()>>,
+        bridge_handle: Option<JoinHandle<()>>,
+    },
+}
+
 pub struct AgentEngine {
-    process: Option<Child>,
-    stdin: Option<ChildStdin>,
-    stdout_thread: Option<JoinHandle<()>>,
-    stderr_thread: Option<JoinHandle<()>>,
+    pub(crate) backend: AgentBackend,
     #[allow(dead_code)]
     session_id: String,
     #[allow(dead_code)]
@@ -207,17 +224,104 @@ impl AgentEngine {
             .join("transcript.jsonl");
 
         Ok(Self {
-            process: Some(process),
-            stdin: Some(stdin),
-            stdout_thread: Some(stdout_thread),
-            stderr_thread: Some(stderr_thread),
+            backend: AgentBackend::Cli {
+                process: Some(process),
+                stdin: Some(stdin),
+                stdout_thread: Some(stdout_thread),
+                stderr_thread: Some(stderr_thread),
+            },
             session_id: session_id.to_string(),
             transcript_path,
         })
     }
 
+    /// Start the j-agent in-process backend.
+    /// Calls `ChatKernel::run_agent_loop` in a background thread and
+    /// bridges StreamMsg JSON events to the frontend's AgentEvent channel.
+    pub fn start_jagent(
+        kernel: Arc<dyn ChatKernel>,
+        on_event: Channel<AgentEvent>,
+        session_id: String,
+        messages: Vec<KernelChatMessage>,
+        permission_mode: String,
+        system_prompt: Option<String>,
+    ) -> Result<Self, String> {
+        // 1. Create interceptor channel for bridging StreamMsg JSON -> AgentEvent
+        let (interceptor_tx, interceptor_rx) = std::sync::mpsc::channel::<String>();
+
+        // 2. Create Channel<String> for KernelAgentParams.on_event.
+        //    No-op callback since we only send to the frontend via the bridge.
+        let json_channel: Channel<String> = Channel::new(|_| Ok(()));
+
+        // 3. Build KernelAgentParams with interceptor
+        let params = KernelAgentParams {
+            session_id: session_id.clone(),
+            messages,
+            system_prompt,
+            permission_mode,
+            on_event: json_channel,
+            event_interceptor: Some(interceptor_tx),
+        };
+
+        // 4. Bridge thread: receives JSON strings from agent loop via interceptor,
+        //    converts to AgentEvent, and forwards to frontend.
+        let bridge_channel = on_event.clone();
+        let sid_for_bridge = session_id.clone();
+        let bridge_handle = std::thread::spawn(move || {
+            while let Ok(json) = interceptor_rx.recv() {
+                let events = json_stream_msg_to_agent_events(&json, &sid_for_bridge);
+                for event in events {
+                    if bridge_channel.send(event).is_err() {
+                        return;
+                    }
+                }
+            }
+        });
+
+        // 5. Agent loop thread: creates a tokio runtime and calls run_agent_loop.
+        let error_channel = on_event.clone();
+        let agent_handle = std::thread::spawn(move || {
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(rt) => rt,
+                Err(e) => {
+                    let _ = error_channel.send(AgentEvent::Error {
+                        message: format!("创建 tokio runtime 失败: {}", e),
+                    });
+                    return;
+                }
+            };
+            rt.block_on(async {
+                if let Err(e) = kernel.run_agent_loop(params).await {
+                    let _ = error_channel.send(AgentEvent::Error {
+                        message: format!("Agent loop 错误: {}", e),
+                    });
+                }
+            });
+        });
+
+        // 6. Build transcript path
+        let transcript_path = agent_session::agent_sessions_dir()
+            .join(&session_id)
+            .join("transcript.jsonl");
+
+        Ok(Self {
+            backend: AgentBackend::JAgent {
+                session_id: session_id.clone(),
+                agent_handle: Some(agent_handle),
+                bridge_handle: Some(bridge_handle),
+            },
+            session_id,
+            transcript_path,
+        })
+    }
+
     pub fn send_message(&mut self, content: &str) -> Result<(), String> {
-        let stdin = self.stdin.as_mut().ok_or("claude 进程未启动")?;
+        let stdin = match &mut self.backend {
+            AgentBackend::Cli { stdin, .. } => stdin.as_mut().ok_or("claude 进程未启动")?,
+            AgentBackend::JAgent { .. } => {
+                return Err("当前 Agent 不支持直接发送消息".to_string());
+            }
+        };
         let item = AgentTimelineItem {
             id: agent_session::generate_item_id(),
             kind: "user_message".into(),
@@ -243,7 +347,12 @@ impl AgentEngine {
     }
 
     pub fn respond_interrupt(&mut self, interrupt_id: &str, content: &str) -> Result<(), String> {
-        let stdin = self.stdin.as_mut().ok_or("Agent 未启动")?;
+        let stdin = match &mut self.backend {
+            AgentBackend::Cli { stdin, .. } => stdin.as_mut().ok_or("Agent 未启动")?,
+            AgentBackend::JAgent { .. } => {
+                return Err("当前 Agent 不支持中断响应".to_string());
+            }
+        };
         agent_session::update_interrupt_response(&self.session_id, interrupt_id, content)?;
         let msg = serde_json::json!({
             "type": "user",
@@ -261,28 +370,52 @@ impl AgentEngine {
     }
 
     pub fn close(&mut self) {
-        // Close stdin to signal the CLI to stop
-        if let Some(stdin) = self.stdin.take() {
-            drop(stdin);
-        }
-        // Give the process a short grace period to exit naturally after stdin close,
-        // so it can flush remaining output before we force-kill.
-        if let Some(mut process) = self.process.take() {
-            std::thread::sleep(std::time::Duration::from_millis(500));
-            match process.try_wait() {
-                Ok(Some(_)) => { /* exited naturally */ }
-                Ok(None) | Err(_) => {
-                    let _ = process.kill();
-                    let _ = process.wait();
+        match &mut self.backend {
+            AgentBackend::Cli {
+                stdin,
+                process,
+                stdout_thread,
+                stderr_thread,
+            } => {
+                // Close stdin to signal the CLI to stop
+                if let Some(stdin) = stdin.take() {
+                    drop(stdin);
+                }
+                // Give the process a short grace period to exit naturally after stdin close,
+                // so it can flush remaining output before we force-kill.
+                if let Some(mut process) = process.take() {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    match process.try_wait() {
+                        Ok(Some(_)) => { /* exited naturally */ }
+                        Ok(None) | Err(_) => {
+                            let _ = process.kill();
+                            let _ = process.wait();
+                        }
+                    }
+                }
+                // Join reader threads — safe now because the process is dead
+                // and pipes are broken.
+                if let Some(handle) = stdout_thread.take() {
+                    let _ = handle.join();
+                }
+                if let Some(handle) = stderr_thread.take() {
+                    let _ = handle.join();
                 }
             }
-        }
-        // Join reader threads — safe now because the process is dead and pipes are broken.
-        if let Some(handle) = self.stdout_thread.take() {
-            let _ = handle.join();
-        }
-        if let Some(handle) = self.stderr_thread.take() {
-            let _ = handle.join();
+            AgentBackend::JAgent {
+                agent_handle,
+                bridge_handle,
+                ..
+            } => {
+                // Detach agent + bridge threads (they run until agent loop completes).
+                // No active cancellation mechanism yet — the loop runs to completion.
+                if let Some(h) = agent_handle.take() {
+                    drop(h);
+                }
+                if let Some(h) = bridge_handle.take() {
+                    drop(h);
+                }
+            }
         }
     }
 }
@@ -526,9 +659,74 @@ fn which_claude() -> Result<String, String> {
     Err("未找到 claude CLI。请先按项目约束安装 Claude Code CLI，并确保其 Windows 全局 shim 目录已加入 PATH。".to_string())
 }
 
+/// Convert a JSON string emitted by the j-agent agent loop's event stream
+/// (produced by `stream_msg_to_json_string` in adapter.rs) into AgentEvent(s).
+/// Also appends timeline items for the session.
+fn json_stream_msg_to_agent_events(json: &str, session_id: &str) -> Vec<AgentEvent> {
+    use crate::agent_session::{self, AgentTimelineItem, ToolCallSnapshot};
+
+    let v: serde_json::Value = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+
+    match v["type"].as_str() {
+        Some("toolCallRequest") => {
+            if let Some(tools) = v["tools"].as_array() {
+                let mut result = Vec::with_capacity(tools.len());
+                for tool in tools {
+                    let tool_id = tool["id"].as_str().unwrap_or("").to_string();
+                    let tool_name = tool["name"].as_str().unwrap_or("").to_string();
+                    let tool_input = tool["arguments"].as_str().unwrap_or("{}").to_string();
+                    // Append timeline item for this tool call
+                    let _ = agent_session::append_timeline_item(
+                        session_id,
+                        &AgentTimelineItem {
+                            id: agent_session::generate_item_id(),
+                            kind: "tool_call".into(),
+                            content: None,
+                            tool_call: Some(ToolCallSnapshot {
+                                tool_id: tool_id.clone(),
+                                tool_name: tool_name.clone(),
+                                tool_input: tool_input.clone(),
+                                tool_output: None,
+                                status: "running".into(),
+                            }),
+                            interrupt: None,
+                            created_at: agent_session::now_millis(),
+                        },
+                    );
+                    result.push(AgentEvent::ToolUse {
+                        tool_id,
+                        tool_name,
+                        tool_input,
+                    });
+                }
+                result
+            } else {
+                vec![]
+            }
+        }
+        Some("done") => {
+            vec![AgentEvent::Done { total_tokens: 0 }]
+        }
+        Some("error") => {
+            vec![AgentEvent::Error {
+                message: v["message"].as_str().unwrap_or("未知错误").to_string(),
+            }]
+        }
+        // Internal progress events — not forwarded to frontend.
+        Some("chunk") | Some("cancelled") | Some("retrying") | Some("compacting")
+        | Some("compacted") => {
+            vec![]
+        }
+        _ => vec![],
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{build_claude_args, parse_sdk_line, AgentEvent};
+    use super::{build_claude_args, json_stream_msg_to_agent_events, parse_sdk_line, AgentEvent};
 
     #[test]
     fn build_claude_args_enables_stream_json_input() {
@@ -694,5 +892,82 @@ mod tests {
             _ => "permission",
         };
         assert_eq!(kind, "ask_user");
+    }
+
+    // ── json_stream_msg_to_agent_events tests ──
+
+    #[test]
+    fn json_stream_msg_tool_call_request_converts_to_tool_use() {
+        let json = r#"{"type":"toolCallRequest","tools":[{"id":"t1","name":"Bash","arguments":"{\"command\":\"ls\"}"}]}"#;
+        let events = json_stream_msg_to_agent_events(json, "test-sid");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::ToolUse {
+                tool_id,
+                tool_name,
+                tool_input,
+            } => {
+                assert_eq!(tool_id, "t1");
+                assert_eq!(tool_name, "Bash");
+                assert!(tool_input.contains("ls"));
+            }
+            other => panic!("expected ToolUse, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn json_stream_msg_tool_call_request_multiple_tools() {
+        let json = r#"{"type":"toolCallRequest","tools":[{"id":"t1","name":"Bash","arguments":"{}"},{"id":"t2","name":"Read","arguments":"{}"}]}"#;
+        let events = json_stream_msg_to_agent_events(json, "test-sid");
+        assert_eq!(events.len(), 2);
+        assert!(matches!(&events[0], AgentEvent::ToolUse { tool_id, .. } if tool_id == "t1"));
+        assert!(matches!(&events[1], AgentEvent::ToolUse { tool_id, .. } if tool_id == "t2"));
+    }
+
+    #[test]
+    fn json_stream_msg_done_converts_to_done() {
+        let json = r#"{"type":"done"}"#;
+        let events = json_stream_msg_to_agent_events(json, "test-sid");
+        assert_eq!(events, vec![AgentEvent::Done { total_tokens: 0 }]);
+    }
+
+    #[test]
+    fn json_stream_msg_error_converts_to_error() {
+        let json = r#"{"type":"error","message":"test error"}"#;
+        let events = json_stream_msg_to_agent_events(json, "test-sid");
+        assert_eq!(
+            events,
+            vec![AgentEvent::Error {
+                message: "test error".to_string()
+            }]
+        );
+    }
+
+    #[test]
+    fn json_stream_msg_internal_events_are_ignored() {
+        let event_types = [
+            r#"{"type":"chunk"}"#,
+            r#"{"type":"cancelled"}"#,
+            r#"{"type":"retrying","attempt":1,"maxAttempts":3,"delayMs":1000,"error":"timeout"}"#,
+            r#"{"type":"compacting"}"#,
+            r#"{"type":"compacted","messagesBefore":42}"#,
+        ];
+        for json in &event_types {
+            let events = json_stream_msg_to_agent_events(json, "test-sid");
+            assert!(events.is_empty(), "expected no events for type: {}", json);
+        }
+    }
+
+    #[test]
+    fn json_stream_msg_invalid_json_returns_empty() {
+        let events = json_stream_msg_to_agent_events("not valid json", "test-sid");
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn json_stream_msg_unknown_type_returns_empty() {
+        let json = r#"{"type":"unknown"}"#;
+        let events = json_stream_msg_to_agent_events(json, "test-sid");
+        assert!(events.is_empty());
     }
 }

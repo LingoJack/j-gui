@@ -541,10 +541,15 @@ impl ChatKernel for JcliAdapter {
         let (tx, rx) = std::sync::mpsc::channel::<StreamMsg>();
         let (_tool_result_tx, tool_result_rx) = std::sync::mpsc::channel::<ToolResultMsg>();
 
+        let event_interceptor = params.event_interceptor;
         let on_event = params.on_event;
         std::thread::spawn(move || {
             while let Ok(msg) = rx.recv() {
                 let json = stream_msg_to_json_string(&msg);
+                // Forward to Rust-side interceptor if present (JAgent backend bridge)
+                if let Some(ref interceptor) = event_interceptor {
+                    let _ = interceptor.send(json.clone());
+                }
                 if on_event.send(json).is_err() {
                     break;
                 }

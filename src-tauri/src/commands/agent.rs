@@ -1,6 +1,6 @@
 use crate::agent_engine::{AgentEngine, AgentEvent};
 use crate::agent_session::{self, AgentSessionInfo, AgentTimelineItem};
-use crate::kernel::JcliAdapter;
+use crate::kernel::{ChatKernel, JcliAdapter};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
@@ -35,7 +35,10 @@ pub fn start_agent(
     on_event: Channel<AgentEvent>,
     permission_mode: Option<String>,
     session_id: Option<String>,
+    use_jagent: Option<bool>,
 ) -> Result<(), String> {
+    let use_jagent = use_jagent.unwrap_or(false);
+
     let providers = kernel
         .config()
         .load_providers()
@@ -51,16 +54,30 @@ pub fn start_agent(
         Some(id) => id,
         None => agent_session::create_agent_session()?,
     };
-    let engine = AgentEngine::start(
-        on_event,
-        &mode,
-        &sid,
-        provider.models.first().map(|m| m.id.as_str()).unwrap_or(""),
-        &provider.api_base,
-        &provider.api_key,
-    )?;
-    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-    *guard = Some(engine);
+
+    if use_jagent {
+        let engine = AgentEngine::start_jagent(
+            Arc::clone(&*kernel) as Arc<dyn ChatKernel>,
+            on_event,
+            sid,
+            vec![], // empty initial messages
+            mode,
+            None, // no system prompt
+        )?;
+        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        *guard = Some(engine);
+    } else {
+        let engine = AgentEngine::start(
+            on_event,
+            &mode,
+            &sid,
+            provider.models.first().map(|m| m.id.as_str()).unwrap_or(""),
+            &provider.api_base,
+            &provider.api_key,
+        )?;
+        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        *guard = Some(engine);
+    }
     Ok(())
 }
 

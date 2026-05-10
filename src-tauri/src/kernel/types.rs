@@ -6,6 +6,7 @@
 //! All types derive Clone + Debug + PartialEq for mockall compatibility.
 
 use serde::{Deserialize, Serialize};
+use std::sync::mpsc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::Channel;
 
@@ -217,4 +218,8 @@ pub struct KernelAgentParams {
     /// Channel for streaming agent events as JSON strings.
     /// The frontend should parse each string as JSON.
     pub on_event: Channel<String>,
+    /// Optional Rust-side interceptor for streamed event JSON strings.
+    /// When set, every JSON string sent through on_event is also forwarded here.
+    /// Used by JAgent backend to bridge events to the existing AgentEvent system.
+    pub event_interceptor: Option<mpsc::Sender<String>>,
 }
