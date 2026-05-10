@@ -11,7 +11,7 @@ use crate::kernel::{ConfigKernel, JcliAdapter};
 // Request / response types
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelInfo {
     pub id: String,
@@ -85,20 +85,6 @@ pub struct ModelOption {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-#[allow(dead_code)]
-fn mask_api_key(key: &str) -> String {
-    let len = key.len();
-    if len > 8 {
-        format!("{}...{}", &key[..4], &key[len - 4..])
-    } else if len > 2 {
-        format!("{}...{}", &key[..2], &key[len - 2..])
-    } else if !key.is_empty() {
-        format!("...{}", key)
-    } else {
-        String::new()
-    }
-}
 
 fn provider_to_channel_info(p: &KernelProvider) -> ChannelInfo {
     ChannelInfo {
@@ -248,6 +234,12 @@ fn create_channel_impl(
     config: &dyn ConfigKernel,
     input: CreateChannelInput,
 ) -> Result<ChannelInfo, String> {
+    if input.name.trim().is_empty() {
+        return Err("渠道名称不能为空".into());
+    }
+    if input.api_base.trim().is_empty() {
+        return Err("API 地址不能为空".into());
+    }
     let kernel_input = KernelCreateChannelInput {
         name: input.name,
         provider: infer_provider(&input.api_base),
@@ -271,6 +263,9 @@ fn update_channel_impl(
     id: String,
     input: UpdateChannelInput,
 ) -> Result<ChannelInfo, String> {
+    if id.trim().is_empty() {
+        return Err("渠道 ID 不能为空".into());
+    }
     // Handle masked api_key: if the incoming key has "..." preserve existing
     let api_key = input.api_key.as_deref().and_then(|k| {
         if k.contains("...") {
@@ -426,7 +421,20 @@ mod tests {
     };
     use crate::kernel::KernelError;
 
-    // --- mask_api_key ---
+    // --- mask_api_key helper ---
+
+    fn mask_api_key(key: &str) -> String {
+        let len = key.len();
+        if len > 8 {
+            format!("{}...{}", &key[..4], &key[len - 4..])
+        } else if len > 2 {
+            format!("{}...{}", &key[..2], &key[len - 2..])
+        } else if !key.is_empty() {
+            format!("...{}", key)
+        } else {
+            String::new()
+        }
+    }
 
     #[test]
     fn mask_long_key() {
@@ -694,6 +702,92 @@ mod tests {
 
         let result = delete_channel_impl(&mock, "ghost");
         assert!(result.is_err());
+    }
+
+    // --- error propagation ---
+
+    #[test]
+    fn list_channels_kernel_error_propagates() {
+        let mut mock = MockConfigKernel::new();
+        mock.expect_load_providers()
+            .returning(|| Err(KernelError::Config("storage error".into())));
+
+        let result = list_channels_impl(&mock);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("storage error"));
+    }
+
+    #[test]
+    fn create_channel_kernel_error_propagates() {
+        let mut mock = MockConfigKernel::new();
+        mock.expect_create_channel()
+            .returning(|_| Err(KernelError::Config("save failed".into())));
+
+        let result = create_channel_impl(
+            &mock,
+            CreateChannelInput {
+                name: "Test".into(),
+                api_base: "https://api.test.com".into(),
+                api_key: "key".into(),
+                model: "gpt-4".into(),
+                supports_vision: None,
+            },
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("save failed"));
+    }
+
+    #[test]
+    fn create_channel_rejects_empty_name() {
+        let mock = MockConfigKernel::new();
+        let result = create_channel_impl(
+            &mock,
+            CreateChannelInput {
+                name: "".into(),
+                api_base: "https://api.test.com".into(),
+                api_key: "key".into(),
+                model: "gpt-4".into(),
+                supports_vision: None,
+            },
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("名称不能为空"));
+    }
+
+    #[test]
+    fn create_channel_rejects_empty_api_base() {
+        let mock = MockConfigKernel::new();
+        let result = create_channel_impl(
+            &mock,
+            CreateChannelInput {
+                name: "Test".into(),
+                api_base: "".into(),
+                api_key: "key".into(),
+                model: "gpt-4".into(),
+                supports_vision: None,
+            },
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("地址不能为空"));
+    }
+
+    #[test]
+    fn update_channel_rejects_empty_id() {
+        let mock = MockConfigKernel::new();
+        let result = update_channel_impl(
+            &mock,
+            "".into(),
+            UpdateChannelInput {
+                name: Some("test".into()),
+                provider: None,
+                api_base: None,
+                api_key: None,
+                models: None,
+                enabled: None,
+            },
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("ID 不能为空"));
     }
 
     // --- mask_api_key edge cases ---

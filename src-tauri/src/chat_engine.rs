@@ -45,7 +45,6 @@ pub struct ChatEngine {
 }
 
 impl ChatEngine {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         let adapter = Arc::new(JcliAdapter::new());
         Self::new_with_kernel(adapter.clone(), adapter)
