@@ -79,6 +79,7 @@ pub struct ModelOption {
 // Helpers
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 fn mask_api_key(key: &str) -> String {
     let len = key.len();
     if len > 8 {
