@@ -1,4 +1,3 @@
-use j_cli::config::YamlConfig;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -57,8 +56,15 @@ fn validate_session_id(id: &str) -> Result<(), String> {
     }
 }
 
+fn data_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    { std::env::var("USERPROFILE").ok().map(PathBuf::from).unwrap_or_default().join(".jdata") }
+    #[cfg(not(target_os = "windows"))]
+    { std::env::var("HOME").ok().map(|d| PathBuf::from(d).join(".jdata")).unwrap_or_default() }
+}
+
 pub fn agent_sessions_dir() -> PathBuf {
-    YamlConfig::data_dir().join("agent").join("sessions")
+    data_dir().join("agent").join("sessions")
 }
 
 pub fn now_millis() -> u64 {
