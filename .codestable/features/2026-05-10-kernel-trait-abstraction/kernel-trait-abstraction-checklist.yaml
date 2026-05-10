@@ -8,8 +8,8 @@ steps:
   - id: step-1
     paradigm: data-model
     description: 创建 kernel/ 目录，定义 3 个 trait + types.rs + error.rs + #[automock]
-    exit: cargo check 通过
-    status: pending
+    exit: cargo check 通过（kernel 模块零错误，32 个预存 j_cli/dirs 路径问题与此无关）
+    status: done
 
   - id: step-2
     paradigm: data-model

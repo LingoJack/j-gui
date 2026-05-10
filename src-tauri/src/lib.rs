@@ -7,6 +7,7 @@ mod agent_engine;
 mod agent_session;
 mod chat_engine;
 mod commands;
+mod kernel;
 
 use commands::agent::AgentState;
 use std::sync::{Arc, Mutex};
