@@ -109,7 +109,10 @@ tags: [tauri, desktop, j-cli, chat, agent]
 23. **branding-cleanup** — @proma/* 包名重命名为 @jgui/*
 24. **readme-docs** — README 完善 + 用户指南
 25. **build-packaging** — Tauri bundle (Windows/macOS/Linux)，首版需三个平台全部验证通过
-26. **tdd-coverage** — 测试覆盖达标 (前端 vitest + 后端 cargo test) + Rust 编码规约合规收口（90 个 pub item 缺 `///` 文档 + 6 处长路径引用 + 9 处魔法值提取 + 1 处 `.clone()` 优化 + clippy `#![deny(clippy::all)]` 门禁）
+26. **tdd-coverage** — 测试覆盖达标 + Rust 编码规约合规收口
+
+- **后端测试补全**（2026-05-10 扫描）：51 个测试仅覆盖 helpers/解析器，4 个文件零测试（config/alias/chat/system），所有 Tauri 命令无直接测试。需补：P0 零测试文件基础测试 + P1 命令单元测试 + P2 集成测试。详见 `.codestable/compound/2026-05-10-explore-backend-test-coverage.md`
+- **Rust 编码规约合规**：90 pub item 缺 `///` 文档 + 6 处长路径引用 + 9 处魔法值提取 + 1 处 `.clone()` 优化 + clippy `#![deny(clippy::all)]` 门禁
 
 ### Phase E: 内核解耦 & Agent 升级 (P2)
 
