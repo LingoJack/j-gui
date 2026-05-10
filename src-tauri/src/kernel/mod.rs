@@ -1,8 +1,11 @@
+pub mod adapter;
 pub mod chat;
 pub mod config;
 pub mod error;
 pub mod governance;
 pub mod types;
+
+pub use adapter::JcliAdapter;
 
 #[allow(unused_imports)]
 pub use chat::ChatKernel;
