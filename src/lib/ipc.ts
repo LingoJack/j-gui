@@ -125,7 +125,7 @@ export async function updateChannel(id: string, input: any) { return invoke<any>
 export async function deleteChannel(id: string) { return invoke('delete_channel', { id }) }
 export const decryptApiKey = (channelId: string) => tryInvoke<string>('decrypt_api_key', { channelId }, '')
 export async function testChannelDirect(input: any) { try { return await invoke<any>('test_channel_direct', { input }) } catch { return { success: false, message: '连接失败' } } }
-export async function fetchModels(input: any) { try { return await invoke<any>('fetch_models', { input }) } catch { return { success: false, message: '获取模型列表失败', models: [] } } }
+export async function fetchModels(input: any) { try { return await invoke<any>('fetch_models', { apiBase: input.apiBase || input.baseUrl, apiKey: input.apiKey }) } catch { return { success: false, message: '获取模型列表失败', models: [] } } }
 
 // ============================================================
 // Conversations — mapped to Rust chat commands (j-cli backend)

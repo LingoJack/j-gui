@@ -167,7 +167,14 @@ export function AgentSettings(): React.ReactElement {
 
   const buildMcpPrompt = (): string => {
     const configPath = `~/${configDirName}/agent-workspaces/${workspaceSlug}/mcp.json`
-    const currentConfig = JSON.stringify(mcpConfig, null, 2)
+    // Sanitize env/headers values to avoid leaking credentials to LLM
+    const sanitized = {
+      servers: Object.fromEntries(Object.entries(mcpConfig.servers).map(([k, v]) => [k, {
+        ...v, env: v.env ? Object.keys(v.env).reduce((acc, key) => ({ ...acc, [key]: '***' }), {}) : undefined,
+        headers: v.headers ? Object.keys(v.headers).reduce((acc, key) => ({ ...acc, [key]: '***' }), {}) : undefined,
+      }]))
+    }
+    const currentConfig = JSON.stringify(sanitized, null, 2)
     return `请帮我配置当前工作区的 MCP 服务器，你要主动来帮我实现，你可以采用联网搜索深度研究来尝试，当前环境已经有 Claude Agent SDK 了，除非不确定的时候才来问我，否则默认将帮我完成安装，而不是指导我。
 
 ## 工作区信息

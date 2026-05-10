@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::kernel::types::{KernelChannelModel, KernelProvider};
+use crate::kernel::types::{infer_provider, KernelChannelModel, KernelProvider};
 use crate::kernel::{ConfigKernel, JcliAdapter};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -130,10 +130,11 @@ fn set_agent_config_impl(config: &dyn ConfigKernel, input: AgentConfigInfo) -> R
             } else {
                 p.api_key.clone()
             };
+            let now_ms = crate::kernel::types::current_timestamp();
             KernelProvider {
-                id: String::new(),
+                id: uuid::Uuid::new_v4().to_string(),
                 name: p.name.clone(),
-                provider: String::new(),
+                provider: infer_provider(&p.api_base),
                 api_base: p.api_base.clone(),
                 api_key,
                 models: vec![KernelChannelModel {
@@ -143,8 +144,8 @@ fn set_agent_config_impl(config: &dyn ConfigKernel, input: AgentConfigInfo) -> R
                 }],
                 enabled: true,
                 supports_vision: p.supports_vision,
-                created_at: 0,
-                updated_at: 0,
+                created_at: now_ms,
+                updated_at: now_ms,
             }
         })
         .collect();
