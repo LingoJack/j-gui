@@ -13,9 +13,9 @@ steps:
 
   - id: step-2
     paradigm: data-model
-    description: 写 JcliAdapter (kernel/adapter.rs)，每个方法委托给现有 jcli 调用，内部做 Kernel* ↔ jcli 类型转换
+    description: 写 JcliAdapter (kernel/adapter.rs)，骨架已写。暂停——jcli 类型字段/签名不匹配，需逐字段对齐后激活
     exit: cargo test 全量通过（行为不变）
-    status: pending
+    status: in-progress
 
   - id: step-3
     paradigm: integration
