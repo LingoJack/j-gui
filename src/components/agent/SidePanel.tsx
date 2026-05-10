@@ -7,13 +7,14 @@
 
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { X, FolderOpen, ExternalLink, RefreshCw, ChevronRight, MoreHorizontal, FolderSearch, Pencil, FolderInput, Info, FolderHeart, MessageSquarePlus } from 'lucide-react'
+import { X, FolderOpen, ExternalLink, RefreshCw, ChevronRight, MoreHorizontal, FolderSearch, Pencil, FolderInput, Info, FolderHeart, MessageSquarePlus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
@@ -28,7 +29,7 @@ import {
   agentPendingFilesAtom,
 } from '@/atoms/agent-atoms'
 import { detectIsWindows } from '@/lib/platform'
-import type { FileEntry, AgentPendingFile } from '@proma/shared'
+import type { FileEntry, AgentPendingFile } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 
 interface SidePanelProps {
@@ -731,6 +732,16 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
     }
   }
 
+  // 删除文件
+  const handleDelete = async (): Promise<void> => {
+    if (!window.confirm(`确定要删除 ${currentName} 吗？此操作不可撤销。`)) return
+    try {
+      await ipc.deleteFile(currentPath)
+    } catch (err) {
+      console.error('[AttachedDirItem] 删除失败:', err)
+    }
+  }
+
   const paddingLeft = 8 + depth * 16
 
   return (
@@ -845,6 +856,14 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
                 >
                   <FolderInput />
                   移动到...
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="my-0.5" />
+                <DropdownMenuItem
+                  className="text-xs py-1 [&>svg]:size-3.5 text-destructive"
+                  onSelect={handleDelete}
+                >
+                  <Trash2 />
+                  删除
                 </DropdownMenuItem>
               </DropdownMenuContent>
           </DropdownMenu>

@@ -111,6 +111,34 @@ pub fn read_attachment(local_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn delete_file(file_path: String) -> Result<(), String> {
+    let path = PathBuf::from(&file_path);
+    if !path.exists() {
+        return Err(format!("文件不存在: {}", file_path));
+    }
+    if path.is_dir() {
+        fs::remove_dir_all(&path).map_err(|e| format!("删除目录失败: {}", e))?;
+    } else {
+        fs::remove_file(&path).map_err(|e| format!("删除文件失败: {}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
+    let old = PathBuf::from(&old_path);
+    let new = PathBuf::from(&new_path);
+    if !old.exists() {
+        return Err(format!("文件不存在: {}", old_path));
+    }
+    if new.exists() {
+        return Err(format!("目标文件已存在: {}", new_path));
+    }
+    fs::rename(&old, &new).map_err(|e| format!("重命名失败: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn list_directory(dir_path: String) -> Result<Vec<DirEntry>, String> {
     let entries =
         fs::read_dir(&dir_path).map_err(|e| format!("Failed to read directory: {}", e))?;
@@ -207,6 +235,86 @@ mod tests {
     fn test_list_directory_nonexistent() {
         let result = list_directory("/nonexistent/path/that/does/not/exist".to_string());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_delete_file_removes_file() {
+        let dir = std::env::temp_dir().join("j-gui-test-delete-file");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let file_path = dir.join("delete_me.txt");
+        fs::write(&file_path, b"content").unwrap();
+
+        delete_file(file_path.to_string_lossy().to_string()).unwrap();
+        assert!(!file_path.exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_delete_file_nonexistent() {
+        let result = delete_file("/nonexistent/path/to/delete/file.txt".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_delete_file_removes_directory() {
+        let dir = std::env::temp_dir().join("j-gui-test-delete-dir");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("nested.txt"), b"data").unwrap();
+
+        delete_file(dir.to_string_lossy().to_string()).unwrap();
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn test_rename_file_renames() {
+        let dir = std::env::temp_dir().join("j-gui-test-rename");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let old = dir.join("old_name.txt");
+        let new = dir.join("new_name.txt");
+        fs::write(&old, b"content").unwrap();
+
+        rename_file(
+            old.to_string_lossy().to_string(),
+            new.to_string_lossy().to_string(),
+        )
+        .unwrap();
+        assert!(!old.exists());
+        assert!(new.exists());
+        assert_eq!(fs::read_to_string(&new).unwrap(), "content");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_rename_file_nonexistent_old() {
+        let result = rename_file(
+            "/nonexistent/old.txt".to_string(),
+            "/nonexistent/new.txt".to_string(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rename_file_conflict_new_exists() {
+        let dir = std::env::temp_dir().join("j-gui-test-rename-conflict");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let old = dir.join("a.txt");
+        let existing = dir.join("b.txt");
+        fs::write(&old, b"a").unwrap();
+        fs::write(&existing, b"b").unwrap();
+
+        let result = rename_file(
+            old.to_string_lossy().to_string(),
+            existing.to_string_lossy().to_string(),
+        );
+        assert!(result.is_err());
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

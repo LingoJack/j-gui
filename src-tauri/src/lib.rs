@@ -58,6 +58,8 @@ pub fn run() {
             commands::files::save_attachment,
             commands::files::read_attachment,
             commands::files::list_directory,
+            commands::files::delete_file,
+            commands::files::rename_file,
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::settings::get_user_profile,

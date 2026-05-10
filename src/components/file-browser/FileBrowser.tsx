@@ -44,7 +44,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { workspaceFilesVersionAtom, fileBrowserAutoRevealAtom, recentlyModifiedPathsAtom, currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
-import type { FileEntry } from '@proma/shared'
+import type { FileEntry } from '@jgui/shared'
 import { FileTypeIcon } from './FileTypeIcon'
 import * as ipc from '@/lib/ipc'
 
@@ -214,7 +214,7 @@ export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddT
     }
 
     try {
-      await ipc.renameFile(filePath, newName)
+      await ipc.renameFile(filePath, `${parentDir}/${newName}`)
       await loadRoot()
       setRenamingPath(null)
       setSelectedPaths(new Set())
