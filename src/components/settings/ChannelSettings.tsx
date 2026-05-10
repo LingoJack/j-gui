@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { ChannelForm } from './ChannelForm'
+import { getChannelLogo } from '@/lib/model-logo'
 import * as ipc from '@/lib/ipc'
 
 /** 组件视图模式 */
