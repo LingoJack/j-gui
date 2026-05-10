@@ -98,9 +98,4 @@ describe('IPC module — agent workspaces', () => {
     const ws = await ipc.listAgentWorkspaces()
     expect(Array.isArray(ws)).toBe(true)
   })
-
-  it('checkEnvironment returns fallback when Tauri is unavailable', async () => {
-    const result = await ipc.checkEnvironment()
-    expect(result).toBeDefined()
-  })
 })

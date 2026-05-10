@@ -13,7 +13,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { settingsTabAtom, channelFormDirtyAtom, settingsCloseRequestedAtom } from "@/atoms/settings-tab";
 import type { SettingsTab } from "@/atoms/settings-tab";
 import { appModeAtom } from "@/atoms/app-mode";
-import { hasUpdateAtom } from "@/atoms/updater";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription,
@@ -91,7 +90,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps): React.ReactEleme
   const channelFormDirty = useAtomValue(channelFormDirtyAtom);
   const [closeRequested, setCloseRequested] = useAtom(settingsCloseRequestedAtom);
   const appMode = useAtomValue(appModeAtom);
-  const hasUpdate = useAtomValue(hasUpdateAtom);
 
   type PendingAction = { type: 'tab'; tabId: SettingsTab } | { type: 'close' } | null
   const [pendingAction, setPendingAction] = React.useState<PendingAction>(null)
@@ -145,7 +143,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps): React.ReactEleme
               )}>
                 {tab.icon}
                 <span>{tab.label}</span>
-                {tab.id === "about" && hasUpdate && <span className="w-2 h-2 rounded-full bg-red-500" />}
               </button>
             ))}
           </nav>

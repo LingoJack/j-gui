@@ -56,7 +56,6 @@ import {
 import { userProfileAtom } from '@/atoms/user-profile'
 import { sidebarViewModeAtom, agentSidebarTopHeightAtom } from '@/atoms/sidebar-atoms'
 import { searchDialogOpenAtom } from '@/atoms/search-atoms'
-import { hasUpdateAtom } from '@/atoms/updater'
 import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
 import { workingSessionGroupsAtom, workingSessionIdsSetAtom } from '@/atoms/working-atoms'
 import { atom } from 'jotai'
@@ -186,7 +185,6 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   const streamingIds = useAtomValue(streamingConversationIdsAtom)
   const mode = useAtomValue(appModeAtom)
   const isMac = React.useMemo(() => detectIsMac(), [])
-  const hasUpdate = useAtomValue(hasUpdateAtom)
   const hasEnvironmentIssues = useAtomValue(hasEnvironmentIssuesAtom)
   const promptConfig = useAtomValue(promptConfigAtom)
   const setSelectedPromptId = useSetAtom(selectedPromptIdAtom)
@@ -894,7 +892,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
                 className="relative p-1 rounded-[10px] transition-colors titlebar-no-drag hover:bg-foreground/5"
               >
                 <UserAvatar avatar={userProfile.avatar} size={28} />
-                {(hasUpdate || hasEnvironmentIssues) && (
+                {(hasEnvironmentIssues) && (
                   <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-red-500" />
                 )}
               </button>
@@ -1342,7 +1340,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
           <span className="flex-1 text-sm truncate text-left">{userProfile.userName}</span>
           <div className="relative flex-shrink-0 text-foreground/40">
             <Settings size={16} />
-            {(hasUpdate || hasEnvironmentIssues) && (
+            {(hasEnvironmentIssues) && (
               <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />
             )}
           </div>

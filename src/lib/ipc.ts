@@ -7,7 +7,6 @@
  */
 
 import { invoke, Channel } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
 import type { AppSettings, UserProfile, ThemeMode, ThemeStyle } from '@/types'
 
 // ============================================================
@@ -163,7 +162,7 @@ export const toggleArchiveConversation = (id: string) => tryInvoke<any>('toggle_
 export const searchConversationMessages = (query: string) => tryInvoke<any[]>('search_conversation_messages', { query }, [])
 export const generateTitle = (input: any) => tryInvoke<string>('generate_title', { input }, null)
 export const createWelcomeConversation = () => tryInvoke<any>('create_welcome_conversation', undefined, null)
-export const getTutorialContent = () => tryInvoke<string>('get_tutorial_content', undefined, null)
+// Removed: tutorial not supported in j-gui v1
 
 // ============================================================
 // Chat Messaging — Tauri Channel streaming via j-cli
@@ -409,20 +408,11 @@ export const updateUserProfile = (updates: Partial<UserProfile>) =>
   tryInvoke<UserProfile>('update_user_profile', { updates }, { userName: 'User', avatar: '🧑‍💻' })
 
 // ============================================================
-// Online / Updater
+// Online
 // ============================================================
 
 export const getOnlineStatus = () => Promise.resolve(navigator.onLine)
-export const checkForUpdates = () => tryInvoke('check_for_updates')
-export const getUpdaterStatus = () => tryInvoke<any>('get_updater_status', undefined, { status: 'idle' })
-export const onUpdaterStatusChanged = stubEvent('updaterStatusChanged')
-
-// Proma updater sub-object compat
-export const updater = {
-  checkForUpdates: () => tryInvoke('check_for_updates'),
-  getStatus: () => tryInvoke<any>('get_updater_status', undefined, { status: 'idle' }),
-  onStatusChanged: stubEvent('updaterStatusChanged'),
-}
+// Removed: updater not supported in j-gui v1
 
 // ============================================================
 // System Prompts
@@ -540,27 +530,7 @@ export const testMemoryConnection = (config: any) =>
 
 export const getAgentTeamData = () => tryInvoke<any>('get_agent_team_data', undefined, null)
 
-// ============================================================
-// Environment & Installer
-// ============================================================
-
-export const checkEnvironment = () =>
-  tryInvoke<any>('check_environment', undefined, { bunInstalled: true, gitInstalled: true })
-export const fetchInstallerManifest = () => tryInvoke<any>('fetch_installer_manifest', undefined, { packages: [] })
-export const downloadInstaller = (req: any) => tryInvoke<any>('download_installer', { req }, { success: false })
-export const cancelInstallerDownload = (key: string) =>
-  tryInvoke<boolean>('cancel_installer_download', { key }, false)
-export const launchInstaller = (filePath: string) => tryInvoke('launch_installer', { filePath })
-export const onInstallerProgress = stubEvent('installerProgress')
-
-// ============================================================
-// Proxy
-// ============================================================
-
-export const getProxySettings = () =>
-  tryInvoke<any>('get_proxy_settings', undefined, { enabled: false, proxyUrl: '' })
-export const updateProxySettings = (config: any) => tryInvoke('update_proxy_settings', { config })
-export const detectSystemProxy = () => tryInvoke<any>('detect_system_proxy', undefined, { detected: false })
+// Removed: installer & proxy not supported in j-gui v1
 
 // ============================================================
 // Hooks
@@ -598,148 +568,18 @@ export const listAliases = () => tryInvoke<Array<{ section: string; name: string
 export const setAlias = (section: string, name: string, value: string) => tryInvoke('set_alias', { section, name, value })
 export const removeAlias = (section: string, name: string) => tryInvoke('remove_alias', { section, name })
 
-// ============================================================
-// Quick Tasks
-// ============================================================
-
-export const listQuickTasks = () => tryInvoke<any[]>('list_quick_tasks', undefined, [])
-export const createQuickTask = (input: any) => tryInvoke<any>('create_quick_task', { input })
-export const deleteQuickTask = (id: string) => tryInvoke('delete_quick_task', { id })
-export const openInQuickTaskWindow = (data: any) => tryInvoke('open_in_quick_task_window', { data })
-export const submitQuickTask = (input: any) => tryInvoke('submit_quick_task', { input })
-export const hideQuickTask = () => tryInvoke('hide_quick_task')
-export const reregisterGlobalShortcuts = () => tryInvoke('reregister_global_shortcuts')
-export const getPendingRequestsSnapshot = () =>
-  tryInvoke<any>('get_pending_requests_snapshot', undefined, { permissions: [], askUsers: [] })
-
-export const onQuickTaskFocus = stubEvent('quickTaskFocus')
-export const onQuickTaskOpenSession = stubEvent('quickTaskOpenSession')
+// Removed: quick_task not supported in j-gui v1
 export const onMenuCloseTab = stubEvent('menuCloseTab')
 export const onTrayCreateSession = stubEvent('trayCreateSession')
 export const onTrayOpenAgentSession = stubEvent('trayOpenAgentSession')
 
-// ============================================================
-// Feishu
-// ============================================================
+// Removed: feishu not supported in j-gui v1
 
-export const getFeishuStatus = () => tryInvoke<any>('get_feishu_status', undefined, { status: 'disconnected' })
-export const getFeishuMultiStatus = () => tryInvoke<any>('get_feishu_multi_status', undefined, { bots: {} })
-export const getFeishuConfig = () => tryInvoke<any>('get_feishu_config', undefined, {})
-export const getFeishuMultiConfig = () => tryInvoke<any>('get_feishu_multi_config', undefined, {})
-export const updateFeishuConfig = (input: any) => tryInvoke<any>('update_feishu_config', { input })
-export const saveFeishuBotConfig = (input: any) => tryInvoke('save_feishu_bot_config', { input })
-export const removeFeishuBot = (botId: string) => tryInvoke('remove_feishu_bot', { botId })
-export const startFeishuBot = (botId: string) => tryInvoke('start_feishu_bot', { botId })
-export const stopFeishuBot = (botId: string) => tryInvoke('stop_feishu_bot', { botId })
-export const testFeishuConnection = (config: any) =>
-  tryInvoke('test_feishu_connection', { config }, { success: false, message: 'Not implemented' })
-export const reportFeishuPresence = (report: any) => tryInvoke('report_feishu_presence', { report })
-export const triggerFeishuManualSync = () => tryInvoke('trigger_feishu_manual_sync')
-export const getFeishuChatBindings = () => tryInvoke<any[]>('get_feishu_chat_bindings', undefined, [])
-export const listFeishuBindings = () => tryInvoke<any[]>('list_feishu_bindings', undefined, [])
-export const toggleFeishuNotifyMode = (conversationId: string, notifyMode?: string) =>
-  tryInvoke('toggle_feishu_notify_mode', { conversationId, notifyMode })
-export const setFeishuSessionNotify = (data: any) => tryInvoke('set_feishu_session_notify', { data })
-export const createFeishuChatBinding = (conversationId: string) =>
-  tryInvoke<any>('create_feishu_chat_binding', { conversationId })
-export const deleteFeishuChatBinding = (bindingId: string) =>
-  tryInvoke('delete_feishu_chat_binding', { bindingId })
-export const updateFeishuChatBinding = (bindingId: string, data: any) =>
-  tryInvoke<any>('update_feishu_chat_binding', { bindingId, data })
-export const removeFeishuBinding = (bindingId: string) =>
-  tryInvoke('remove_feishu_binding', { bindingId })
-export const updateFeishuBinding = (input: any) => tryInvoke('update_feishu_binding', { input })
-export const getDecryptedFeishuSecret = (botId: string) =>
-  tryInvoke<string>('get_decrypted_feishu_secret', { botId }, '')
-export const getDecryptedFeishuBotSecret = (botId: string) =>
-  tryInvoke<string>('get_decrypted_feishu_bot_secret', { botId }, '')
-export const onFeishuStatusChanged = stubEvent('feishuStatusChanged')
-export const onFeishuNotificationSent = stubEvent('feishuNotificationSent')
+// Removed: dingtalk not supported in j-gui v1
 
-// ============================================================
-// DingTalk
-// ============================================================
+// Removed: voice_dictation not supported in j-gui v1
 
-export const getDingTalkStatus = () => tryInvoke<any>('get_dingtalk_status', undefined, { status: 'disconnected' })
-export const getDingTalkMultiStatus = () => tryInvoke<any>('get_dingtalk_multi_status', undefined, { bots: {} })
-export const getDingTalkConfig = () => tryInvoke<any>('get_dingtalk_config', undefined, {})
-export const getDingTalkMultiConfig = () => tryInvoke<any>('get_dingtalk_multi_config', undefined, {})
-export const updateDingTalkConfig = (input: any) => tryInvoke<any>('update_dingtalk_config', { input })
-export const saveDingTalkBotConfig = (input: any) => tryInvoke('save_dingtalk_bot_config', { input })
-export const startDingTalkBot = (botId: string) => tryInvoke('start_dingtalk_bot', { botId })
-export const stopDingTalkBot = (botId: string) => tryInvoke('stop_dingtalk_bot', { botId })
-export const removeDingTalkBot = (botId: string) => tryInvoke('remove_dingtalk_bot', { botId })
-export const testDingTalkConnection = (config: any) =>
-  tryInvoke('test_dingtalk_connection', { config }, { success: false, message: 'Not implemented' })
-export const triggerDingTalkManualSync = () => tryInvoke('trigger_dingtalk_manual_sync')
-export const getDecryptedDingTalkSecret = (botId: string) =>
-  tryInvoke<string>('get_decrypted_dingtalk_secret', { botId }, '')
-export const getDecryptedDingTalkBotSecret = (botId: string) =>
-  tryInvoke<string>('get_decrypted_dingtalk_bot_secret', { botId }, '')
-export const onDingTalkStatusChanged = stubEvent('dingTalkStatusChanged')
-
-// ============================================================
-// WeChat
-// ============================================================
-
-export const getWeChatStatus = () => tryInvoke<any>('get_wechat_status', undefined, { status: 'disconnected' })
-export const getWeChatConfig = () => tryInvoke<any>('get_wechat_config', undefined, {})
-export const updateWeChatConfig = (config: any) => tryInvoke<any>('update_wechat_config', { config })
-export const startWeChatBridge = () => tryInvoke('start_wechat_bridge')
-export const stopWeChatBridge = () => tryInvoke('stop_wechat_bridge')
-export const startWeChatLogin = () => tryInvoke('start_wechat_login')
-export const logoutWeChat = () => tryInvoke('logout_wechat')
-export const onWeChatStatusChanged = stubEvent('weChatStatusChanged')
-
-// ============================================================
-// Voice Dictation
-// ============================================================
-
-export const startVoiceDictation = (input: any) => tryInvoke('start_voice_dictation', { input })
-export const stopVoiceDictation = (input: any) => tryInvoke('stop_voice_dictation', { input })
-export const cancelVoiceDictation = () => tryInvoke('cancel_voice_dictation')
-export const commitVoiceDictation = (input: any) =>
-  tryInvoke<any>('commit_voice_dictation', { input }, { text: '' })
-export const sendVoiceDictationAudio = (input: any) => tryInvoke('send_voice_dictation_audio', { input })
-export const sendVoiceDictationAudioChunk = (input: any) => tryInvoke('send_voice_dictation_audio_chunk', { input })
-export const resizeVoiceDictation = (input: any) => tryInvoke('resize_voice_dictation', { input })
-export const resizeVoiceDictationWindow = (input: any) => tryInvoke('resize_voice_dictation_window', { input })
-export const hideVoiceDictation = () => tryInvoke('hide_voice_dictation')
-export const toggleVoiceDictation = () => tryInvoke('toggle_voice_dictation')
-export const getVoiceDictationSettings = () =>
-  tryInvoke<any>('get_voice_dictation_settings', undefined, { enabled: false })
-export const updateVoiceDictationSettings = (input: any) =>
-  tryInvoke('update_voice_dictation_settings', { input })
-export const testVoiceDictationConnection = (settings: any) =>
-  tryInvoke('test_voice_dictation_connection', { settings }, { success: false, message: 'Not implemented' })
-export const getVoiceDictationMicPermission = () =>
-  tryInvoke<string>('get_voice_dictation_mic_permission', undefined, 'denied')
-export const checkMicrophonePermission = () =>
-  tryInvoke<string>('check_microphone_permission', undefined, 'denied')
-export const requestMicrophonePermission = () =>
-  tryInvoke<string>('request_microphone_permission', undefined, 'denied')
-export const onVoiceDictationStateChanged = stubEvent('voiceDictationStateChanged')
-export const onVoiceDictationState = stubEvent('voiceDictationState')
-export const onVoiceDictationTranscript = stubEvent('voiceDictationTranscript')
-export const onVoiceDictationInsertText = stubEvent('voiceDictationInsertText')
-export const onVoiceDictationShown = stubEvent('voiceDictationShown')
-export const onVoiceDictationToggleStop = stubEvent('voiceDictationToggleStop')
-
-// ============================================================
-// Migration
-// ============================================================
-
-export const migrationExportV2 = () => tryInvoke<string>('migration_export_v2', undefined, '')
-export const migrationOpenFileDialog = () =>
-  tryInvoke<string>('migration_open_file_dialog', undefined, '')
-export const migrationSaveFileDialog = (defaultName: string) =>
-  tryInvoke<string>('migration_save_file_dialog', { defaultName }, '')
-export const migrationParseImportFile = (filePath: string) =>
-  tryInvoke<any>('migration_parse_import_file', { filePath }, null)
-export const migrationConfirmImport = (data: any) => tryInvoke('migration_confirm_import', { data })
-export const migrationGetShareExportPreview = () =>
-  tryInvoke<any>('migration_get_share_export_preview', undefined, null)
-export const onMigrationOpenImportFile = stubEvent('migrationOpenImportFile')
+// Removed: migration not supported in j-gui v1
 
 // ============================================================
 // Misc
@@ -762,12 +602,7 @@ export const saveTaskPendingFilesState = (sessionId: string, state: unknown) =>
 export const getTaskPendingFilesState = (sessionId: string) =>
   tryInvoke<unknown>('get_task_pending_files_state', { sessionId }, null)
 
-// ============================================================
-// Tray events
-// ============================================================
-
-export const onTrayOpenAgentSessionEvt = stubEvent('trayOpenAgentSession')
-export const onTrayCreateSessionEvt = stubEvent('trayCreateSession')
+// Removed: tray event duplicates (onTrayCreateSession/onTrayOpenAgentSession exist above)
 
 // ============================================================
 // Export emit/onEvt for stream events (called by Rust backend via Tauri events)

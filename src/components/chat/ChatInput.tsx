@@ -5,7 +5,7 @@
  * - RichTextInput (TipTap 编辑器) 替代原生 textarea
  * - 附件预览区域（pendingAttachments 缩略图列表）
  * - Footer 工具栏（左右分布）：
- *   左侧：Paperclip 附件按钮、ModelSelector、ThinkingButton、SpeechButton、ContextSettingsPopover、ClearContextButton
+ *   左侧：Paperclip 附件按钮、ModelSelector、ThinkingButton、ContextSettingsPopover、ClearContextButton
  *   右侧：Send/Stop 按钮
  * - 拖放文件支持（onDragOver/onDragLeave/onDrop）
  * - 监听 proma:clear-context 和 proma:focus-input 自定义事件
@@ -21,7 +21,6 @@ import { ContextSettingsPopover } from './ContextSettingsPopover'
 import { ToolSelectorPopover } from './ToolSelectorPopover'
 import { AttachmentPreviewItem } from './AttachmentPreviewItem'
 import { RichTextInput } from '@/components/ai-elements/rich-text-input'
-import { SpeechButton } from '@/components/ai-elements/speech-button'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -310,8 +309,6 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
                   <p>{thinkingEnabled ? '关闭思考模式' : '开启思考模式'}</p>
                 </TooltipContent>
               </Tooltip>
-
-              <SpeechButton className="size-[36px] rounded-full" />
 
               <ToolSelectorPopover />
 
