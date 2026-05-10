@@ -4,6 +4,10 @@ slug: j-gui-v1
 status: active
 created: 2026-05-10
 last_reviewed: 2026-05-10
+
+# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5
+
+> **Phase A/B 完成口径**：基础链路已实现并通过测试，但存在前后端数据模型不兼容的端到端问题（详见 #27 说明）。
 tags: [tauri, desktop, j-cli, chat, agent]
 ---
 
@@ -29,15 +33,16 @@ tags: [tauri, desktop, j-cli, chat, agent]
 | Config (commands/config.rs) | 7 | 工作 (j-cli) |
 | Settings (commands/settings.rs) | 8 | 工作 (GUI配置 + 工作区 + 环境检测) |
 | Files (commands/files.rs) | 4 | 工作 (对话框 + 附件) |
-| Governance (commands/governance.rs) | 6 | 基础 (Skills/Hooks/MCP — 仅 j-cli 源) |
+| Governance (commands/governance.rs) | 8 | Skills/Hooks/MCP (j-cli 源 + 全局扫描 + 复制导入) |
 | System (commands/system.rs) | 2 | 工作 |
 | Alias (commands/alias.rs) | 3 | 工作 (j-cli) |
 
 关键缺口:
-- API Key 加密存储
+- API Key 加密存储（j-cli `agent_config.json` 中明文）
 - j-agent 集成 (jcli 仓库 j-agent crate)
-- 全局 Skills 发现 (`~/.claude/agents/skills/` + `~/.agent/skills/`)
-- CC SDK 源 Skills/MCP/Hooks 与 j-cli 源的 UI 区分
+- 前端/后端 Channel 数据模型统一（类型不兼容导致端到端不可用）
+- Workspace Skills/MCP/Hooks 持久化命令未注册
+- Hooks UI 仅只读，需升级为可启停管理
 
 ## 双源架构（Skills / MCP / Hooks）
 
@@ -52,7 +57,7 @@ tags: [tauri, desktop, j-cli, chat, agent]
 
 ### Phase A: 可用 MVP (P0 — 全部完成 ✅)
 
-1. ~~channel-management~~ ✅ — 渠道 CRUD + test_channel_direct + fetch_models
+1. ~~channel-management~~ ⚠️ — 渠道 CRUD + test_channel_direct + fetch_models。**后端通过测试，但前后端 Channel 类型不兼容导致端到端不可用**，由 #27 修复。
 2. ~~stop-generation~~ ✅ — Chat/Agent 中断生成 (STOPPED_SESSIONS)
 3. ~~agent-title~~ ✅ — generate_agent_title + update_agent_session_title
 4. ~~agent-permissions~~ ✅ — respond_permission + respond_ask_user
@@ -66,16 +71,36 @@ tags: [tauri, desktop, j-cli, chat, agent]
 
 10. **alias-ui** — Alias 管理 UI tab，后端已有 list/set/remove
 11. **skills-dual-source-ui** — Skills 管理 UI：列出 j-cli Skills + CC SDK Workspace Skills + 扫描 `~/.claude/agents/skills/` 和 `~/.agent/skills/` 全局 Skills，支持导入到工作区
-12. **hooks-ui** — Hooks 管理 UI，后端已有 list_hooks
+12. **hooks-ui** ⚠️ — Hooks 查看 UI（当前只读），后端已有 list_hooks。**启停管理由 #28 补全**
 13. **mcp-dual-source-ui** — MCP Server 配置 UI：区分 j-cli 源 (`mcp_config.json`) 和 CC SDK 工作区源 (`mcp.json`)
 14. **chat-tools-ui** — Chat Tools 管理 UI，后端已有 list/set_enabled
 15. **system-prompt-ui** — System Prompt 编辑器，后端已有 get/set
 16. **yaml-config-editor** — 全局 YamlConfig 查看/编辑 UI
 17. **channel-provider-ui** — 渠道 Provider CRUD UI + 模型选择器 + 测试连接
 
+### Phase B+: 数据模型修复 & 持久化补齐 (P0 阻塞)
+
+从审计和实际使用中发现的问题，阻塞了基础功能的正常使用。
+
+**27. channel-model-unify** — 增强 j-cli `AgentConfig.providers` 为完整 Channel 模型
+
+- **现状**：j-cli `ModelProvider` 仅 `{ name, api_base, api_key, model(String), supports_vision }`，id 为数组下标。前端 `Channel` 期望 `{ id: Uuid, provider, baseUrl, apiKey(加密), models: ChannelModel[], enabled, createdAt, updatedAt }`。类型完全不对齐，导致渠道创建、列表显示、选中切换全部异常。
+- **后端 (jcli)**：扩展 `ModelProvider` → `{ id: Uuid, name, provider: ProviderType, api_base, api_key, models: Vec<ChannelModel>, enabled, created_at, updated_at, supports_vision }`。`agent_config.json` 格式升级，向后兼容旧格式自动迁移。
+- **后端 (j-gui)**：Channel CRUD 命令输出对齐新结构。API Key 加密存储。
+- **前端 (j-gui)**：IPC 封装与后端对齐，去掉所有兼容适配/类型转换。
+- **涉及仓库**：`jcli` + `j-gui`
+
+**28. governance-bidirectional-sync** — 治理命令补全 + 工作区 ↔ j-cli 双向同步
+
+合并原 Phase C #18 `workspace-mcp`。
+
+- **Skills 持久化**：注册 `write_skill_content` / `read_skill_content` / `toggle_workspace_skill` / `delete_workspace_skill` / `import_skill_from_workspace` / `update_skill_from_source` / `get_workspace_skills` / `get_workspace_skills_dir` / `get_other_workspace_skills`
+- **MCP 持久化**：注册 `save_workspace_mcp_config` / `get_workspace_mcp_config`
+- **Hooks 升级**：从只读升级为可管理——注册 `toggle_hook` / `list_hooks_with_status`，UI 增加启停开关 + 按事件/来源筛选
+- **双向同步**：写工作区时同步更新 j-cli 配置（启停 Skill → `disabled_skills`，启停 Hook → `disabled_hooks`，新增 MCP → `mcp_config.json`）
+
 ### Phase C: 体验追平 (P2)
 
-18. **workspace-mcp** — 工作区 MCP 读写持久化
 19. **message-persistence** — Chat 消息 JSONL (对接 j-cli session)
 20. **session-archive** — 会话归档/搜索
 21. **error-toast** — 统一错误提示 + 边界处理
@@ -104,8 +129,9 @@ tags: [tauri, desktop, j-cli, chat, agent]
 
 ## 变更日志
 
-- 2026-05-10 (Phase B 完成): Phase B 8 项全部 TDD 实现——alias-ui / skills-dual-source-ui (含 scan_global_skills + copy_skill_to_workspace) / hooks-ui / mcp-dual-source-ui / chat-tools-ui (BuiltinToolsSection + list_chat_tools/set_tool_enabled) / system-prompt-ui (后端 7 命令注册 + j-cli 默认内容首读加载) / yaml-config-editor / channel-provider-ui（已有）。后端 57/57 + 前端 54/54 测试通过，cargo check 零新告警。
-- 2026-05-10 (更新): Phase A 全部完成 (9/9)；命令数 38→51；新增双源架构约束；Skills/MCP/Hooks 条目更新为 dual-source 版本；补充全局 Skills 路径
+- 2026-05-10 (Phase B+ 审计补丁): 基于审计和实际使用发现的问题新增 Phase B+（2 条）—— #27 `channel-model-unify`（前后端 Channel 数据模型不兼容） + #28 `governance-bidirectional-sync`（Skills/MCP/Hooks 持久化命令补全 + 双向同步）。Phase A #1 标 ⚠️（端到端不可用），Phase B #12 标 ⚠️（待升级为可管理），Phase C #18 合并入 #28。Governance 命令数 6→8。
+- 2026-05-10 (Phase B 完成): Phase B 8 项全部 TDD 实现。后端 57/57 + 前端 54/54 测试通过。
+- 2026-05-10 (更新): Phase A 全部完成 (9/9)；命令数 38→51；新增双源架构约束
 
 ## 致谢
 

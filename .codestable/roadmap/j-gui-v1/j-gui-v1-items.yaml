@@ -2,7 +2,10 @@ roadmap: j-gui-v1
 created: 2026-05-10
 last_reviewed: 2026-05-10
 
-# Roadmap 进度：Phase A 9/9 ✅ | Phase B 8/8 ✅ | Phase C 0/4 | Phase D 0/5
+last_reviewed: 2026-05-10
+
+# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 0/2 | Phase C 0/3 | Phase D 0/5
+# ⚠️ Phase A #1 后端通过测试但端到端不可用（前后端类型不兼容），由 #27 修复
 
 items:
   # ===== Phase A: 可用 MVP (P0 — 全部完成) =====
@@ -12,7 +15,7 @@ items:
     status: done
     feature: null
     minimal_loop: false
-    notes: Phase A 完成
+    notes: Phase A 完成。⚠️ 后端通过测试但前后端 Channel 类型不兼容导致端到端不可用，由 #27 channel-model-unify 修复
 
   - slug: stop-generation
     description: Chat/Agent 中断生成 (STOPPED_SESSIONS)
@@ -96,12 +99,12 @@ items:
     notes: 2026-05-10 TDD 完成——scan_global_skills + copy_skill_to_workspace 后端命令 + 双源 UI + 14 tests
 
   - slug: hooks-ui
-    description: Hooks 管理 UI tab，后端已有 list_hooks
+    description: Hooks 管理 UI tab，当前只读，由 #28 governance-bidirectional-sync 升级为可启停管理
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: 2026-05-10 TDD 完成——HooksSettings.tsx + IPC wrappers + 4 tests
+    notes: 2026-05-10 TDD 完成——HooksSettings.tsx（只读）+ 4 tests。⚠️ 启停开关、按事件/来源筛选、toggle_hook 后端命令由 #28 补全
 
   - slug: mcp-dual-source-ui
     description: MCP Server 双源配置 UI——j-cli 源 (mcp_config.json) + CC SDK 工作区源 (mcp.json)
@@ -143,15 +146,24 @@ items:
     minimal_loop: false
     notes: ChannelSettings.tsx + ChannelForm.tsx 已完整实现
 
-  # ===== Phase C: 体验追平 (P2) =====
-  - slug: workspace-mcp
-    description: 工作区 MCP 读写持久化
-    depends_on: [mcp-dual-source-ui]
+  # ===== Phase B+: 数据模型修复 & 持久化补齐 (P0 阻塞) =====
+  - slug: channel-model-unify
+    description: 增强 j-cli ModelProvider 为完整 Channel 模型——UUID id、ProviderType、models 数组、enabled、API Key 加密。升级 agent_config.json 格式并向后兼容迁移。前后端 IPC 对齐
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: true
+    notes: ⭐ 最小闭环——修好后渠道创建/列表/选中端到端可用。涉及 jcli + j-gui 两个仓库
+
+  - slug: governance-bidirectional-sync
+    description: 治理命令补全 + 双向同步——注册 Skills/MCP 工作区持久化命令（write/toggle/delete/import），Hooks 从只读升级为可启停管理，写工作区时同步更新 j-cli 配置（disabled_skills/disabled_hooks/mcp_config.json）。合并原 Phase C #18
+    depends_on: []
     status: planned
     feature: null
     minimal_loop: false
-    notes:
+    notes: 涉及 governance.rs 新增 ~12 个命令 + HooksSettings UI 升级
 
+  # ===== Phase C: 体验追平 (P2) =====
   - slug: message-persistence
     description: Chat 消息 JSONL (对接 j-cli session)
     depends_on: []
