@@ -67,6 +67,6 @@ total_findings: 19
 
 ## 优先级建议
 
-1. **P1 立即**：#1 空 UUID（频道管理不可用）+ #2 fetchModels 参数错（获取模型按钮无效）+ #4 models 类型不匹配（UI 显示 undefined）
-2. **P1 安全**：#3 MCP 凭据泄露
-3. **P2 下迭代**：12 条按 bug > security > arch-drift > maintainability 顺序
+1. ✅ **P1 已修复**（2026-05-10 re-audit verified）：#1 空 UUID + #2 fetchModels 参数 + #3 MCP 凭据泄露 + #4 models 类型不匹配。115+54 tests pass，零回归。
+2. **P2 下迭代**：12 条按 bug > security > arch-drift > maintainability 顺序
+3. **P3 择机**：2 条（组件大小、IPC any 类型）
