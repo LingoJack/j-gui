@@ -39,15 +39,22 @@ export function createFileMentionSuggestion(
         const additionalPaths = attachedDirsRef?.current ?? []
         const sessionPaths = sessionAttachedDirsRef?.current ?? []
 
-        const result = await ipc.searchWorkspaceFiles(
-          wsPath,
-          query ?? '',
-          200,
-          additionalPaths.length > 0 ? additionalPaths : undefined,
-          sessionPaths.length > 0 ? sessionPaths : undefined,
-        )
+        const rawEntries = await ipc.searchWorkspaceFiles({
+          workspacePath: wsPath,
+          query: query ?? '',
+          limit: 200,
+          additionalPaths: additionalPaths.length > 0 ? additionalPaths : undefined,
+          sessionAdditionalPaths: sessionPaths.length > 0 ? sessionPaths : undefined,
+        })
+        const entries = rawEntries as FileIndexEntry[]
+        const result: FileSearchResult = {
+          total: entries.length,
+          entries,
+          sessionEntries: [],
+          workspaceEntries: entries,
+        }
         lastResult = result
-        return result.entries
+        return entries
       } catch(e) {
         console.error('[FileMention] search failed:', e)
         lastResult = null

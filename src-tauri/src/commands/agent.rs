@@ -5,7 +5,20 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 
+const FALLBACK_TITLE_MAX_CHARS: usize = 30;
+const GENERATED_TITLE_MAX_TOKENS: u32 = 30;
+
 pub struct AgentState(pub Arc<Mutex<Option<AgentEngine>>>);
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentInterruptAskUserAnswer {
+    question_id: String,
+    #[serde(default)]
+    selected_options: Vec<String>,
+    #[serde(default)]
+    custom_text: Option<String>,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -16,6 +29,8 @@ enum AgentInterruptResponse {
         always_allow: bool,
     },
     AskUser {
+        #[serde(default)]
+        answers: Vec<AgentInterruptAskUserAnswer>,
         #[serde(default, rename = "selectedOptions")]
         selected_options: Vec<String>,
         #[serde(default, rename = "customText")]
@@ -113,6 +128,17 @@ pub fn respond_agent_interrupt(
 
     let parsed = match kind.as_str() {
         "ask_user" => {
+            let answers = response["answers"]
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| {
+                            serde_json::from_value::<AgentInterruptAskUserAnswer>(item.clone()).ok()
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
             let selected_options = response["selectedOptions"]
                 .as_array()
                 .map(|items| {
@@ -124,6 +150,7 @@ pub fn respond_agent_interrupt(
                 .unwrap_or_default();
             let custom_text = response["customText"].as_str().map(|s| s.to_string());
             AgentInterruptResponse::AskUser {
+                answers,
                 selected_options,
                 custom_text,
             }
@@ -143,13 +170,27 @@ pub fn respond_agent_interrupt(
 
     let content = match parsed {
         AgentInterruptResponse::AskUser {
+            answers,
             selected_options,
             custom_text,
-        } => serde_json::json!({
-            "selected_options": selected_options,
-            "custom_text": custom_text,
-        })
-        .to_string(),
+        } => {
+            if !answers.is_empty() {
+                serde_json::json!({
+                    "answers": answers.iter().map(|answer| serde_json::json!({
+                        "question_id": answer.question_id,
+                        "selected_options": answer.selected_options,
+                        "custom_text": answer.custom_text,
+                    })).collect::<Vec<_>>(),
+                })
+                .to_string()
+            } else {
+                serde_json::json!({
+                    "selected_options": selected_options,
+                    "custom_text": custom_text,
+                })
+                .to_string()
+            }
+        }
         AgentInterruptResponse::Plan { decision, feedback } => serde_json::json!({
             "decision": decision,
             "feedback": feedback,
@@ -264,13 +305,13 @@ pub async fn generate_agent_title(
         (Some(user), None) => user.to_string(),
         _ => {
             return Ok(first_user_msg
-                .map(|s| s.chars().take(30).collect::<String>())
+                .map(|s| s.chars().take(FALLBACK_TITLE_MAX_CHARS).collect::<String>())
                 .unwrap_or_else(|| "New conversation".to_string()));
         }
     };
 
     let fallback_title: String = first_user_msg
-        .map(|s| s.chars().take(30).collect::<String>())
+        .map(|s| s.chars().take(FALLBACK_TITLE_MAX_CHARS).collect::<String>())
         .unwrap_or_else(|| "New conversation".to_string());
 
     // Try LLM-based title generation via reqwest
@@ -288,7 +329,7 @@ pub async fn generate_agent_title(
                 {"role": "system", "content": "You are a title generator. Return ONLY the title."},
                 {"role": "user", "content": prompt}
             ],
-            "max_tokens": 30,
+            "max_tokens": GENERATED_TITLE_MAX_TOKENS,
             "stream": false
         });
         let url = format!(
@@ -326,6 +367,32 @@ pub fn update_agent_session_title(
         session_id: request.session_id,
         title: request.title,
     })
+}
+
+/// Toggle the pinned state of an agent session.
+#[tauri::command]
+pub fn toggle_pin_agent_session(session_id: String) -> Result<AgentSessionInfo, String> {
+    agent_session::toggle_pin_agent_session(&session_id)
+}
+
+/// Toggle the archived state of an agent session.
+#[tauri::command]
+pub fn toggle_archive_agent_session(session_id: String) -> Result<AgentSessionInfo, String> {
+    agent_session::toggle_archive_agent_session(&session_id)
+}
+
+#[tauri::command]
+pub fn update_session_permission_mode(
+    session_id: String,
+    mode: String,
+) -> Result<(), String> {
+    {
+        let valid = matches!(mode.as_str(), "auto" | "bypassPermissions" | "plan");
+        if !valid {
+            return Err(format!("无效的权限模式: {}", mode));
+        }
+    }
+    agent_session::update_session_permission_mode(&session_id, &mode)
 }
 
 /// Respond to a permission interrupt (tool approval).
@@ -410,6 +477,7 @@ mod tests {
             AgentInterruptResponse::AskUser {
                 selected_options,
                 custom_text,
+                ..
             } => {
                 assert_eq!(selected_options, vec!["A", "B"]);
                 assert_eq!(custom_text.as_deref(), Some("hello"));

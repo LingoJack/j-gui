@@ -130,7 +130,7 @@ export function SearchDialog(): React.ReactElement {
   const inputRef = React.useRef<HTMLInputElement>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
   const isComposingRef = React.useRef(false)
-  const commitTimerRef = React.useRef<ReturnType<typeof setTimeout>>()
+  const commitTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /**
    * 提交搜索词（微 debounce 60ms）

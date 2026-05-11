@@ -101,10 +101,10 @@ export function PermissionModeSelector({ sessionId }: PermissionModeSelectorProp
           <button
             type="button"
             onClick={() => { cycleMode(); requestAnimationFrame(() => document.querySelector<HTMLElement>('.ProseMirror')?.focus()) }}
-            className="flex items-center gap-1 px-1.5 py-1 rounded text-xs font-medium transition-colors text-muted-foreground hover:text-foreground"
+            className="flex min-w-0 items-center gap-1 rounded px-1.5 py-1.5 text-xs font-medium leading-none transition-colors text-muted-foreground hover:text-foreground"
           >
             <Icon className="size-3.5" />
-            <span className="hidden sm:inline">{config.label}</span>
+            <span className="truncate text-xs leading-none">{config.label}</span>
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="max-w-[200px]">

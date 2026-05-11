@@ -10,6 +10,7 @@
 import * as React from 'react'
 import { useAtom, useSetAtom } from 'jotai'
 import { Plus, Pencil, Trash2, ExternalLink } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { PROVIDER_LABELS, isAgentCompatibleProvider } from '@jgui/shared'
@@ -95,6 +96,7 @@ export function ChannelSettings(): React.ReactElement {
       setDeleteTarget(null)
     } catch (error) {
       console.error('[渠道设置] 删除渠道失败:', error)
+      toast.error('删除渠道失败，请稍后重试')
     }
   }
 
@@ -120,6 +122,7 @@ export function ChannelSettings(): React.ReactElement {
       await loadChannels()
     } catch (error) {
       console.error('[渠道设置] 切换渠道状态失败:', error)
+      toast.error('切换渠道状态失败，请稍后重试')
     }
   }
 
@@ -189,8 +192,6 @@ export function ChannelSettings(): React.ReactElement {
           </Button>
         }
       >
-        <SettingsCard>
-        </SettingsCard>
         {loading ? (
           <div className="text-sm text-muted-foreground py-8 text-center">加载中...</div>
         ) : channels.length === 0 ? (
@@ -222,8 +223,6 @@ export function ChannelSettings(): React.ReactElement {
         title="Agent 供应商"
         description="启用 Agent 模式可用的供应商，支持同时开启多个渠道，在 Agent 模式下可直接切换"
       >
-        <SettingsCard>
-        </SettingsCard>
         {loading ? (
           <div className="text-sm text-muted-foreground py-8 text-center">加载中...</div>
         ) : agentCapableChannels.length === 0 ? (
@@ -348,5 +347,4 @@ function AgentProviderRow({ channel, enabled, onToggle }: AgentProviderRowProps)
     </SettingsRow>
   )
 }
-
 

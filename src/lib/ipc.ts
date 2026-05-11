@@ -14,19 +14,24 @@ import type { AppSettings, UserProfile, ThemeMode, ThemeStyle } from '@/types'
 // ============================================================
 
 const warned = new Set<string>()
-function warnOnce(name: string): void {
+function warnOnce(name: string, userVisible?: boolean): void {
   if (!warned.has(name)) {
     warned.add(name)
-    console.warn(`[j-gui ipc] Tauri command not implemented: ${name} — using fallback`)
+    const msg = `[j-gui ipc] command failed: ${name} — using fallback`
+    if (userVisible) {
+      console.error(msg)
+    } else {
+      console.warn(msg)
+    }
   }
 }
 
-async function tryInvoke<T>(cmd: string, args?: unknown, fallback?: T): Promise<T> {
+async function tryInvoke<T>(cmd: string, args?: unknown, fallback?: T, opts?: { userVisible?: boolean }): Promise<T> {
   try {
     return await invoke<T>(cmd, args as any)
   } catch (err) {
     if (fallback !== undefined) {
-      warnOnce(cmd)
+      warnOnce(cmd, opts?.userVisible)
       return fallback
     }
     console.error(`[tryInvoke] Tauri command '${cmd}' failed:`, err)
@@ -58,42 +63,73 @@ function onEvt(name: string, cb: Handler): () => void {
 export const getRuntimeStatus = () => tryInvoke('get_runtime_status', undefined, null)
 export const reinitRuntime = () => tryInvoke('reinit_runtime', undefined, null)
 
+export interface KernelInfo {
+  crateVersion: string
+  appVersion: string
+  localCliVersion: string | null
+  localCliInstalled: boolean
+}
+export const getKernelInfo = () => tryInvoke<KernelInfo>('get_kernel_info', undefined, {
+  crateVersion: '0.0.0',
+  appVersion: '0.0.0',
+  localCliVersion: null,
+  localCliInstalled: false,
+})
+
+export interface AppUpdateInfo {
+  current: string
+  latest: string | null
+  downloadUrl: string | null
+  updateAvailable: boolean
+}
+export const checkAppUpdate = () => invoke<AppUpdateInfo>('check_app_update')
+
 // ============================================================
 // Settings
 // ============================================================
 
 let settingsCache: AppSettings | null = null
+let settingsInFlight: Promise<AppSettings> | null = null
+let agentSessionsInFlight: Promise<any[]> | null = null
 
 export async function getSettings(): Promise<AppSettings> {
   if (settingsCache) return settingsCache
-  try {
-    settingsCache = await invoke<AppSettings>('get_settings')
-    return settingsCache!
-  } catch {
-    settingsCache = {
-      themeMode: 'dark' as ThemeMode,
-      themeStyle: 'default' as ThemeStyle,
-      onboardingCompleted: true,
-      agentChannelIds: [],
-      agentWorkspaceId: null,
-      notificationsEnabled: true,
-      notificationSoundEnabled: false,
-      tutorialBannerDismissed: false,
-      archiveAfterDays: 7,
-      sendWithCmdEnter: false,
-      stickyUserMessageEnabled: true,
+  if (settingsInFlight) return settingsInFlight
+  settingsInFlight = (async () => {
+    try {
+      settingsCache = await invoke<AppSettings>('get_settings')
+      return settingsCache!
+    } catch {
+      settingsCache = {
+        themeMode: 'dark' as ThemeMode,
+        themeStyle: 'default' as ThemeStyle,
+        onboardingCompleted: true,
+        agentChannelIds: [],
+        agentWorkspaceId: null,
+        notificationsEnabled: true,
+        notificationSoundEnabled: false,
+        tutorialBannerDismissed: false,
+        archiveAfterDays: 7,
+        sendWithCmdEnter: false,
+        stickyUserMessageEnabled: true,
+      }
+      warnOnce('get_settings')
+      return settingsCache
+    } finally {
+      settingsInFlight = null
     }
-    warnOnce('get_settings')
-    return settingsCache
-  }
+  })()
+  return settingsInFlight
 }
 
 export async function updateSettings(updates: Partial<AppSettings>): Promise<AppSettings> {
   try {
     settingsCache = await invoke<AppSettings>('update_settings', { updates })
+    settingsInFlight = null
     return settingsCache!
   } catch {
     settingsCache = { ...settingsCache!, ...updates }
+    settingsInFlight = null
     warnOnce('update_settings')
     return settingsCache
   }
@@ -125,8 +161,10 @@ export async function listChannels(): Promise<any[]> { try { return await invoke
 export async function createChannel(input: any): Promise<{id: string, name: string}> { return invoke<any>('create_channel', { input }) }
 export async function updateChannel(id: string, input: any) { return invoke<any>('update_channel', { id, input }) }
 export async function deleteChannel(id: string) { return invoke('delete_channel', { id }) }
-export const decryptApiKey = (channelId: string) => tryInvoke<string>('decrypt_api_key', { channelId }, '')
+export const decryptApiKey = (channelId: string) =>
+  tryInvoke<string>('decrypt_api_key', { channelId }, '')
 export async function testChannelDirect(input: any) { try { return await invoke<any>('test_channel_direct', { input }) } catch { return { success: false, message: '连接失败' } } }
+export async function testSavedChannel(id: string, input?: any) { try { return await invoke<any>('test_saved_channel', { id, input }) } catch { return { success: false, message: '连接失败' } } }
 export async function fetchModels(input: any) { try { return await invoke<any>('fetch_models', { apiBase: input.apiBase || input.baseUrl, apiKey: input.apiKey }) } catch { return { success: false, message: '获取模型列表失败', models: [] } } }
 
 // ============================================================
@@ -218,17 +256,38 @@ export const onStreamToolActivity = (cb: Handler) => onEvt('stream:tool-activity
 // Agent Sessions
 // ============================================================
 
-export const listAgentSessions = () => tryInvoke<any[]>('list_agent_sessions', undefined, [])
-export const createAgentSession = (title?: string, channelId?: string, workspaceId?: string) =>
-  tryInvoke<any>('create_agent_session', { title, channelId, workspaceId })
+export async function listAgentSessions(): Promise<any[]> {
+  if (agentSessionsInFlight) return agentSessionsInFlight
+  agentSessionsInFlight = tryInvoke<any[]>('list_agent_sessions', undefined, [])
+    .finally(() => {
+      agentSessionsInFlight = null
+    })
+  return agentSessionsInFlight
+}
+export async function createAgentSession(title?: string, channelId?: string, workspaceId?: string): Promise<any> {
+  const result = await tryInvoke<any>('create_agent_session', { title, channelId, workspaceId })
+  if (typeof result === 'string') {
+    return {
+      id: result,
+      title: title || '新 Agent 会话',
+      workspaceId: workspaceId ?? null,
+      channelId: channelId ?? null,
+      updatedAt: Date.now(),
+      pinned: false,
+      archived: false,
+      manualWorking: false,
+    }
+  }
+  return result
+}
 export const getAgentSessionSDKMessages = (id: string) => tryInvoke<any[]>('get_agent_session_sdk_messages', { id }, [])
 export async function updateAgentSessionTitle(id: string, title: string) { return invoke<any>('update_agent_session_title', { sessionId: id, title }) }
 export const deleteAgentSession = (id: string) => tryInvoke('delete_agent_session', { id })
 export const migrateChatToAgent = (conversationId: string, agentSessionId: string) =>
   tryInvoke('migrate_chat_to_agent', { conversationId, agentSessionId })
-export const togglePinAgentSession = (_id: string) => { warnOnce('toggle_pin_agent_session'); return Promise.resolve(false) } // TODO: backend command not yet registered
+export const togglePinAgentSession = (id: string) => tryInvoke<any>('toggle_pin_agent_session', { sessionId: id })
 export const toggleManualWorkingAgentSession = (_id: string) => { warnOnce('toggle_manual_working_agent_session'); return Promise.resolve(false) } // TODO: backend command not yet registered
-export const toggleArchiveAgentSession = (_id: string) => { warnOnce('toggle_archive_agent_session'); return Promise.resolve(false) } // TODO: backend command not yet registered
+export const toggleArchiveAgentSession = (id: string) => tryInvoke<any>('toggle_archive_agent_session', { sessionId: id })
 export const searchAgentSessionMessages = (query: string) =>
   tryInvoke<any[]>('search_agent_session_messages', { query }, [])
 export const moveAgentSessionToWorkspace = (input: any) =>
@@ -314,9 +373,48 @@ export const onAgentTitleUpdated = (cb: Handler) => onEvt('agent:title-updated',
 // Agent Permissions
 // ============================================================
 
-export async function respondPermission(response: any) { return invoke('respond_permission', { response }) }
-export async function respondAskUser(response: any) { return invoke('respond_ask_user', { response }) }
-export const respondExitPlanMode = (response: any) => tryInvoke('respond_exit_plan_mode', { response })
+export async function respondPermission(response: any) {
+  return invoke('respond_agent_interrupt', {
+    interruptId: response.requestId,
+    kind: 'permission',
+    response: {
+      allowed: response.behavior === 'allow',
+      alwaysAllow: !!response.alwaysAllow,
+    },
+  })
+}
+export async function respondAskUser(response: any) {
+  const answers = Array.isArray(response.answers)
+    ? response.answers
+    : Object.entries(response.answers ?? {})
+        .filter((entry) => typeof entry[1] === 'string' && entry[1].trim().length > 0)
+        .map(([questionId, value]) => ({
+          questionId,
+          selectedOptions: [value as string],
+        }))
+  return invoke('respond_agent_interrupt', {
+    interruptId: response.requestId,
+    kind: 'ask_user',
+    response: {
+      answers,
+    },
+  })
+}
+export const respondExitPlanMode = (response: any) => {
+  const decision = response.action === 'approve_auto'
+    ? 'approve_and_run'
+    : response.action === 'approve_edit'
+      ? 'approve_with_permissions'
+      : 'reject'
+  return tryInvoke('respond_agent_interrupt', {
+    interruptId: response.requestId,
+    kind: 'plan',
+    response: {
+      decision,
+      feedback: response.feedback,
+    },
+  })
+}
 export const updateSessionPermissionMode = (sessionId: string, mode: string) =>
   tryInvoke('update_session_permission_mode', { sessionId, mode })
 

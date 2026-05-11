@@ -11,7 +11,7 @@
  */
 
 import * as React from 'react'
-import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, type PrimitiveAtom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   tabsAtom,
   activeTabIdAtom,
@@ -21,19 +21,30 @@ import {
   agentRunningSessionIdsAtom,
   agentSidePanelOpenMapAtom,
   workingDoneSessionIdsAtom,
+  agentStreamingStatesAtom,
+  liveMessagesMapAtom,
+  agentStreamErrorsAtom,
+  agentSessionDraftsAtom,
+  agentSessionDraftHtmlAtom,
+  agentPermissionModeMapAtom,
+  agentSessionChannelMapAtom,
+  agentSessionModelMapAtom,
 } from '@/atoms/agent-atoms'
 import {
   conversationModelsAtom,
   conversationContextLengthAtom,
   conversationThinkingEnabledAtom,
   conversationParallelModeAtom,
+  streamingStatesAtom,
+  chatStreamErrorsAtom,
+  conversationDraftsAtom,
 } from '@/atoms/chat-atoms'
 import { conversationPromptIdAtom } from '@/atoms/system-prompt-atoms'
 import { useSyncActiveTabSideEffects } from '@/hooks/useSyncActiveTabSideEffects'
 import * as ipc from '@/lib/ipc'
 
 /** 触发"关闭确认对话框"的状态：存放待关闭的 tabId，null 表示无对话框 */
-export const pendingCloseTabIdAtom = atom<string | null>(null)
+export const pendingCloseTabIdAtom = atom<string | null>(null) as PrimitiveAtom<string | null>
 
 interface UseCloseTabReturn {
   /** 请求关闭：若 Agent 流式中则弹确认，否则直接关 */
@@ -57,6 +68,17 @@ export function useCloseTab(): UseCloseTabReturn {
   const setConvParallel = useSetAtom(conversationParallelModeAtom)
   const setConvPromptId = useSetAtom(conversationPromptIdAtom)
   const setAgentSidePanelOpen = useSetAtom(agentSidePanelOpenMapAtom)
+  const setStreamingStates = useSetAtom(streamingStatesAtom)
+  const setAgentStreamingStates = useSetAtom(agentStreamingStatesAtom)
+  const setLiveMessages = useSetAtom(liveMessagesMapAtom)
+  const setAgentStreamErrors = useSetAtom(agentStreamErrorsAtom)
+  const setChatStreamErrors = useSetAtom(chatStreamErrorsAtom)
+  const setConversationDrafts = useSetAtom(conversationDraftsAtom)
+  const setAgentDrafts = useSetAtom(agentSessionDraftsAtom)
+  const setAgentDraftHtml = useSetAtom(agentSessionDraftHtmlAtom)
+  const setAgentPermissionMode = useSetAtom(agentPermissionModeMapAtom)
+  const setAgentChannelMap = useSetAtom(agentSessionChannelMapAtom)
+  const setAgentModelMap = useSetAtom(agentSessionModelMapAtom)
 
   const cleanupMapAtoms = React.useCallback((tabId: string) => {
     const deleteKey = <T,>(prev: Map<string, T>): Map<string, T> => {
@@ -71,7 +93,23 @@ export function useCloseTab(): UseCloseTabReturn {
     setConvParallel(deleteKey)
     setConvPromptId(deleteKey)
     setAgentSidePanelOpen(deleteKey)
-  }, [setConvModels, setConvContextLength, setConvThinking, setConvParallel, setConvPromptId, setAgentSidePanelOpen])
+    setStreamingStates(deleteKey)
+    setAgentStreamingStates(deleteKey)
+    setLiveMessages(deleteKey)
+    setAgentStreamErrors(deleteKey)
+    setChatStreamErrors(deleteKey)
+    setConversationDrafts(deleteKey)
+    setAgentDrafts(deleteKey)
+    setAgentDraftHtml(deleteKey)
+    setAgentPermissionMode(deleteKey)
+    setAgentChannelMap(deleteKey)
+    setAgentModelMap(deleteKey)
+  }, [
+    setConvModels, setConvContextLength, setConvThinking, setConvParallel, setConvPromptId,
+    setAgentSidePanelOpen, setStreamingStates, setAgentStreamingStates, setLiveMessages,
+    setAgentStreamErrors, setChatStreamErrors, setConversationDrafts, setAgentDrafts,
+    setAgentDraftHtml, setAgentPermissionMode, setAgentChannelMap, setAgentModelMap,
+  ])
 
   const executeClose = React.useCallback((tabId: string) => {
     const tab = tabs.find((t) => t.id === tabId)

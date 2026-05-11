@@ -5,7 +5,7 @@ category: Tauri IPC
 status: draft
 source_files:
   - src-tauri/src/commands/config.rs
-  - src/lib/tauri.ts
+  - src/lib/ipc.ts
 summary: Agent 配置、YamlConfig 与系统提示词读写的 Tauri 命令参考。
 last_reviewed: 2026-05-09
 ---
@@ -20,7 +20,7 @@ last_reviewed: 2026-05-09
 - `YamlConfig` 里的分段键值配置
 - 系统提示词
 
-Rust 侧通过 Tauri command 暴露，前端通过 `src/lib/tauri.ts` 的 wrapper 调用。
+Rust 侧通过 Tauri command 暴露，前端通过 `src/lib/ipc.ts` 的 wrapper 调用。
 
 ## API 参考
 
@@ -194,4 +194,4 @@ Rust command: `set_system_prompt(prompt: String) -> Result<(), String>`
 ## 相关条目
 
 - [src-tauri/src/commands/config.rs](/E:/Coding/AI/j-gui/src-tauri/src/commands/config.rs)
-- [src/lib/tauri.ts](/E:/Coding/AI/j-gui/src/lib/tauri.ts)
+- [src/lib/ipc.ts](/E:/Coding/AI/j-gui/src/lib/ipc.ts)

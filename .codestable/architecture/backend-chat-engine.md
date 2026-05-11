@@ -52,9 +52,7 @@ stop_generation(session_id)                    (commands/chat.rs:57)
   │
   └─► STOPPED_SESSIONS.lock() → insert(session_id)
         │
-        └─ [callback 中] is_session_stopped() → 设置 cancelled = true
-              ┌─ 当前：TODO，callback 内有 `cancelled` 占位机制
-              └─ 预期：在 callback 入口检查 is_session_stopped(&session_id)
+        └─ [callback 中] is_session_stopped() → 设置 cancelled = true ✅ 已实现
 ```
 
 ### 会话 CRUD 路径
@@ -180,13 +178,13 @@ pub fn create_session(&self) -> String {
 
 `chat_engine.rs:92, 99-113` — callback 闭包捕获 `cancelled: bool`。两个触发源：
 - Channel 端 drop（前端 unmount）→ `send` 返回 `Err` → `cancelled = true`
-- TODO: 通过 `is_session_stopped(&session_id)` 检查 `STOPPED_SESSIONS`
+- `is_session_stopped(&session_id)` 检查 `STOPPED_SESSIONS`（已集成 ✅）
 
 一旦 `cancelled = true`，后续 chunk 不再推送，`send_message` 返回 `Err("流式传输已取消")`。
 
 ### STOPPED_SESSIONS：外部中止请求登记
 
-`commands/chat.rs:6` — 全局 `Mutex<Option<HashSet<String>>>`，`stop_generation` 命令将 session_id 插入。当前为止是**注册机制**——stream callback 需要主动轮询 `is_session_stopped()` 才能生效，此集成尚为 TODO。`is_session_stopped` 和 `clear_stopped_session` 已编写但标注 `#[allow(dead_code)]`。
+`commands/chat.rs:6` — 全局 `Mutex<Option<HashSet<String>>>`，`stop_generation` 命令将 session_id 插入。stream callback 中通过 `is_session_stopped()` 主动轮询，`clear_stopped_session()` 在所有退出路径上清理。`is_session_stopped` 和 `clear_stopped_session` 已集成且未被标记 dead_code。
 
 ### 线程桥接：std::thread::spawn + tokio::block_on
 

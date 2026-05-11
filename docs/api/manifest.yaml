@@ -1,7 +1,7 @@
 project: j-gui
 entry_type: mixed
 source_root: src
-last_scanned: 2026-05-09
+last_scanned: 2026-05-11
 
 entries:
   - entry: agent-commands
@@ -10,7 +10,7 @@ entries:
       - src-tauri/src/commands/agent.rs
       - src-tauri/src/agent_engine.rs
       - src-tauri/src/agent_session.rs
-      - src/lib/tauri.ts
+      - src/lib/ipc.ts
     doc_path: docs/api/agent-commands.md
     status: draft
     note: "Agent runtime, session, interrupt, and streaming command reference."
@@ -20,7 +20,7 @@ entries:
     source_files:
       - src-tauri/src/commands/chat.rs
       - src-tauri/src/chat_engine.rs
-      - src/lib/tauri.ts
+      - src/lib/ipc.ts
     doc_path: docs/api/chat-commands.md
     status: draft
     note: "Chat session, message streaming, message history, deletion, and clearing command reference."
@@ -29,7 +29,7 @@ entries:
     category: Tauri IPC
     source_files:
       - src-tauri/src/commands/config.rs
-      - src/lib/tauri.ts
+      - src/lib/ipc.ts
     doc_path: docs/api/config-commands.md
     status: draft
     note: "Agent config, provider selection, YAML config, and system prompt command reference."
@@ -38,7 +38,7 @@ entries:
     category: Tauri IPC
     source_files:
       - src-tauri/src/commands/governance.rs
-      - src/lib/tauri.ts
+      - src/lib/ipc.ts
     doc_path: docs/api/governance-commands.md
     status: draft
     note: "Skills, hooks, and MCP server governance command reference."
@@ -47,7 +47,7 @@ entries:
     category: Tauri IPC
     source_files:
       - src-tauri/src/commands/alias.rs
-      - src/lib/tauri.ts
+      - src/lib/ipc.ts
     doc_path: docs/api/alias-commands.md
     status: draft
     note: "Alias list, set, and remove command reference."
@@ -56,7 +56,7 @@ entries:
     category: Tauri IPC
     source_files:
       - src-tauri/src/commands/system.rs
-      - src/lib/tauri.ts
+      - src/lib/ipc.ts
     doc_path: docs/api/system-commands.md
     status: draft
     note: "Version, theme mutation, and theme-change event bridge reference."
@@ -64,7 +64,7 @@ entries:
   - entry: tauri-frontend-bridge
     category: Frontend API
     source_files:
-      - src/lib/tauri.ts
+      - src/lib/ipc.ts
     doc_path: docs/api/tauri-frontend-bridge.md
     status: draft
     note: "TypeScript invoke wrappers, Channel event types, and shared frontend IPC payload shapes."
@@ -88,10 +88,10 @@ entries:
     source_files:
       - src/components/app-shell/AppShell.tsx
       - src/components/app-shell/LeftSidebar.tsx
-      - src/components/app-shell/MainArea.tsx
+      - src/components/tabs/MainArea.tsx
       - src/components/app-shell/RightSidePanel.tsx
       - src/components/app-shell/SearchDialog.tsx
-      - src/components/app-shell/WelcomePage.tsx
+      - src/components/welcome/WelcomeView.tsx
     doc_path: docs/api/app-shell-components.md
     status: draft
     note: "Shell, sidebar, main workspace, right panel, search, and welcome component reference."
@@ -102,8 +102,10 @@ entries:
       - src/components/chat/ChatView.tsx
       - src/components/chat/ChatInput.tsx
       - src/components/chat/ChatMessages.tsx
-      - src/components/chat/MessageBubble.tsx
-      - src/components/chat/ReasoningBlock.tsx
+      - src/components/chat/ChatHeader.tsx
+      - src/components/chat/ChatMessageItem.tsx
+      - src/components/chat/ParallelChatMessages.tsx
+      - src/components/chat/PromptEditorSidebar.tsx
     doc_path: docs/api/chat-components.md
     status: draft
     note: "Chat view, input, message rendering, message actions, and reasoning block reference."
@@ -124,9 +126,17 @@ entries:
     category: React Components
     source_files:
       - src/components/settings/SettingsDialog.tsx
-      - src/components/settings/SkillsTab.tsx
-      - src/components/settings/HooksTab.tsx
-      - src/components/settings/McpTab.tsx
+      - src/components/settings/SettingsPanel.tsx
+      - src/components/settings/GeneralSettings.tsx
+      - src/components/settings/ChannelSettings.tsx
+      - src/components/settings/PromptSettings.tsx
+      - src/components/settings/AliasSettings.tsx
+      - src/components/settings/HooksSettings.tsx
+      - src/components/settings/YamlConfigSettings.tsx
+      - src/components/settings/AgentSettings.tsx
+      - src/components/settings/ToolSettings.tsx
+      - src/components/settings/AppearanceSettings.tsx
+      - src/components/settings/AboutSettings.tsx
       - src/components/settings/primitives/SettingsCard.tsx
       - src/components/settings/primitives/SettingsRow.tsx
       - src/components/settings/primitives/SettingsSection.tsx

@@ -62,7 +62,7 @@ class TabErrorBoundary extends React.Component<
 }
 
 function TabGuard({ tab, children }: { tab: string; children: React.ReactNode }) {
-  return React.createElement(TabErrorBoundary, { tab }, children)
+  return React.createElement(TabErrorBoundary, { tab, children })
 }
 
 function renderTabContent(tab: SettingsTab): React.ReactElement {

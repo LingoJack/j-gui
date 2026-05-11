@@ -5,15 +5,15 @@
  * 上下文管理、并排模式、思考模式等。
  */
 
-import { atom } from 'jotai'
+import { atom, type PrimitiveAtom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 import type { ConversationMeta, ChatMessage, FileAttachment, ChatToolActivity, Channel } from '@jgui/shared'
 
 /** 全局渠道列表缓存（启动时加载一次，设置变更时刷新） */
-export const channelsAtom = atom<Channel[]>([])
+export const channelsAtom: PrimitiveAtom<Channel[]> = atom<Channel[]>([])
 
 /** 渠道列表是否已完成首次加载 */
-export const channelsLoadedAtom = atom(false)
+export const channelsLoadedAtom: PrimitiveAtom<boolean> = atom(false)
 
 /** 选中的模型信息 */
 export interface SelectedModel {
@@ -28,13 +28,13 @@ export type ContextLengthValue = 0 | 5 | 10 | 15 | 20 | 'infinite'
 export const CONTEXT_LENGTH_OPTIONS: ContextLengthValue[] = [0, 5, 10, 15, 20, 'infinite']
 
 /** 对话列表 */
-export const conversationsAtom = atom<ConversationMeta[]>([])
+export const conversationsAtom: PrimitiveAtom<ConversationMeta[]> = atom<ConversationMeta[]>([])
 
 /** 当前对话 ID */
-export const currentConversationIdAtom = atom<string | null>(null)
+export const currentConversationIdAtom = atom(null) as PrimitiveAtom<string | null>
 
 /** 当前对话的消息列表 */
-export const currentMessagesAtom = atom<ChatMessage[]>([])
+export const currentMessagesAtom: PrimitiveAtom<ChatMessage[]> = atom<ChatMessage[]>([])
 
 /** 单个对话的流式状态 */
 export interface ConversationStreamState {
@@ -145,7 +145,7 @@ export const contextLengthAtom = atomWithStorage<ContextLengthValue>(
 )
 
 /** 并排模式 */
-export const parallelModeAtom = atom<boolean>(false)
+export const parallelModeAtom: PrimitiveAtom<boolean> = atom<boolean>(false)
 
 /** 思考模式（持久化到 localStorage） */
 export const thinkingEnabledAtom = atomWithStorage<boolean>(
@@ -154,19 +154,21 @@ export const thinkingEnabledAtom = atomWithStorage<boolean>(
 )
 
 /** 当前对话的上下文分隔线 */
-export const contextDividersAtom = atom<string[]>([])
+export const contextDividersAtom: PrimitiveAtom<string[]> = atom<string[]>([])
 
 /** 待发送的附件（含本地预览 URL） */
 export interface PendingAttachment extends FileAttachment {
   /** 本地预览 URL（blob URL，用于渲染缩略图） */
   previewUrl?: string
+  /** 现有工作区文件路径，存在时发送前直接读取文件内容而不是走文件选择缓存 */
+  sourcePath?: string
 }
 
 /** 待发送附件列表 */
-export const pendingAttachmentsAtom = atom<PendingAttachment[]>([])
+export const pendingAttachmentsAtom: PrimitiveAtom<PendingAttachment[]> = atom<PendingAttachment[]>([])
 
 /** 是否还有更多历史消息未加载 */
-export const hasMoreMessagesAtom = atom<boolean>(false)
+export const hasMoreMessagesAtom: PrimitiveAtom<boolean> = atom<boolean>(false)
 
 /** 初次加载的消息条数 */
 export const INITIAL_MESSAGE_LIMIT = 10
@@ -223,7 +225,7 @@ export interface ChatPendingMessage {
 }
 
 /** 快速任务窗口提交后写入，ChatView 检测到后自动发送并清除 */
-export const chatPendingMessageAtom = atom<ChatPendingMessage | null>(null)
+export const chatPendingMessageAtom = atom(null) as PrimitiveAtom<ChatPendingMessage | null>
 
 /**
  * Chat 消息刷新版本 Map — 以 conversationId 为 key
@@ -245,7 +247,7 @@ export interface AgentRecommendation {
 }
 
 /** 待处理的 Agent 模式推荐（工具结果写入，用户操作/关闭/切换对话时清除） */
-export const pendingAgentRecommendationAtom = atom<AgentRecommendation | null>(null)
+export const pendingAgentRecommendationAtom = atom(null) as PrimitiveAtom<AgentRecommendation | null>
 
 // ===== Per-conversation 设置 Map =====
 // 分屏时每个 ChatView 实例独立控制，缺省时使用全局默认值

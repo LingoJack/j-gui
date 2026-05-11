@@ -12,6 +12,7 @@
 
 import * as React from 'react'
 import { useAtomValue } from 'jotai'
+import { toast } from 'sonner'
 import {
   ChevronRight,
   Trash2,
@@ -246,6 +247,7 @@ export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddT
       await loadRoot()
     } catch (err) {
       console.error('[FileBrowser] 删除失败:', err)
+      toast.error('删除文件失败，请稍后重试')
     }
     setDeleteTarget(null)
   }, [deleteTarget, selectedPaths, loadRoot])
@@ -268,6 +270,7 @@ export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddT
       await loadRoot()
     } catch (err) {
       console.error('[FileBrowser] 移动失败:', err)
+      toast.error('移动文件失败，请稍后重试')
     } finally {
       setMoving(false)
     }

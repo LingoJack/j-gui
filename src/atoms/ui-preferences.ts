@@ -4,13 +4,13 @@
  * 管理用户界面相关的显示偏好，如悬浮置顶条等。
  */
 
-import { atom } from 'jotai'
+import { atom, type PrimitiveAtom } from 'jotai'
 import * as ipc from '@/lib/ipc'
 
 // ===== Jotai Atoms =====
 
 /** 是否显示用户消息悬浮置顶条 */
-export const stickyUserMessageEnabledAtom = atom<boolean>(true)
+export const stickyUserMessageEnabledAtom: PrimitiveAtom<boolean> = atom<boolean>(true)
 
 // ===== 初始化 =====
 

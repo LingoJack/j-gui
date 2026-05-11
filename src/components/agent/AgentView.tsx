@@ -302,7 +302,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     }
 
     ipc
-      .getAgentSessionPath(workspaceId, sessionId)
+      .getAgentSessionPath(sessionId)
       .then((path) => {
         if (path) {
           setSessionPathMap((prev) => {

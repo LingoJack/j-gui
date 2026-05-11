@@ -193,19 +193,29 @@ export function AskUserBanner({ sessionId }: AskUserBannerProps): React.ReactEle
     if (submitting) return
     setSubmitting(true)
     try {
-      const answersRecord: Record<string, string> = {}
+      const answersPayload: Array<{
+        questionId: string
+        selectedOptions: string[]
+        customText?: string
+      }> = []
       for (let i = 0; i < questions.length; i++) {
         const q = questions[i]
         if (!q) continue
         const answer = getAnswer(i)
-        const key = q.question || String(i)
         if (answer.showCustom && answer.customText.trim()) {
-          answersRecord[key] = answer.customText.trim()
+          answersPayload.push({
+            questionId: q.header || q.question || String(i),
+            selectedOptions: [],
+            customText: answer.customText.trim(),
+          })
         } else if (answer.selected.length > 0) {
-          answersRecord[key] = answer.selected.join(', ')
+          answersPayload.push({
+            questionId: q.header || q.question || String(i),
+            selectedOptions: answer.selected,
+          })
         }
       }
-      await ipc.respondAskUser({ requestId: request.requestId, answers: answersRecord })
+      await ipc.respondAskUser({ requestId: request.requestId, answers: answersPayload })
       setAllRequests((prev) => {
         const map = new Map(prev)
         const current = map.get(sessionId) ?? []

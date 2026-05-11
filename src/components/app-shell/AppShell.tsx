@@ -14,6 +14,7 @@ import { MainArea } from '@/components/tabs/MainArea'
 import { AppShellProvider, type AppShellContextType } from '@/contexts/AppShellContext'
 import { appModeAtom } from '@/atoms/app-mode'
 import { currentAgentSessionIdAtom, currentSessionSidePanelOpenAtom } from '@/atoms/agent-atoms'
+import { currentConversationIdAtom } from '@/atoms/chat-atoms'
 import { cn } from '@/lib/utils'
 
 export interface AppShellProps {
@@ -24,8 +25,9 @@ export interface AppShellProps {
 export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
   const appMode = useAtomValue(appModeAtom)
   const currentSessionId = useAtomValue(currentAgentSessionIdAtom)
+  const currentConversationId = useAtomValue(currentConversationIdAtom)
   const isPanelOpen = useAtomValue(currentSessionSidePanelOpenAtom)
-  const showRightPanel = appMode === 'agent' && !!currentSessionId
+  const showRightPanel = (appMode === 'agent' && !!currentSessionId) || (appMode === 'chat' && !!currentConversationId)
 
   return (
     <AppShellProvider value={contextValue}>

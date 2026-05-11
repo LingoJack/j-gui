@@ -28,6 +28,8 @@ import {
   workspaceAttachedDirectoriesMapAtom,
   agentPendingFilesAtom,
 } from '@/atoms/agent-atoms'
+import { pendingAttachmentsAtom, type PendingAttachment } from '@/atoms/chat-atoms'
+import { currentConversationIdAtom } from '@/atoms/chat-atoms'
 import { detectIsWindows } from '@/lib/platform'
 import type { FileEntry, AgentPendingFile } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
@@ -35,15 +37,17 @@ import * as ipc from '@/lib/ipc'
 interface SidePanelProps {
   sessionId: string
   sessionPath: string | null
+  mode?: 'agent' | 'chat'
 }
 
-export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.ReactElement {
+export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelProps): React.ReactElement {
   // per-session 侧面板状态（默认打开）
   const sidePanelOpenMap = useAtomValue(agentSidePanelOpenMapAtom)
   const setSidePanelOpenMap = useSetAtom(agentSidePanelOpenMapAtom)
   const isWindows = React.useMemo(() => detectIsWindows(), [])
 
   const isOpen = sidePanelOpenMap.get(sessionId) ?? true
+  const panelTitle = mode === 'chat' ? '聊天工作区文件' : '工作区文件'
 
   // 动画标志：渲染阶段直接计算，同一会话内 isOpen 变化时启用过渡动画，切换会话时即时显示
   const prevIsOpenRef = React.useRef(isOpen)
@@ -53,7 +57,7 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
   React.useEffect(() => {
     prevIsOpenRef.current = isOpen
     prevSessionIdRef.current = sessionId
-  })
+  }, [isOpen, sessionId])
 
   const setIsOpen = React.useCallback((value: boolean | ((prev: boolean) => boolean)) => {
     setSidePanelOpenMap((prev) => {
@@ -66,7 +70,6 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
 
   const filesVersion = useAtomValue(workspaceFilesVersionAtom)
   const setFilesVersion = useSetAtom(workspaceFilesVersionAtom)
-  const hasFileChanges = filesVersion > 0
 
   // 派生当前工作区 slug（用于 FileDropZone IPC 调用）
   const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
@@ -86,7 +89,7 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
   // 加载工作区级附加目录
   React.useEffect(() => {
     if (!workspaceSlug || !currentWorkspaceId) return
-    ipc.getWorkspaceDirectories(workspaceSlug)
+    ipc.getWorkspaceDirectories()
       .then((dirs) => {
         setWsAttachedDirsMap((prev) => {
           const map = new Map(prev)
@@ -111,7 +114,11 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
   const handleAttachFolder = React.useCallback(async () => {
     try {
       const result = await ipc.openFolderDialog()
-      if (result) await attachSessionDir(result.path)
+      if (!result.canceled) {
+        for (const dirPath of result.filePaths) {
+          await attachSessionDir(dirPath)
+        }
+      }
     } catch (error) {
       console.error('[SidePanel] 附加文件夹失败:', error)
     }
@@ -127,9 +134,10 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
 
   const handleDetachDirectory = React.useCallback(async (dirPath: string) => {
     try {
-      const updated = await ipc.detachDirectory({ sessionId, directoryPath: dirPath })
+      await ipc.detachDirectory(sessionId, dirPath)
       setAttachedDirsMap((prev) => {
         const map = new Map(prev)
+        const updated = (map.get(sessionId) ?? []).filter((path) => path !== dirPath)
         if (updated.length > 0) { map.set(sessionId, updated) } else { map.delete(sessionId) }
         return map
       })
@@ -153,7 +161,11 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
   const handleAttachWorkspaceFolder = React.useCallback(async () => {
     try {
       const result = await ipc.openFolderDialog()
-      if (result) await attachWorkspaceDir(result.path)
+      if (!result.canceled) {
+        for (const dirPath of result.filePaths) {
+          await attachWorkspaceDir(dirPath)
+        }
+      }
     } catch (error) {
       console.error('[SidePanel] 附加工作区文件夹失败:', error)
     }
@@ -170,9 +182,10 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
   const handleDetachWorkspaceDirectory = React.useCallback(async (dirPath: string) => {
     if (!workspaceSlug || !currentWorkspaceId) return
     try {
-      const updated = await ipc.detachWorkspaceDirectory({ workspaceSlug, directoryPath: dirPath })
+      await ipc.detachWorkspaceDirectory(workspaceSlug, dirPath)
       setWsAttachedDirsMap((prev) => {
         const map = new Map(prev)
+        const updated = (map.get(currentWorkspaceId) ?? []).filter((path) => path !== dirPath)
         if (updated.length > 0) { map.set(currentWorkspaceId, updated) } else { map.delete(currentWorkspaceId) }
         return map
       })
@@ -194,13 +207,36 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
   // 添加文件到聊天
   const pendingFiles = useAtomValue(agentPendingFilesAtom)
   const setPendingFiles = useSetAtom(agentPendingFilesAtom)
+  const currentConversationId = useAtomValue(currentConversationIdAtom)
+  const setPendingAttachments = useSetAtom(pendingAttachmentsAtom)
   const handleAddToChat = React.useCallback(async (entry: FileEntry) => {
+    if (mode === 'chat') {
+      if (!currentConversationId) return
+      const ext = entry.name.split('.').pop()?.toLowerCase() ?? ''
+      const imageExts = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'])
+      const mimeExt = ext === 'jpg' ? 'jpeg' : ext === 'svg' ? 'svg+xml' : ext
+      const mediaType = imageExts.has(ext) ? `image/${mimeExt}` : 'application/octet-stream'
+      const attachment: PendingAttachment = {
+        id: `chat-pending-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        filename: entry.name,
+        mediaType,
+        localPath: '',
+        size: 0,
+        sourcePath: entry.path,
+      }
+      if (imageExts.has(ext)) {
+        attachment.previewUrl = `data:${mediaType};base64,${await ipc.readAttachedFile(entry.path)}`
+      }
+      setPendingAttachments((prev) => prev.some((item) => item.sourcePath === entry.path) ? prev : [...prev, attachment])
+      return
+    }
+
     // 先在 setter 外部检查去重，避免在 updater 函数内执行不可逆副作用
     if (pendingFiles.some((f) => f.sourcePath === entry.path)) return
 
     let previewUrl: string | undefined
     try {
-      const base64 = await ipc.readAttachedFile(entry.path, sessionId, workspaceSlug ?? undefined)
+      const base64 = await ipc.readAttachedFile(entry.path)
       const ext = entry.name.split('.').pop()?.toLowerCase() ?? ''
       const imageExts = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'])
       const mimeExt = ext === 'jpg' ? 'jpeg' : ext === 'svg' ? 'svg+xml' : ext
@@ -227,7 +263,7 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
       if (previewUrl) URL.revokeObjectURL(previewUrl)
       console.error('[SidePanel] 添加文件到聊天失败:', error)
     }
-  }, [pendingFiles, setPendingFiles, sessionId, workspaceSlug])
+  }, [pendingFiles, setPendingFiles, sessionId, workspaceSlug, mode, currentConversationId, setPendingAttachments])
 
   // 面包屑：显示根路径最后两段
   const breadcrumb = React.useMemo(() => {
@@ -280,13 +316,13 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
                     <>
                       <div className="flex items-center gap-1 pl-3 pr-2 h-[32px] flex-shrink-0">
                         <FolderOpen className="size-3 text-muted-foreground" />
-                        <span className="text-[11px] font-medium text-muted-foreground">会话文件</span>
+                        <span className="text-[11px] font-medium text-muted-foreground">{mode === 'chat' ? '聊天工作区文件' : '会话文件'}</span>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Info className="size-3 text-muted-foreground/50 cursor-help" />
                           </TooltipTrigger>
                           <TooltipContent side="bottom" className="max-w-[200px]">
-                            <p>当前会话的专属文件，仅本次对话的 Agent 可以访问</p>
+                            <p>{mode === 'chat' ? '当前聊天可快速引用的工作区文件' : '当前会话的专属文件，仅本次对话的 Agent 可以访问'}</p>
                           </TooltipContent>
                         </Tooltip>
                         <span className="text-[10px] text-muted-foreground/75 truncate flex-1" title={sessionPath}>
@@ -324,7 +360,6 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
                             <p>刷新文件列表</p>
                           </TooltipContent>
                         </Tooltip>
-                        {/* 关闭面板按钮 */}
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -347,6 +382,7 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
                         {/* 附加目录列表（可展开目录树） */}
                         {attachedDirs.length > 0 && (
                           <AttachedDirsSection
+                            sessionId={sessionId}
                             attachedDirs={attachedDirs}
                             onDetach={handleDetachDirectory}
                             refreshVersion={filesVersion}
@@ -377,17 +413,21 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
 
                   {/* ===== 顶部关闭按钮（仅在无 sessionPath 时显示，有 sessionPath 时关闭按钮在会话文件区标题栏） ===== */}
                   {!sessionPath && (
-                    <div className="flex items-center justify-end px-3 h-[32px] flex-shrink-0">
+                    <div className="flex items-center justify-between px-3 h-[36px] flex-shrink-0">
+                      <div className="flex items-center gap-1">
+                        <FolderHeart className="size-3 text-muted-foreground" />
+                        <span className="text-[11px] font-medium text-muted-foreground">{panelTitle}</span>
+                      </div>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-5 w-5 flex-shrink-0"
+                            className="h-7 w-7 flex-shrink-0 rounded-full"
                             onClick={() => setIsOpen((prev) => !prev)}
                           >
-                            <X className="size-2.5" />
+                            <X className="size-3.5" />
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent side="bottom">
@@ -401,7 +441,7 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
                   <div className="flex-1 min-h-0 flex flex-col mx-2 mb-2">
                     <div className="flex items-center gap-1 px-2 h-[32px] flex-shrink-0">
                       <FolderHeart className="size-3 text-muted-foreground" />
-                      <span className="text-[11px] font-medium text-muted-foreground">工作区文件</span>
+                      <span className="text-[11px] font-medium text-muted-foreground">{panelTitle}</span>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Info className="size-3 text-muted-foreground/50 cursor-help" />
@@ -435,6 +475,7 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
                       {/* 工作区级附加目录 */}
                       {wsAttachedDirs.length > 0 && (
                         <AttachedDirsSection
+                          sessionId={sessionId}
                           attachedDirs={wsAttachedDirs}
                           onDetach={handleDetachWorkspaceDirectory}
                           refreshVersion={filesVersion}
@@ -464,17 +505,18 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
               ) : (
                 <div className="flex-1 flex flex-col">
                   {/* 顶部关闭按钮 */}
-                  <div className="flex items-center justify-end px-3 h-[32px] flex-shrink-0">
+                  <div className="flex items-center justify-between px-3 h-[36px] flex-shrink-0">
+                    <span className="text-[11px] font-medium text-muted-foreground">{panelTitle}</span>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-5 w-5 flex-shrink-0"
+                          className="h-7 w-7 flex-shrink-0 rounded-full"
                           onClick={() => setIsOpen((prev) => !prev)}
                         >
-                          <X className="size-2.5" />
+                          <X className="size-3.5" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent side="bottom">
@@ -495,6 +537,7 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
 // ===== 附加目录容器（管理选中状态） =====
 
 interface AttachedDirsSectionProps {
+  sessionId: string
   attachedDirs: string[]
   onDetach: (dirPath: string) => void
   /** 文件版本号，用于自动刷新已展开的目录 */
@@ -503,7 +546,7 @@ interface AttachedDirsSectionProps {
 }
 
 /** 附加目录区域：统一管理所有子项的选中状态 */
-function AttachedDirsSection({ attachedDirs, onDetach, refreshVersion, onAddToChat }: AttachedDirsSectionProps): React.ReactElement {
+function AttachedDirsSection({ sessionId, attachedDirs, onDetach, refreshVersion, onAddToChat }: AttachedDirsSectionProps): React.ReactElement {
   const [selectedPaths, setSelectedPaths] = React.useState<Set<string>>(new Set())
 
   const handleSelect = React.useCallback((path: string, ctrlKey: boolean) => {
@@ -530,6 +573,7 @@ function AttachedDirsSection({ attachedDirs, onDetach, refreshVersion, onAddToCh
         <AttachedDirTree
           key={dir}
           dirPath={dir}
+          sessionId={sessionId}
           onDetach={() => onDetach(dir)}
           selectedPaths={selectedPaths}
           onSelect={handleSelect}
@@ -545,6 +589,7 @@ function AttachedDirsSection({ attachedDirs, onDetach, refreshVersion, onAddToCh
 
 interface AttachedDirTreeProps {
   dirPath: string
+  sessionId: string
   onDetach: () => void
   selectedPaths: Set<string>
   onSelect: (path: string, ctrlKey: boolean) => void
@@ -554,7 +599,7 @@ interface AttachedDirTreeProps {
 }
 
 /** 附加目录根节点：可展开/收起，带移除按钮 */
-function AttachedDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshVersion, onAddToChat }: AttachedDirTreeProps): React.ReactElement {
+function AttachedDirTree({ dirPath, sessionId, onDetach, selectedPaths, onSelect, refreshVersion, onAddToChat }: AttachedDirTreeProps): React.ReactElement {
   const [expanded, setExpanded] = React.useState(false)
   const [children, setChildren] = React.useState<FileEntry[]>([])
   const [loaded, setLoaded] = React.useState(false)
@@ -564,16 +609,16 @@ function AttachedDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshVe
   // 当 refreshVersion 变化时，已展开的目录自动重新加载
   React.useEffect(() => {
     if (expanded && loaded) {
-      ipc.listAttachedDirectory(dirPath)
+      ipc.listAttachedDirectory({ sessionId, dirPath })
         .then((items) => setChildren(items))
         .catch((err) => console.error('[AttachedDirTree] 刷新失败:', err))
     }
-  }, [refreshVersion]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expanded, loaded, refreshVersion, sessionId, dirPath])
 
   const toggleExpand = async (): Promise<void> => {
     if (!expanded && !loaded) {
       try {
-        const items = await ipc.listAttachedDirectory(dirPath)
+        const items = await ipc.listAttachedDirectory({ sessionId, dirPath })
         setChildren(items)
         setLoaded(true)
       } catch (err) {
@@ -615,7 +660,7 @@ function AttachedDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshVe
         </div>
       )}
       {expanded && children.map((child) => (
-        <AttachedDirItem key={child.path} entry={child} depth={1} selectedPaths={selectedPaths} onSelect={onSelect} refreshVersion={refreshVersion} onAddToChat={onAddToChat} />
+        <AttachedDirItem key={child.path} entry={child} depth={1} sessionId={sessionId} selectedPaths={selectedPaths} onSelect={onSelect} refreshVersion={refreshVersion} onAddToChat={onAddToChat} />
       ))}
     </div>
   )
@@ -624,6 +669,7 @@ function AttachedDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshVe
 interface AttachedDirItemProps {
   entry: FileEntry
   depth: number
+  sessionId: string
   selectedPaths: Set<string>
   onSelect: (path: string, ctrlKey: boolean) => void
   /** 文件版本号，变化时已展开的目录自动重新加载 */
@@ -632,7 +678,7 @@ interface AttachedDirItemProps {
 }
 
 /** 附加目录子项：递归可展开，支持选中 + 三点菜单（含重命名、移动） */
-function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion, onAddToChat }: AttachedDirItemProps): React.ReactElement {
+function AttachedDirItem({ entry, depth, sessionId, selectedPaths, onSelect, refreshVersion, onAddToChat }: AttachedDirItemProps): React.ReactElement {
   const [expanded, setExpanded] = React.useState(false)
   const [children, setChildren] = React.useState<FileEntry[]>([])
   const [loaded, setLoaded] = React.useState(false)
@@ -649,17 +695,17 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
   // 当 refreshVersion 变化时，已展开的文件夹自动重新加载子项
   React.useEffect(() => {
     if (expanded && loaded && entry.isDirectory) {
-      ipc.listAttachedDirectory(currentPath)
+      ipc.listAttachedDirectory({ sessionId, dirPath: currentPath })
         .then((items) => setChildren(items))
         .catch((err) => console.error('[AttachedDirItem] 刷新子目录失败:', err))
     }
-  }, [refreshVersion]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expanded, loaded, entry.isDirectory, refreshVersion, sessionId, currentPath])
 
   const toggleDir = async (): Promise<void> => {
     if (!entry.isDirectory) return
     if (!expanded && !loaded) {
       try {
-        const items = await ipc.listAttachedDirectory(currentPath)
+        const items = await ipc.listAttachedDirectory({ sessionId, dirPath: currentPath })
         setChildren(items)
         setLoaded(true)
       } catch (err) {
@@ -698,7 +744,7 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
       return
     }
     try {
-      await ipc.renameAttachedFile(currentPath, newName)
+      await ipc.renameAttachedFile({ filePath: currentPath, newName })
       // 更新本地显示
       const parentDir = currentPath.substring(0, currentPath.lastIndexOf('/'))
       const newPath = `${parentDir}/${newName}`
@@ -722,10 +768,10 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
   const handleMove = async (): Promise<void> => {
     try {
       const result = await ipc.openFolderDialog()
-      if (!result) return
-      await ipc.moveAttachedFile(currentPath, result.path)
+      if (result.canceled || result.filePaths.length === 0) return
+      await ipc.moveAttachedFile({ filePath: currentPath, newDirPath: result.filePaths[0] })
       // 移动后更新路径
-      const newPath = `${result.path}/${currentName}`
+      const newPath = `${result.filePaths[0]}/${currentName}`
       setCurrentPath(newPath)
     } catch (err) {
       console.error('[AttachedDirItem] 移动失败:', err)
@@ -879,7 +925,7 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
         </div>
       )}
       {expanded && children.map((child) => (
-        <AttachedDirItem key={child.path} entry={child} depth={depth + 1} selectedPaths={selectedPaths} onSelect={onSelect} refreshVersion={refreshVersion} onAddToChat={onAddToChat} />
+        <AttachedDirItem key={child.path} entry={child} depth={depth + 1} sessionId={sessionId} selectedPaths={selectedPaths} onSelect={onSelect} refreshVersion={refreshVersion} onAddToChat={onAddToChat} />
       ))}
     </>
   )

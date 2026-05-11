@@ -6,7 +6,7 @@ status: draft
 source_files:
   - src-tauri/src/commands/chat.rs
   - src-tauri/src/chat_engine.rs
-  - src/lib/tauri.ts
+  - src/lib/ipc.ts
 summary: Chat 会话、消息流式发送、历史读取、单条消息删除与会话清理的 IPC 参考。
 last_reviewed: 2026-05-09
 ---
@@ -15,7 +15,7 @@ last_reviewed: 2026-05-09
 
 ## 概述
 
-这组 API 负责聊天会话的生命周期和消息读写：创建会话、列出会话、读取消息、发送消息流、删除单条消息、清空会话、删除会话。Rust 侧通过 Tauri command 暴露，前端通过 `src/lib/tauri.ts` 的 wrapper 调用。
+这组 API 负责聊天会话的生命周期和消息读写：创建会话、列出会话、读取消息、发送消息流、删除单条消息、清空会话、删除会话。Rust 侧通过 Tauri command 暴露，前端通过 `src/lib/ipc.ts` 的 wrapper 调用。
 
 `send_message` 是唯一的流式接口。它通过 `Channel<ChatEvent>` 回传 `chunk`、`done`、`error` 三种事件，不存在其他事件类型。
 
@@ -132,7 +132,7 @@ Rust command: `clear_session(session_id: String) -> Result<(), String>`
 
 ```ts
 import { Channel } from "@tauri-apps/api/core";
-import { createSession, sendMessage, type ChatEvent } from "@/lib/tauri";
+import { createSession, sendMessage, type ChatEvent } from "@/lib/ipc";
 
 const sessionId = await createSession();
 const events = new Channel<ChatEvent>();
@@ -164,6 +164,6 @@ await sendMessage(sessionId, "你好", events);
 
 ## 相关条目
 
-- [src/lib/tauri.ts](/E:/Coding/AI/j-gui/src/lib/tauri.ts)
+- [src/lib/ipc.ts](/E:/Coding/AI/j-gui/src/lib/ipc.ts)
 - [src-tauri/src/commands/chat.rs](/E:/Coding/AI/j-gui/src-tauri/src/commands/chat.rs)
 - [src-tauri/src/chat_engine.rs](/E:/Coding/AI/j-gui/src-tauri/src/chat_engine.rs)

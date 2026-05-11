@@ -153,9 +153,9 @@ function TabBarInner({
 }): React.ReactElement {
   const [hoveredTabId, setHoveredTabId] = React.useState<string | null>(null)
   const [isLeaving, setIsLeaving] = React.useState(false)
-  const enterTimerRef = React.useRef<ReturnType<typeof setTimeout>>()
-  const leaveTimerRef = React.useRef<ReturnType<typeof setTimeout>>()
-  const fadeTimerRef = React.useRef<ReturnType<typeof setTimeout>>()
+  const enterTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const leaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fadeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const isWindows = React.useMemo(() => detectIsWindows(), [])
 
   // 滚动容器 ref

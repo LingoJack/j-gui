@@ -25,7 +25,7 @@ import {
 
 // ===== 通用 Map 读写辅助 =====
 
-type MapAtom<T> = ReturnType<typeof import('jotai').atom<Map<string, T>>>
+type MapAtom<T> = import('jotai').WritableAtom<Map<string, T>, [import('jotai').SetStateAction<Map<string, T>>], void>
 
 function useMapValue<T>(mapAtom: MapAtom<T>, key: string, defaultValue: T): T {
   const map = useAtomValue(mapAtom)

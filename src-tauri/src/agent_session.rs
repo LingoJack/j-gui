@@ -46,6 +46,12 @@ pub struct AgentSessionInfo {
     pub title: Option<String>,
     pub message_count: usize,
     pub updated_at: u64,
+    #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
+    pub archived: bool,
+    #[serde(default)]
+    pub permission_mode: Option<String>,
 }
 
 fn validate_session_id(id: &str) -> Result<(), String> {
@@ -57,21 +63,7 @@ fn validate_session_id(id: &str) -> Result<(), String> {
 }
 
 fn data_dir() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        std::env::var("USERPROFILE")
-            .ok()
-            .map(PathBuf::from)
-            .unwrap_or_default()
-            .join(".jdata")
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        std::env::var("HOME")
-            .ok()
-            .map(|d| PathBuf::from(d).join(".jdata"))
-            .unwrap_or_default()
-    }
+    crate::kernel::home_dir().join(".jdata")
 }
 
 pub fn agent_sessions_dir() -> PathBuf {
@@ -109,8 +101,15 @@ pub fn create_agent_session() -> Result<String, String> {
     let id = generate_session_id();
     let dir = agent_sessions_dir().join(&id);
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建会话目录失败: {}", e))?;
-    let meta = serde_json::json!({"created_at": now_millis(), "title": null});
-    std::fs::write(dir.join("meta.json"), serde_json::to_string(&meta).unwrap())
+    let meta = serde_json::json!({
+        "created_at": now_millis(),
+        "title": null,
+        "pinned": false,
+        "archived": false,
+        "permission_mode": "bypassPermissions"
+    });
+    let meta_str = serde_json::to_string(&meta).map_err(|e| format!("序列化 meta 失败: {}", e))?;
+    std::fs::write(dir.join("meta.json"), meta_str)
         .map_err(|e| format!("写入 meta 失败: {}", e))?;
     Ok(id)
 }
@@ -222,10 +221,16 @@ pub fn list_agent_sessions() -> Result<Vec<AgentSessionInfo>, String> {
         let meta_path = entry.path().join("meta.json");
         let mut title = None;
         let mut created_at = 0u64;
+        let mut pinned = false;
+        let mut archived = false;
+        let mut permission_mode = None;
         if let Ok(content) = std::fs::read_to_string(&meta_path) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
                 title = v["title"].as_str().map(|s| s.to_string());
                 created_at = v["created_at"].as_u64().unwrap_or(0);
+                pinned = v["pinned"].as_bool().unwrap_or(false);
+                archived = v["archived"].as_bool().unwrap_or(false);
+                permission_mode = v["permission_mode"].as_str().map(|s| s.to_string());
             }
         }
         // Auto-derive title from first user message if meta has no title stored
@@ -268,6 +273,9 @@ pub fn list_agent_sessions() -> Result<Vec<AgentSessionInfo>, String> {
             title,
             message_count,
             updated_at,
+            pinned,
+            archived,
+            permission_mode,
         });
     }
     sessions.sort_by_key(|s| std::cmp::Reverse(s.updated_at));
@@ -294,8 +302,8 @@ pub fn update_session_title(session_id: &str, title: &str) -> Result<(), String>
         std::fs::read_to_string(&meta_path).map_err(|e| format!("读取 meta 失败: {}", e))?;
     let mut v: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
     v["title"] = serde_json::Value::String(title.to_string());
-    std::fs::write(&meta_path, serde_json::to_string(&v).unwrap())
-        .map_err(|e| format!("写入 meta 失败: {}", e))?;
+    let meta_str = serde_json::to_string(&v).map_err(|e| format!("序列化 meta 失败: {}", e))?;
+    std::fs::write(&meta_path, meta_str).map_err(|e| format!("写入 meta 失败: {}", e))?;
     Ok(())
 }
 
@@ -308,5 +316,51 @@ pub fn delete_agent_session(session_id: &str) -> Result<(), String> {
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+fn toggle_meta_bool(session_id: &str, field: &str) -> Result<bool, String> {
+    validate_session_id(session_id)?;
+    let dir = agent_sessions_dir().join(session_id);
+    let meta_path = dir.join("meta.json");
+    let content =
+        std::fs::read_to_string(&meta_path).map_err(|e| format!("读取 meta 失败: {}", e))?;
+    let mut v: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    let current = v[field].as_bool().unwrap_or(false);
+    let new_value = !current;
+    v[field] = serde_json::Value::Bool(new_value);
+    let meta_str = serde_json::to_string(&v).map_err(|e| format!("序列化 meta 失败: {}", e))?;
+    std::fs::write(&meta_path, meta_str).map_err(|e| format!("写入 meta 失败: {}", e))?;
+    Ok(new_value)
+}
+
+pub fn toggle_pin_agent_session(session_id: &str) -> Result<AgentSessionInfo, String> {
+    toggle_meta_bool(session_id, "pinned")?;
+    let sessions = list_agent_sessions()?;
+    sessions
+        .into_iter()
+        .find(|s| s.id == session_id)
+        .ok_or_else(|| "会话不存在".to_string())
+}
+
+pub fn toggle_archive_agent_session(session_id: &str) -> Result<AgentSessionInfo, String> {
+    toggle_meta_bool(session_id, "archived")?;
+    let sessions = list_agent_sessions()?;
+    sessions
+        .into_iter()
+        .find(|s| s.id == session_id)
+        .ok_or_else(|| "会话不存在".to_string())
+}
+
+pub fn update_session_permission_mode(session_id: &str, mode: &str) -> Result<(), String> {
+    validate_session_id(session_id)?;
+    let dir = agent_sessions_dir().join(session_id);
+    let meta_path = dir.join("meta.json");
+    let content =
+        std::fs::read_to_string(&meta_path).map_err(|e| format!("读取 meta 失败: {}", e))?;
+    let mut v: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    v["permission_mode"] = serde_json::Value::String(mode.to_string());
+    let meta_str = serde_json::to_string(&v).map_err(|e| format!("序列化 meta 失败: {}", e))?;
+    std::fs::write(&meta_path, meta_str).map_err(|e| format!("写入 meta 失败: {}", e))?;
     Ok(())
 }

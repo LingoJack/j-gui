@@ -66,6 +66,7 @@ import { useOpenSession } from '@/hooks/useOpenSession'
 import { useSyncActiveTabSideEffects } from '@/hooks/useSyncActiveTabSideEffects'
 import { WorkspaceSelector } from '@/components/agent/WorkspaceSelector'
 import { MoveSessionDialog } from '@/components/agent/MoveSessionDialog'
+import { externalSkillSlug } from '@/components/settings/skill-helpers'
 import { detectIsMac } from '@/lib/platform'
 import {
   AlertDialog,
@@ -81,6 +82,10 @@ import type { ActiveView } from '@/atoms/active-view'
 import type { ConversationMeta, AgentSessionMeta, WorkspaceCapabilities } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 import { SessionListItems, type SessionListItemsProps, groupByDate } from './SessionListItems'
+
+function isAgentSessionMeta(value: unknown): value is AgentSessionMeta {
+  return typeof value === 'object' && value !== null && 'id' in value
+}
 
 interface SidebarItemProps {
   icon: React.ReactNode
@@ -296,9 +301,46 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
       setCapabilities(null)
       return
     }
-    ipc
-      .getWorkspaceCapabilities(currentWorkspaceSlug)
-      .then(setCapabilities)
+    Promise.all([
+      ipc.getWorkspaceCapabilities(currentWorkspaceSlug),
+      ipc.listMcpServers().catch(() => []),
+      ipc.scanGlobalSkills().catch(() => []),
+      ipc.listSkills().catch(() => []),
+    ])
+      .then(([workspaceCapabilities, jcliMcpServers, globalSkills, jcliSkills]) => {
+        const mergedMcp = new Map<string, WorkspaceCapabilities['mcpServers'][number]>(
+          workspaceCapabilities.mcpServers.map((server) => [server.name, server]),
+        )
+        for (const server of jcliMcpServers) {
+          if (!mergedMcp.has(server.name)) {
+            mergedMcp.set(server.name, {
+              name: server.name,
+              enabled: !server.disabled,
+              type: server.transport,
+            })
+          }
+        }
+
+        const mergedSkills = new Map<string, WorkspaceCapabilities['skills'][number]>(
+          workspaceCapabilities.skills.map((skill) => [skill.slug, skill]),
+        )
+        for (const skill of [...jcliSkills, ...globalSkills]) {
+          const slug = externalSkillSlug(skill.dirPath)
+          if (!mergedSkills.has(slug)) {
+            mergedSkills.set(slug, {
+              slug,
+              name: skill.name,
+              description: skill.description,
+              enabled: true,
+            })
+          }
+        }
+
+        setCapabilities({
+          mcpServers: [...mergedMcp.values()],
+          skills: [...mergedSkills.values()],
+        })
+      })
       .catch(console.error)
   }, [currentWorkspaceSlug, mode, activeView, capabilitiesVersion])
 
@@ -660,9 +702,11 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
         const session = agentSessions.find((s) => s.id === id)
         if (session?.manualWorking) {
           const updated = await ipc.toggleManualWorkingAgentSession(id)
-          setAgentSessions((prev) =>
-            prev.map((s) => (s.id === updated.id ? updated : s))
-          )
+          if (isAgentSessionMeta(updated)) {
+            setAgentSessions((prev) =>
+              prev.map((s) => (s.id === updated.id ? updated : s))
+            )
+          }
         }
         setWorkingDone((prev) => {
           if (!prev.has(id)) return prev
@@ -674,10 +718,12 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
         // 加入工作中
         const original = agentSessions.find((s) => s.id === id)
         const updated = await ipc.toggleManualWorkingAgentSession(id)
-        setAgentSessions((prev) =>
-          prev.map((s) => (s.id === updated.id ? updated : s))
-        )
-        if (original?.archived && updated.manualWorking && !updated.archived) {
+        if (isAgentSessionMeta(updated)) {
+          setAgentSessions((prev) =>
+            prev.map((s) => (s.id === updated.id ? updated : s))
+          )
+        }
+        if (original?.archived && isAgentSessionMeta(updated) && updated.manualWorking && !updated.archived) {
           toast.success('已取消归档并标记为工作中')
         }
       }

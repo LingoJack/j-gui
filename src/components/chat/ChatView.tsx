@@ -31,6 +31,7 @@ import {
   conversationModelsAtom,
   chatPendingMessageAtom,
   INITIAL_MESSAGE_LIMIT,
+  pendingAttachmentsAtom,
 } from '@/atoms/chat-atoms'
 import type { PendingAttachment, ChatPendingMessage } from '@/atoms/chat-atoms'
 import { promptConfigAtom, promptSidebarOpenAtom, conversationPromptIdAtom, resolveSystemMessage, selectedPromptIdAtom } from '@/atoms/system-prompt-atoms'
@@ -76,7 +77,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
   const [inlineEditingMessageId, setInlineEditingMessageId] = React.useState<string | null>(null)
 
   // ===== Per-conversation hooks（分屏独立） =====
-  const [selectedModel, setSelectedModel] = useConversationModel()
+  const [selectedModel] = useConversationModel()
   const [contextLength] = useConversationContextLength()
   const [thinkingEnabled] = useConversationThinkingEnabled()
   const [conversationPromptId] = useConversationPromptId()
@@ -96,6 +97,8 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
   const activeToolIds = useAtomValue(activeToolIdsAtom)
   const setPendingRecommendation = useSetAtom(pendingAgentRecommendationAtom)
   const [chatPendingMessage, setChatPendingMessage] = React.useState<ChatPendingMessage | null>(null)
+  const externalPendingAttachments = useAtomValue(pendingAttachmentsAtom)
+  const setExternalPendingAttachments = useSetAtom(pendingAttachmentsAtom)
 
   // 从全局 atom 读取快速任务待发送消息
   const globalChatPending = useAtomValue(chatPendingMessageAtom)
@@ -141,6 +144,16 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
       window.__pendingAttachmentData.clear()
     }
   }, [conversationId, setPendingRecommendation])
+
+  React.useEffect(() => {
+    if (externalPendingAttachments.length === 0) return
+    setPendingAttachments((prev) => {
+      const existingPaths = new Set(prev.map((att) => att.sourcePath).filter(Boolean))
+      const next = externalPendingAttachments.filter((att) => !att.sourcePath || !existingPaths.has(att.sourcePath))
+      return next.length > 0 ? [...prev, ...next] : prev
+    })
+    setExternalPendingAttachments([])
+  }, [externalPendingAttachments, setExternalPendingAttachments])
 
   // ===== 加载消息 + 上下文分隔线 =====
   //
@@ -265,7 +278,14 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
       // 保存附件到磁盘（通过 IPC）
       savedAttachments = []
       for (const att of currentAttachments) {
-        const base64Data = window.__pendingAttachmentData?.get(att.id)
+        let base64Data = window.__pendingAttachmentData?.get(att.id)
+        if (!base64Data && att.sourcePath) {
+          try {
+            base64Data = await ipc.readAttachedFile(att.sourcePath)
+          } catch (error) {
+            console.error('[ChatView] 读取工作区附件失败:', error)
+          }
+        }
         if (!base64Data) continue
 
         try {
@@ -571,32 +591,34 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
   return (
     <div className="flex h-full overflow-hidden">
       {/* 主内容区域 */}
-      <div className="flex flex-col h-full flex-1 min-w-0">
+      <div className="flex flex-col h-full flex-1 min-w-0 overflow-hidden">
         {/* Header 在 max-w 外，按钮可到达最右侧 */}
         <ChatHeader conversation={conversation} />
         <div className="flex flex-col flex-1 w-full max-w-[min(72rem,100%)] mx-auto overflow-hidden min-h-0">
           {/* 中间：消息区域 */}
-          <ChatMessages
-            conversationId={conversationId}
-            messages={messages}
-            messagesLoaded={messagesLoaded}
-            streaming={isStreaming}
-            streamingContent={streamingContent}
-            streamingReasoning={streamingReasoning}
-            streamingModel={streamingModel}
-            startedAt={streamState?.startedAt}
-            toolActivities={toolActivities}
-            contextDividers={contextDividers}
-            hasMore={hasMoreMessages}
-            onDeleteMessage={handleDeleteMessage}
-            onResendMessage={handleResendMessage}
-            onStartInlineEdit={handleStartInlineEdit}
-            onSubmitInlineEdit={handleSubmitInlineEdit}
-            onCancelInlineEdit={handleCancelInlineEdit}
-            inlineEditingMessageId={inlineEditingMessageId}
-            onDeleteDivider={handleDeleteDivider}
-            onLoadMore={handleLoadMore}
-          />
+          <div className="flex-1 min-h-0">
+            <ChatMessages
+              conversationId={conversationId}
+              messages={messages}
+              messagesLoaded={messagesLoaded}
+              streaming={isStreaming}
+              streamingContent={streamingContent}
+              streamingReasoning={streamingReasoning}
+              streamingModel={streamingModel}
+              startedAt={streamState?.startedAt}
+              toolActivities={toolActivities}
+              contextDividers={contextDividers}
+              hasMore={hasMoreMessages}
+              onDeleteMessage={handleDeleteMessage}
+              onResendMessage={handleResendMessage}
+              onStartInlineEdit={handleStartInlineEdit}
+              onSubmitInlineEdit={handleSubmitInlineEdit}
+              onCancelInlineEdit={handleCancelInlineEdit}
+              inlineEditingMessageId={inlineEditingMessageId}
+              onDeleteDivider={handleDeleteDivider}
+              onLoadMore={handleLoadMore}
+            />
+          </div>
 
           {/* 错误提示 */}
           {chatError && (

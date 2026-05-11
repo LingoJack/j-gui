@@ -7,7 +7,7 @@ source_files:
   - src-tauri/src/commands/agent.rs
   - src-tauri/src/agent_engine.rs
   - src-tauri/src/agent_session.rs
-  - src/lib/tauri.ts
+  - src/lib/ipc.ts
 summary: Agent 生命周期、会话存储与流式事件的 Tauri 命令组参考。
 last_reviewed: 2026-05-09
 ---
@@ -16,7 +16,7 @@ last_reviewed: 2026-05-09
 
 ## 概述
 
-`agent-commands` 提供一组 Tauri IPC 命令，用来启动和停止 Agent 进程、发送用户消息、回应工具中断，以及管理 Agent 会话。前端通过 `src/lib/tauri.ts` 的 wrapper 调用这些命令，并通过 `Channel<AgentEvent>` 接收流式事件。
+`agent-commands` 提供一组 Tauri IPC 命令，用来启动和停止 Agent 进程、发送用户消息、回应工具中断，以及管理 Agent 会话。前端通过 `src/lib/ipc.ts` 的 wrapper 调用这些命令，并通过 `Channel<AgentEvent>` 接收流式事件。
 
 当前实现的运行时边界是单槽位 `AgentState`：同一时刻只保存一个 `AgentEngine` 实例。`start_agent` 会写入该实例，`send_agent_message`、`respond_agent_interrupt` 和 `stop_agent` 都只作用于当前已启动的引擎。
 

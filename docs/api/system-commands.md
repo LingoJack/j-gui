@@ -5,7 +5,7 @@ category: Tauri IPC
 status: draft
 source_files:
   - src-tauri/src/commands/system.rs
-  - src/lib/tauri.ts
+  - src/lib/ipc.ts
 summary: 版本读取、主题持久化与 theme-changed 事件桥接的 Tauri 参考。
 last_reviewed: 2026-05-09
 ---
@@ -19,7 +19,7 @@ last_reviewed: 2026-05-09
 - 读取当前应用版本
 - 写入主题并向前端广播 `theme-changed`
 
-Rust 侧通过 Tauri command 暴露，前端通过 `src/lib/tauri.ts` 的 wrapper 和事件订阅函数调用。
+Rust 侧通过 Tauri command 暴露，前端通过 `src/lib/ipc.ts` 的 wrapper 和事件订阅函数调用。
 
 ## API 参考
 
@@ -97,5 +97,5 @@ Rust command: `set_theme(app: tauri::AppHandle, theme: String) -> Result<(), Str
 ## 相关条目
 
 - [src-tauri/src/commands/system.rs](/E:/Coding/AI/j-gui/src-tauri/src/commands/system.rs)
-- [src/lib/tauri.ts](/E:/Coding/AI/j-gui/src/lib/tauri.ts)
+- [src/lib/ipc.ts](/E:/Coding/AI/j-gui/src/lib/ipc.ts)
 - [config-commands](./config-commands.md)

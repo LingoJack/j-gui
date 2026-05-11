@@ -5,40 +5,44 @@ category: React Components
 status: draft
 source_files:
   - src/components/settings/SettingsDialog.tsx
-  - src/components/settings/SkillsTab.tsx
-  - src/components/settings/HooksTab.tsx
-  - src/components/settings/McpTab.tsx
+  - src/components/settings/SettingsPanel.tsx
+  - src/components/settings/GeneralSettings.tsx
+  - src/components/settings/ChannelSettings.tsx
+  - src/components/settings/PromptSettings.tsx
+  - src/components/settings/AliasSettings.tsx
+  - src/components/settings/HooksSettings.tsx
+  - src/components/settings/YamlConfigSettings.tsx
+  - src/components/settings/AgentSettings.tsx
+  - src/components/settings/ToolSettings.tsx
+  - src/components/settings/AppearanceSettings.tsx
+  - src/components/settings/AboutSettings.tsx
   - src/components/settings/primitives/SettingsCard.tsx
   - src/components/settings/primitives/SettingsRow.tsx
   - src/components/settings/primitives/SettingsSection.tsx
-  - src/components/settings/primitives/SettingsToggle.tsx
-summary: 设置对话框、Skills/Hooks/MCP 标签页和设置原子组件参考。
-last_reviewed: 2026-05-09
+summary: 设置浮窗、设置面板和当前各设置分区组件参考。
+last_reviewed: 2026-05-11
 ---
 
 # settings-components
 
 ## 概述
 
-这组组件构成 j-gui 当前设置界面的主要可见 UI 面：
+设置界面已经不是早期的 `SkillsTab` / `HooksTab` / `McpTab` 三页治理结构。当前实现由 `SettingsDialog` + `SettingsPanel` 组成，并在 `SettingsPanel` 内组织多个实际设置页。
+
+当前主结构：
 
 - `SettingsDialog`
-- `SkillsTab`
-- `HooksTab`
-- `McpTab`
-- `SettingsCard`
-- `SettingsRow`
-- `SettingsSection`
-- `SettingsToggle`
-
-它们共同承接：
-
-- 模型 provider 配置
-- 通用配置与主题/字体偏好
-- alias 管理
-- Skills / Hooks / MCP 列表与部分治理操作
-
-当前这些组件也是工作台内部设置组件，不是独立设计系统。
+- `SettingsPanel`
+- `GeneralSettings`
+- `ChannelSettings`
+- `PromptSettings`
+- `AliasSettings`
+- `HooksSettings`
+- `YamlConfigSettings`
+- `AgentSettings`
+- `ToolSettings`
+- `AppearanceSettings`
+- `AboutSettings`
 
 ## 组件参考
 
@@ -46,193 +50,194 @@ last_reviewed: 2026-05-09
 
 文件：`src/components/settings/SettingsDialog.tsx`
 
-props：
+职责：
 
-- `open`
-- `onClose`
+- 作为设置浮窗外壳。
+- 通过 `settingsOpenAtom` 控制开关。
+- 用 `SettingsErrorBoundary` 包裹 `SettingsPanel`，避免设置页渲染错误直接打断整个工作台。
+
+要点：
+
+- 它本身不承载 tab 逻辑，tab 切换和内容编排在 `SettingsPanel`。
+
+### `SettingsPanel`
+
+文件：`src/components/settings/SettingsPanel.tsx`
 
 职责：
 
-- 设置对话框总编排
-- 管理左侧 tab 导航
-- 管理 models/general/aliases/skills/hooks/mcp 六个分区
+- 提供顶部标题、左侧导航和右侧滚动内容区。
+- 维护当前选中 tab。
+- 处理关闭窗口或切换 tab 时的未保存确认。
 
-主要依赖：
+当前 tab 结构：
 
-- `agentConfigAtom`
-- `getAgentConfig`
-- `setAgentConfig`
-- `getConfig`
-- `setConfig`
-- `setTheme`
-- `listAliases`
-- `setAlias`
-- `removeAlias`
-- `SkillsTab`
-- `HooksTab`
-- `McpTab`
+- `general`
+- `channels`
+- `prompts`
+- `alias`
+- `hooks`
+- `yaml`
+- `agent`
+- `tools`
+- `appearance`
+- `about`
 
-主要本地状态：
+要点：
 
-- `tab`
-- `draft`
-- `activeIndex`
-- `dirty`
-- `generalConfig`
-- `aliases`
-- `aliasDraft`
-- `aliasDirty`
+- 当前实现总是包含 `agent` 与 `tools` 两个分区，不再按旧文档描述成独立治理页。
+- 离开 `channels` 页时，如果表单未保存，会弹出确认框。
 
-关键行为：
+### `GeneralSettings`
 
-- 打开时同时加载模型配置、通用配置和 alias 列表
-- 在 `models` tab 离开或关闭时，会对未保存修改做确认
-- `models` tab 通过本地 draft 编辑 provider，点击保存后统一提交
-- `general` tab 中大多数字段通过 `onBlur` 或 `onChange` 即时写回
-- `aliases` tab 支持新增和删除 alias
-- `skills/hooks/mcp` tab 交给子组件负责具体展示
+文件：`src/components/settings/GeneralSettings.tsx`
+
+职责：
+
+- 承载通用偏好设置。
+
+### `ChannelSettings`
+
+文件：`src/components/settings/ChannelSettings.tsx`
+
+职责：
+
+- 管理模型渠道配置。
 
 边界：
 
-- footer 里的“保存”按钮只在 `models` tab 出现
-- 当前没有“统一保存全部 tabs”的机制
-- `general` tab 的字体大小是直接操作 `document.documentElement.style.fontSize`
+- 当前它是设置面板里唯一明确带“未保存状态保护”的分区。
 
-### `SkillsTab`
+### `PromptSettings`
 
-文件：`src/components/settings/SkillsTab.tsx`
+文件：`src/components/settings/PromptSettings.tsx`
 
 职责：
 
-- 展示已加载 Skills 列表
+- 管理系统提示词及其相关配置入口。
 
-主要依赖：
+### `AliasSettings`
 
-- `listSkills`
-
-行为：
-
-- 挂载时加载 skills
-- loading 时显示 spinner
-- 无数据时显示 Skills 路径提示
-- 有数据时用 `SettingsCard` 渲染每条 skill
-
-### `HooksTab`
-
-文件：`src/components/settings/HooksTab.tsx`
+文件：`src/components/settings/AliasSettings.tsx`
 
 职责：
 
-- 展示已加载 Hooks 列表
+- 管理别名配置。
 
-主要依赖：
+### `HooksSettings`
 
-- `listHooks`
-
-行为：
-
-- 挂载时加载 hooks
-- 通过 `EVENT_LABELS` 把 hook 事件名转成中文标签
-- 展示 `name/label`、`event`、`source`、`hookType`、`timeout`、`onError`
-
-### `McpTab`
-
-文件：`src/components/settings/McpTab.tsx`
+文件：`src/components/settings/HooksSettings.tsx`
 
 职责：
 
-- 展示当前 MCP server 列表
-- 支持启用/禁用和删除
+- 展示当前 hooks。
+- 按事件和来源筛选。
+- 支持启用/禁用切换。
 
-主要依赖：
+要点：
 
-- `listMcpServers`
-- `saveMcpServers`
+- 它已经不是只读展示页。
 
-行为：
+### `YamlConfigSettings`
 
-- 挂载时加载 server 列表
-- toggle 时立即本地更新并保存
-- delete 时立即本地更新并保存
-- 无数据时提示配置文件位置
-
-边界：
-
-- 当前只支持开关和删除，不支持新增或编辑 server 表单
-
-### `SettingsCard`
-
-文件：`src/components/settings/primitives/SettingsCard.tsx`
+文件：`src/components/settings/YamlConfigSettings.tsx`
 
 职责：
 
-- 提供设置项卡片容器
+- 承载 YAML 配置读写入口。
 
-用途：
+### `AgentSettings`
 
-- 作为 models/general/aliases/skills/hooks/mcp 各处的基础包裹层
-
-### `SettingsRow`
-
-文件：`src/components/settings/primitives/SettingsRow.tsx`
+文件：`src/components/settings/AgentSettings.tsx`
 
 职责：
 
-- 提供左 label、右内容的行级布局
+- 管理当前工作区的 Agent 相关能力。
+- 在同一页内切换 `Skills`、`MCP`、`内置工具` 三个子视图。
 
-用途：
+当前能力边界：
 
-- 主要用于 general tab
+- `Skills`：工作区内 Skill 列表、详情、启停、删除，以及从其他工作区 / j-cli / 全局来源导入。
+- `MCP`：工作区级 MCP 配置与 j-cli MCP 只读视图切换。
+- `内置工具`：展示内置工具状态。
 
-### `SettingsSection`
+要点：
 
-文件：`src/components/settings/primitives/SettingsSection.tsx`
+- 这里的 MCP 已经区分“工作区 MCP”和“j-cli MCP”两种来源。
+- 页面支持“AI 配置”入口，通过新建 Agent 会话引导配置，而不是仅靠静态表单。
 
-职责：
+### `ToolSettings`
 
-- 提供带标题的设置分节
-
-用途：
-
-- 包裹 general/skills/hooks/mcp 等局部区域
-
-### `SettingsToggle`
-
-文件：`src/components/settings/primitives/SettingsToggle.tsx`
+文件：`src/components/settings/ToolSettings.tsx`
 
 职责：
 
-- 提供启用/禁用开关 UI
+- 管理 Chat 工具相关配置。
 
-用途：
+### `AppearanceSettings`
 
-- 当前主要用于 `McpTab`
+文件：`src/components/settings/AppearanceSettings.tsx`
+
+职责：
+
+- 管理外观相关设置。
+
+### `AboutSettings`
+
+文件：`src/components/settings/AboutSettings.tsx`
+
+职责：
+
+- 展示版本、项目信息和相关说明。
+
+### `SettingsCard` / `SettingsRow` / `SettingsSection`
+
+文件：
+
+- `src/components/settings/primitives/SettingsCard.tsx`
+- `src/components/settings/primitives/SettingsRow.tsx`
+- `src/components/settings/primitives/SettingsSection.tsx`
+
+职责：
+
+- 作为设置页内部复用的基础布局原语。
+
+说明：
+
+- 旧文档中的 `SettingsToggle` 已不存在；当前开关交互直接复用通用 `Switch` 组件。
 
 ## 组件关系
 
 ```text
 SettingsDialog
-  -> SettingsSection
-  -> SettingsCard
-  -> SettingsRow
-  -> SkillsTab
-  -> HooksTab
-  -> McpTab
-     -> SettingsToggle
+  -> SettingsPanel
+     -> GeneralSettings
+     -> ChannelSettings
+     -> PromptSettings
+     -> AliasSettings
+     -> HooksSettings
+     -> YamlConfigSettings
+     -> AgentSettings
+        -> Skills | MCP | Builtin Tools
+     -> ToolSettings
+     -> AppearanceSettings
+     -> AboutSettings
 ```
 
 ## 关键边界
 
-- 这组组件直接绑定当前 Tauri wrapper 和全局配置状态，不是脱离应用上下文可复用的通用设置框架。
-- `SettingsDialog` 内不同 tab 的保存语义并不统一：models 走显式保存，general/alias/mcp 多数是即时写回。
-- `SkillsTab` 和 `HooksTab` 当前是只读展示；`McpTab` 只有局部治理能力。
-- `SettingsCard` / `SettingsRow` / `SettingsSection` / `SettingsToggle` 是当前内部原子组件，不是完整 design system 抽象。
+- 设置 UI 已经从旧的治理三页结构演化为多分区设置面板，旧组件名不再适用。
+- `HooksSettings` 当前支持启停切换，不能再描述成只读页。
+- `AgentSettings` 是工作区作用域，不等于全局 j-cli 配置总入口。
+- `SettingsPanel` 的保存语义并不统一，至少 `channels` 页有显式未保存保护。
 
 ## 相关条目
 
 - [src/components/settings/SettingsDialog.tsx](/E:/Coding/AI/j-gui/src/components/settings/SettingsDialog.tsx)
-- [src/components/settings/SkillsTab.tsx](/E:/Coding/AI/j-gui/src/components/settings/SkillsTab.tsx)
-- [src/components/settings/HooksTab.tsx](/E:/Coding/AI/j-gui/src/components/settings/HooksTab.tsx)
-- [src/components/settings/McpTab.tsx](/E:/Coding/AI/j-gui/src/components/settings/McpTab.tsx)
+- [src/components/settings/SettingsPanel.tsx](/E:/Coding/AI/j-gui/src/components/settings/SettingsPanel.tsx)
+- [src/components/settings/AgentSettings.tsx](/E:/Coding/AI/j-gui/src/components/settings/AgentSettings.tsx)
+- [src/components/settings/HooksSettings.tsx](/E:/Coding/AI/j-gui/src/components/settings/HooksSettings.tsx)
+- [src/components/settings/ToolSettings.tsx](/E:/Coding/AI/j-gui/src/components/settings/ToolSettings.tsx)
+- [src/components/settings/YamlConfigSettings.tsx](/E:/Coding/AI/j-gui/src/components/settings/YamlConfigSettings.tsx)
 - [frontend-settings-ui](/E:/Coding/AI/j-gui/.codestable/architecture/frontend-settings-ui.md)
 - [governance-commands](./governance-commands.md)

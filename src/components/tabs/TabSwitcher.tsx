@@ -28,6 +28,7 @@ import {
   agentWorkspacesAtom,
 } from '@/atoms/agent-atoms'
 import type { SessionIndicatorStatus } from '@/atoms/agent-atoms'
+import * as ipc from '@/lib/ipc'
 
 export function TabSwitcher(): React.ReactElement | null {
   const tabs = useAtomValue(tabsAtom)

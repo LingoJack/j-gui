@@ -10,17 +10,6 @@ use crate::kernel::{GovernanceKernel, JcliAdapter};
 
 static GOVERNANCE_CONFIG_LOCK: Mutex<()> = Mutex::new(());
 
-fn home_dir() -> Option<PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        std::env::var("USERPROFILE").ok().map(PathBuf::from)
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        std::env::var("HOME").ok().map(PathBuf::from)
-    }
-}
-
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillInfo {
@@ -339,7 +328,7 @@ fn validate_slug(s: &str) -> Result<(), String> {
 fn validate_source_dir(source_dir: &str) -> Result<PathBuf, String> {
     let source_path = std::fs::canonicalize(source_dir)
         .map_err(|e| format!("无法解析源路径 '{}': {}", source_dir, e))?;
-    let home = home_dir().ok_or_else(|| "无法获取 home 目录".to_string())?;
+    let home = crate::kernel::home_dir();
     let is_allowed = GLOBAL_SKILLS_SUBPATHS.iter().any(|subpath| {
         let base = home.join(subpath);
         // Canonicalize the base as well to ensure consistent format
@@ -437,7 +426,7 @@ fn scan_skills_dir(home_dir: &Path, subpath: &str) -> Vec<SkillInfo> {
 
 #[tauri::command]
 pub fn scan_global_skills() -> Result<Vec<SkillInfo>, String> {
-    let home = home_dir().ok_or_else(|| "无法获取 home 目录".to_string())?;
+    let home = crate::kernel::home_dir();
     let mut skills = Vec::new();
     for subpath in GLOBAL_SKILLS_SUBPATHS {
         skills.extend(scan_skills_dir(&home, subpath));
@@ -460,7 +449,7 @@ pub fn copy_skill_to_workspace(
         return Err(format!("源 SKILL.md 不存在: {}", source_skill_md.display()));
     }
 
-    let home = home_dir().ok_or_else(|| "无法获取 home 目录".to_string())?;
+    let home = crate::kernel::home_dir();
     let target_base = home
         .join(".jgui")
         .join("agent-workspaces")
@@ -858,7 +847,7 @@ mod tests {
 
     #[test]
     fn test_validate_source_dir_accepts_skills_dir() {
-        let home = home_dir().unwrap();
+        let home = crate::kernel::home_dir();
         let skill_dir = home.join(".claude/agents/skills/j-gui-test-validate-skill");
         let _ = fs::remove_dir_all(&skill_dir);
         fs::create_dir_all(&skill_dir).unwrap();

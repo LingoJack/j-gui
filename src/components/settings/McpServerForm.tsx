@@ -7,6 +7,7 @@
 
 import * as React from 'react'
 import { ArrowLeft, Loader2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { McpServerEntry, McpTransportType, WorkspaceMcpConfig } from '@jgui/shared'
@@ -220,6 +221,7 @@ export function McpServerForm({ server, workspaceSlug, onSaved, onCancel }: McpS
       onSaved()
     } catch (error) {
       console.error('[MCP 表单] 保存失败:', error)
+      toast.error('保存 MCP 配置失败，请稍后重试')
     } finally {
       setSaving(false)
     }

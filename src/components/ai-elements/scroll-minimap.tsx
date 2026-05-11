@@ -76,8 +76,8 @@ export function ScrollMinimap({ items }: ScrollMinimapProps): React.ReactElement
   const [searchQuery, setSearchQuery] = React.useState('')
   const [isDragging, setIsDragging] = React.useState(false)
   const [scrollMetrics, setScrollMetrics] = React.useState({ scrollTop: 0, scrollHeight: 1, clientHeight: 1 })
-  const closeTimerRef = React.useRef<ReturnType<typeof setTimeout>>()
-  const fadeTimerRef = React.useRef<ReturnType<typeof setTimeout>>()
+  const closeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fadeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchInputRef = React.useRef<HTMLInputElement>(null)
   const trackRef = React.useRef<HTMLDivElement>(null)
 

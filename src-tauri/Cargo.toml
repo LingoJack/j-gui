@@ -27,7 +27,7 @@ base64 = "0.22"
 thiserror = "2"
 async-trait = "0.1"
 tokio-util = { version = "0.7", features = [] }
-j-cli = { path = "../../jcli" }
+j-cli = "12.10.44"
 
 [dev-dependencies]
 mockall = "0.13"

@@ -5,7 +5,7 @@ category: Tauri IPC
 status: draft
 source_files:
   - src-tauri/src/commands/alias.rs
-  - src/lib/tauri.ts
+  - src/lib/ipc.ts
 summary: Alias 列表、设置和删除命令的 Tauri 参考。
 last_reviewed: 2026-05-09
 ---
@@ -21,7 +21,7 @@ last_reviewed: 2026-05-09
 - `outer_url`
 - `script`
 
-Rust 侧通过 Tauri command 暴露，前端通过 `src/lib/tauri.ts` 的 wrapper 调用。
+Rust 侧通过 Tauri command 暴露，前端通过 `src/lib/ipc.ts` 的 wrapper 调用。
 
 ## API 参考
 
@@ -129,5 +129,5 @@ bridge 层没有额外转换、缓存或校验。
 ## 相关条目
 
 - [src-tauri/src/commands/alias.rs](/E:/Coding/AI/j-gui/src-tauri/src/commands/alias.rs)
-- [src/lib/tauri.ts](/E:/Coding/AI/j-gui/src/lib/tauri.ts)
+- [src/lib/ipc.ts](/E:/Coding/AI/j-gui/src/lib/ipc.ts)
 - [config-commands](./config-commands.md)

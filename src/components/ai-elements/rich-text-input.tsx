@@ -365,7 +365,7 @@ export function RichTextInput({
       attributes: {
         class: cn(
           'prose dark:prose-invert max-w-none focus:outline-none',
-          'min-h-[101px] w-full text-[15px] leading-[1.6]',
+          'min-h-[56px] w-full text-[15px] leading-[1.6]',
           '[&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
           '[&_pre]:rounded-md [&_pre]:p-3',
           '[&_code]:bg-muted [&_code]:rounded [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-sm [&_code]:text-foreground',
@@ -557,7 +557,7 @@ export function RichTextInput({
         lastEditorValueRef.current = controllerValue
       }
     }
-  }, [editor, value])
+  }, [editor, value, htmlValue])
 
   // 同步 disabled 状态
   useEffect(() => {
@@ -614,10 +614,10 @@ export function RichTextInput({
   return (
     <div
       className={cn(
-        'rich-text-input relative w-full overflow-y-auto transition-[max-height] duration-200 ease-in-out',
+        'rich-text-input relative w-full overflow-hidden transition-[max-height] duration-200 ease-in-out',
         isManuallyCollapsed
-          ? 'max-h-[101px]'
-          : isExpanded ? 'max-h-[500px]' : 'max-h-[200px]',
+          ? 'max-h-[56px]'
+          : isExpanded ? 'max-h-[500px]' : 'max-h-none',
         disabled && 'opacity-50 cursor-not-allowed',
         className
       )}
@@ -647,8 +647,9 @@ export function RichTextInput({
       <style>{`
         .ProseMirror {
           outline: none;
-          padding: 9px 15px 0px;
+          padding: 12px 15px 8px;
           font-style: normal;
+          overflow: visible;
         }
         .ProseMirror p {
           font-style: normal;
@@ -670,9 +671,6 @@ export function RichTextInput({
           height: 0;
           opacity: 0.5;
           font-style: ${suggestionActive ? 'italic' : 'normal'};
-        }
-        .ProseMirror::-webkit-scrollbar {
-          width: 3px;
         }
         .mention-chip {
           background-color: hsl(var(--primary) / 0.1);

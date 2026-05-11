@@ -5,9 +5,10 @@
  * - agent: Agent 模式（原 Flow）
  */
 
+import type { WritableAtom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 
 export type AppMode = 'chat' | 'agent'
 
 /** App 模式，自动持久化到 localStorage */
-export const appModeAtom = atomWithStorage<AppMode>('jgui-app-mode', 'agent')
+export const appModeAtom: WritableAtom<AppMode, [AppMode], void> = atomWithStorage<AppMode>('jgui-app-mode', 'agent')

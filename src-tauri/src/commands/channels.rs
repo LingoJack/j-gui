@@ -7,9 +7,33 @@ use crate::kernel::types::{
 };
 use crate::kernel::{ConfigKernel, JcliAdapter};
 
+const FALLBACK_MODEL_ANTHROPIC: &str = "claude-3-5-sonnet-20241022";
+const FALLBACK_MODEL_OPENAI: &str = "gpt-3.5-turbo";
+
 // ---------------------------------------------------------------------------
 // Request / response types
 // ---------------------------------------------------------------------------
+
+fn mask_api_key(key: &str) -> String {
+    if key.is_empty() {
+        return String::new();
+    }
+    if key.len() <= 6 {
+        return "••••••••".to_string();
+    }
+    let (prefix_len, suffix_len) = if key.len() <= 8 { (2, 2) } else { (4, 4) };
+    let mask_len = (key.len().saturating_sub(prefix_len + suffix_len)).max(8);
+    format!(
+        "{}{}{}",
+        &key[..prefix_len],
+        "•".repeat(mask_len),
+        &key[key.len() - suffix_len..]
+    )
+}
+
+fn is_masked_api_key(key: &str) -> bool {
+    key.contains("...") || key.contains('•') || key.chars().all(|c| c == '*')
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,17 +42,21 @@ pub struct ChannelInfo {
     pub name: String,
     pub provider: String,
     pub base_url: String,
+    pub api_key: String,
     pub models: Vec<KernelChannelModel>,
+    pub enabled: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateChannelInput {
     pub name: String,
+    pub provider: Option<String>,
+    #[serde(alias = "baseUrl")]
     pub api_base: String,
     pub api_key: String,
-    pub model: String,
-    pub supports_vision: Option<bool>,
+    pub models: Vec<KernelChannelModel>,
+    pub enabled: Option<bool>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -67,6 +95,15 @@ pub struct TestChannelInput {
     pub provider: Option<String>,
 }
 
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestSavedChannelInput {
+    pub provider: Option<String>,
+    #[serde(alias = "baseUrl", alias = "apiBase")]
+    pub api_base: Option<String>,
+    pub model: Option<String>,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TestChannelResult {
@@ -96,7 +133,9 @@ fn provider_to_channel_info(p: &KernelProvider) -> ChannelInfo {
             p.provider.clone()
         },
         base_url: p.api_base.clone(),
+        api_key: mask_api_key(&p.api_key),
         models: p.models.clone(),
+        enabled: p.enabled,
     }
 }
 
@@ -131,6 +170,14 @@ pub fn update_channel(
 #[tauri::command]
 pub fn delete_channel(state: tauri::State<'_, Arc<JcliAdapter>>, id: String) -> Result<(), String> {
     delete_channel_impl(state.config(), &id)
+}
+
+#[tauri::command]
+pub fn decrypt_api_key(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    channel_id: String,
+) -> Result<String, String> {
+    decrypt_api_key_impl(state.config(), &channel_id)
 }
 
 #[tauri::command]
@@ -173,6 +220,48 @@ pub async fn fetch_models(api_base: String, api_key: String) -> Result<FetchMode
 
 #[tauri::command]
 pub async fn test_channel_direct(input: TestChannelInput) -> Result<TestChannelResult, String> {
+    test_channel_input(input).await
+}
+
+#[tauri::command]
+pub async fn test_saved_channel(
+    state: tauri::State<'_, Arc<JcliAdapter>>,
+    id: String,
+    input: Option<TestSavedChannelInput>,
+) -> Result<TestChannelResult, String> {
+    let provider = state
+        .config()
+        .load_providers()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|provider| provider.id == id)
+        .ok_or_else(|| format!("渠道不存在: {id}"))?;
+
+    let override_input = input.unwrap_or(TestSavedChannelInput {
+        provider: None,
+        api_base: None,
+        model: None,
+    });
+
+    let model = override_input.model.or_else(|| {
+        provider
+            .models
+            .iter()
+            .find(|model| model.enabled)
+            .or_else(|| provider.models.first())
+            .map(|model| model.id.clone())
+    });
+
+    test_channel_input(TestChannelInput {
+        api_base: override_input.api_base.unwrap_or(provider.api_base),
+        api_key: provider.api_key,
+        model,
+        provider: override_input.provider.or(Some(provider.provider)),
+    })
+    .await
+}
+
+async fn test_channel_input(input: TestChannelInput) -> Result<TestChannelResult, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
@@ -242,20 +331,32 @@ fn create_channel_impl(
     }
     let kernel_input = KernelCreateChannelInput {
         name: input.name,
-        provider: infer_provider(&input.api_base),
+        provider: input
+            .provider
+            .filter(|provider| !provider.trim().is_empty())
+            .unwrap_or_else(|| infer_provider(&input.api_base)),
         api_base: input.api_base,
         api_key: input.api_key,
-        models: vec![KernelChannelModel {
-            id: input.model.clone(),
-            name: input.model.clone(),
-            enabled: true,
-        }],
-        enabled: true,
+        models: input.models,
+        enabled: input.enabled.unwrap_or(true),
     };
     let provider = config
         .create_channel(kernel_input)
         .map_err(|e| e.to_string())?;
     Ok(provider_to_channel_info(&provider))
+}
+
+fn decrypt_api_key_impl(config: &dyn ConfigKernel, channel_id: &str) -> Result<String, String> {
+    if channel_id.trim().is_empty() {
+        return Err("渠道 ID 不能为空".into());
+    }
+    config
+        .load_providers()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|provider| provider.id == channel_id)
+        .map(|provider| provider.api_key)
+        .ok_or_else(|| format!("渠道不存在: {channel_id}"))
 }
 
 fn update_channel_impl(
@@ -268,7 +369,7 @@ fn update_channel_impl(
     }
     // Handle masked api_key: if the incoming key has "..." preserve existing
     let api_key = input.api_key.as_deref().and_then(|k| {
-        if k.contains("...") {
+        if is_masked_api_key(k) {
             None // signal to kernel to preserve existing
         } else {
             Some(k.to_string())
@@ -334,9 +435,9 @@ async fn try_chat_completion(
     let chat_url = format!("{}/{}", input.api_base.trim_end_matches('/'), path);
 
     let model = input.model.as_deref().unwrap_or(if is_anthropic {
-        "claude-3-5-sonnet-20241022"
+        FALLBACK_MODEL_ANTHROPIC
     } else {
-        "gpt-3.5-turbo"
+        FALLBACK_MODEL_OPENAI
     });
     let body = serde_json::json!({
         "model": model,
@@ -421,31 +522,16 @@ mod tests {
     };
     use crate::kernel::KernelError;
 
-    // --- mask_api_key helper ---
-
-    fn mask_api_key(key: &str) -> String {
-        let len = key.len();
-        if len > 8 {
-            format!("{}...{}", &key[..4], &key[len - 4..])
-        } else if len > 2 {
-            format!("{}...{}", &key[..2], &key[len - 2..])
-        } else if !key.is_empty() {
-            format!("...{}", key)
-        } else {
-            String::new()
-        }
-    }
-
     #[test]
     fn mask_long_key() {
         let masked = mask_api_key("sk-1234567890abcdef");
-        assert_eq!(masked, "sk-1...cdef");
+        assert_eq!(masked, "sk-1•••••••••••cdef");
     }
 
     #[test]
     fn mask_short_key() {
         let masked = mask_api_key("ab");
-        assert_eq!(masked, "...ab");
+        assert_eq!(masked, "••••••••");
     }
 
     #[test]
@@ -548,7 +634,12 @@ mod tests {
     fn create_channel_appends_provider() {
         let mut mock = MockConfigKernel::new();
         mock.expect_create_channel()
-            .withf(|input: &KernelCreateChannelInput| input.name == "New Channel")
+            .withf(|input: &KernelCreateChannelInput| {
+                input.name == "New Channel"
+                    && input.models.len() == 2
+                    && input.models[0].id == "gpt-4"
+                    && input.models[1].id == "gpt-4o"
+            })
             .returning(|input| {
                 Ok(KernelProvider {
                     id: "new-uuid".into(),
@@ -570,8 +661,20 @@ mod tests {
                 name: "New Channel".into(),
                 api_base: "https://api.openai.com".into(),
                 api_key: "sk-key".into(),
-                model: "gpt-4".into(),
-                supports_vision: Some(true),
+                provider: Some("openai".into()),
+                models: vec![
+                    KernelChannelModel {
+                        id: "gpt-4".into(),
+                        name: "GPT-4".into(),
+                        enabled: true,
+                    },
+                    KernelChannelModel {
+                        id: "gpt-4o".into(),
+                        name: "GPT-4o".into(),
+                        enabled: true,
+                    },
+                ],
+                enabled: Some(true),
             },
         );
         assert!(result.is_ok());
@@ -729,8 +832,13 @@ mod tests {
                 name: "Test".into(),
                 api_base: "https://api.test.com".into(),
                 api_key: "key".into(),
-                model: "gpt-4".into(),
-                supports_vision: None,
+                provider: None,
+                models: vec![KernelChannelModel {
+                    id: "gpt-4".into(),
+                    name: "gpt-4".into(),
+                    enabled: true,
+                }],
+                enabled: None,
             },
         );
         assert!(result.is_err());
@@ -746,8 +854,13 @@ mod tests {
                 name: "".into(),
                 api_base: "https://api.test.com".into(),
                 api_key: "key".into(),
-                model: "gpt-4".into(),
-                supports_vision: None,
+                provider: None,
+                models: vec![KernelChannelModel {
+                    id: "gpt-4".into(),
+                    name: "gpt-4".into(),
+                    enabled: true,
+                }],
+                enabled: None,
             },
         );
         assert!(result.is_err());
@@ -763,8 +876,13 @@ mod tests {
                 name: "Test".into(),
                 api_base: "".into(),
                 api_key: "key".into(),
-                model: "gpt-4".into(),
-                supports_vision: None,
+                provider: None,
+                models: vec![KernelChannelModel {
+                    id: "gpt-4".into(),
+                    name: "gpt-4".into(),
+                    enabled: true,
+                }],
+                enabled: None,
             },
         );
         assert!(result.is_err());
@@ -801,19 +919,41 @@ mod tests {
     #[test]
     fn mask_exactly_8_chars() {
         let masked = mask_api_key("12345678");
-        assert_eq!(masked, "12...78");
+        assert_eq!(masked, "12••••••••78");
     }
 
     #[test]
     fn mask_3_chars() {
         let masked = mask_api_key("abc");
-        assert_eq!(masked, "ab...bc");
+        assert_eq!(masked, "••••••••");
     }
 
     #[test]
     fn mask_1_char() {
         let masked = mask_api_key("x");
-        assert_eq!(masked, "...x");
+        assert_eq!(masked, "••••••••");
+    }
+
+    #[test]
+    fn decrypt_api_key_returns_raw_secret() {
+        let mut mock = MockConfigKernel::new();
+        mock.expect_load_providers().returning(|| {
+            Ok(vec![KernelProvider {
+                id: "target-id".into(),
+                name: "Test".into(),
+                provider: "openai".into(),
+                api_base: "https://api.openai.com/v1".into(),
+                api_key: "sk-secret".into(),
+                models: vec![],
+                enabled: true,
+                supports_vision: false,
+                created_at: 0,
+                updated_at: 0,
+            }])
+        });
+
+        let result = decrypt_api_key_impl(&mock, "target-id");
+        assert_eq!(result.unwrap(), "sk-secret");
     }
 
     // --- fetch_models parsing ---

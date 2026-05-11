@@ -61,6 +61,24 @@ impl JcliAdapter {
     pub fn governance(&self) -> &dyn GovernanceKernel {
         self
     }
+
+    fn spawn_bridge_thread(
+        rx: std::sync::mpsc::Receiver<StreamMsg>,
+        event_interceptor: Option<std::sync::mpsc::Sender<String>>,
+        on_event: tauri::ipc::Channel<String>,
+    ) {
+        std::thread::spawn(move || {
+            while let Ok(msg) = rx.recv() {
+                let json = stream_msg_to_json_string(&msg);
+                if let Some(ref interceptor) = event_interceptor {
+                    let _ = interceptor.send(json.clone());
+                }
+                if on_event.send(json).is_err() {
+                    break;
+                }
+            }
+        });
+    }
 }
 
 // ===== Helpers =====
@@ -212,8 +230,23 @@ impl ConfigKernel for JcliAdapter {
         };
 
         // Serialize providers with our format
-        let providers_val = serde_json::to_value(providers)
+        let mut providers_val = serde_json::to_value(providers)
             .map_err(|e| KernelError::Config(format!("序列化 providers 失败: {e}")))?;
+        // Backward compatibility: j-cli's load_agent_config() expects `model: String`
+        // per provider. Synthesize from the first model's ID.
+        if let Some(arr) = providers_val.as_array_mut() {
+            for p in arr {
+                if p.get("model").is_none() {
+                    if let Some(first_id) = p["models"]
+                        .as_array()
+                        .and_then(|m| m.first())
+                        .and_then(|m| m["id"].as_str())
+                    {
+                        p["model"] = serde_json::json!(first_id);
+                    }
+                }
+            }
+        }
         config["providers"] = providers_val;
         config["version"] = serde_json::json!(1);
 
@@ -541,20 +574,7 @@ impl ChatKernel for JcliAdapter {
         let (tx, rx) = std::sync::mpsc::channel::<StreamMsg>();
         let (_tool_result_tx, tool_result_rx) = std::sync::mpsc::channel::<ToolResultMsg>();
 
-        let event_interceptor = params.event_interceptor;
-        let on_event = params.on_event;
-        std::thread::spawn(move || {
-            while let Ok(msg) = rx.recv() {
-                let json = stream_msg_to_json_string(&msg);
-                // Forward to Rust-side interceptor if present (JAgent backend bridge)
-                if let Some(ref interceptor) = event_interceptor {
-                    let _ = interceptor.send(json.clone());
-                }
-                if on_event.send(json).is_err() {
-                    break;
-                }
-            }
-        });
+        Self::spawn_bridge_thread(rx, params.event_interceptor, params.on_event);
 
         // 10. Run the agent loop
         let loop_params = MainAgentLoopParams {
@@ -721,23 +741,11 @@ impl ChatKernel for JcliAdapter {
 
 // ===== Workspace helpers =====
 
-fn home_dir() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        std::env::var("USERPROFILE")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("C:\\"))
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        std::env::var("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("/tmp"))
-    }
-}
-
 fn workspace_dir(slug: &str) -> PathBuf {
-    home_dir().join(".jgui").join("agent-workspaces").join(slug)
+    super::home_dir()
+        .join(".jgui")
+        .join("agent-workspaces")
+        .join(slug)
 }
 
 fn workspace_skills_dir(slug: &str) -> PathBuf {
@@ -1068,7 +1076,7 @@ impl GovernanceKernel for JcliAdapter {
         &self,
         workspace_slug: &str,
     ) -> Result<Vec<KernelSkillInfo>, KernelError> {
-        let base = home_dir().join(".jgui").join("agent-workspaces");
+        let base = super::home_dir().join(".jgui").join("agent-workspaces");
         if !base.is_dir() {
             return Ok(Vec::new());
         }

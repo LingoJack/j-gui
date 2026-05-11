@@ -46,7 +46,7 @@ export function useToolCredentials(toolId: string) {
     setTesting(true)
     setTestResult(null)
     try {
-      const result = await ipc.testChatTool(toolId)
+      const result = await ipc.testChatTool(toolId, {})
       setTestResult(result)
     } catch (error) {
       setTestResult({

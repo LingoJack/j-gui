@@ -1,61 +1,56 @@
 roadmap: j-gui-v1
 created: 2026-05-10
-last_reviewed: 2026-05-10
-
-last_reviewed: 2026-05-10
-
-# Roadmap 进度：Phase A 9/9 | Phase B 8/8 | Phase B+ 1/2 | Phase C 0/3 | Phase D 5/5 | Phase E 0/2 | Phase F 0/1
-# ⚠️ Phase A #1 后端通过测试但端到端不可用（前后端类型不兼容），由 #27 修复
+last_reviewed: 2026-05-11
 
 items:
-  # ===== Phase A: 可用 MVP (P0 — 全部完成) =====
+  # ===== Phase A: 基础底座与已证实闭环 =====
   - slug: channel-management
-    description: 渠道 CRUD + test_channel_direct + fetch_models
+    description: 渠道 CRUD + test_channel_direct + fetch_models 基础能力
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: Phase A 完成。⚠️ 后端通过测试但前后端 Channel 类型不兼容导致端到端不可用，由 #27 channel-model-unify 修复
+    notes: 基础能力已在；历史上的前后端模型不兼容问题已由 #channel-model-unify 收口
 
   - slug: stop-generation
-    description: Chat/Agent 中断生成 (STOPPED_SESSIONS)
+    description: Chat/Agent 中断生成
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: Phase A 完成
+    notes: 已闭环
 
   - slug: agent-title
-    description: generate_agent_title + update_agent_session_title
+    description: Agent 会话标题生成与修改
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: Phase A 完成
+    notes: 已闭环
 
   - slug: agent-permissions
-    description: respond_permission + respond_ask_user
+    description: 旧权限命令基线（respond_permission / respond_ask_user）
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: Phase A 完成
+    notes: 仅保留为历史基线；统一中断真协议由 #stream-protocol-unify 收口
 
   - slug: file-dialog
-    description: open_file_dialog + save/read_attachment + list_directory
+    description: 文件选择、附件保存/读取、目录列表
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: Phase A 完成
+    notes: 已闭环
 
   - slug: conversation-title
-    description: update_conversation_title 对接到 Rust
+    description: Chat 会话标题更新
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: Phase A 完成
+    notes: 已闭环
 
   - slug: git-node-detection
     description: Git/Node.js 环境检测
@@ -63,7 +58,7 @@ items:
     status: done
     feature: null
     minimal_loop: false
-    notes: Phase A 完成
+    notes: 已闭环
 
   - slug: workspace-crud
     description: 工作区 CRUD 管理
@@ -71,7 +66,7 @@ items:
     status: done
     feature: null
     minimal_loop: false
-    notes: Phase A 完成
+    notes: 已闭环
 
   - slug: timestamp-fix
     description: 时间戳修复
@@ -79,178 +74,241 @@ items:
     status: done
     feature: null
     minimal_loop: false
-    notes: Phase A 完成
+    notes: 已闭环
 
-  # ===== Phase B: j-cli 功能对齐 + 双源 Skills (P1) =====
   - slug: alias-ui
-    description: Alias 管理 UI tab，后端已有 list/set/remove
+    description: Alias 管理 UI
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: 2026-05-10 TDD 完成——AliasSettings.tsx + IPC wrappers + 4 tests
+    notes: 已闭环
 
   - slug: skills-dual-source-ui
-    description: Skills 双源管理 UI——j-cli Skills + CC SDK Workspace Skills + 全局 Skills 扫描导入
+    description: Skills 双源管理 UI
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: 2026-05-10 TDD 完成——scan_global_skills + copy_skill_to_workspace 后端命令 + 双源 UI + 14 tests
+    notes: 基础 UI 与导入链路已存在
 
   - slug: hooks-ui
-    description: Hooks 管理 UI tab，当前只读，由 #28 governance-bidirectional-sync 升级为可启停管理
+    description: Hooks 管理 UI 基线
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: 2026-05-10 TDD 完成——HooksSettings.tsx（只读）+ 4 tests。⚠️ 启停开关、按事件/来源筛选、toggle_hook 后端命令由 #28 补全
+    notes: 基础视图已存在；更强治理能力继续由 #governance-bidirectional-sync 承接
 
   - slug: mcp-dual-source-ui
-    description: MCP Server 双源配置 UI——j-cli 源 (mcp_config.json) + CC SDK 工作区源 (mcp.json)
+    description: MCP 双源配置 UI 基线
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: 2026-05-10 TDD 完成——listMcpServers IPC + source toggle + j-cli 只读视图 + 6 tests
-
-  - slug: chat-tools-ui
-    description: Chat Tools 管理 UI——基于后端 list_chat_tools (20 内置工具) 和 set_tool_enabled 的启停管理
-    depends_on: []
-    status: done
-    feature: null
-    minimal_loop: false
-    notes: 2026-05-10 TDD 完成——BuiltinToolsSection + listChatTools/setToolEnabled IPC + 5 tests
+    notes: 保持 Agent runtime 边界
 
   - slug: system-prompt-ui
-    description: System Prompt 编辑器 + j-cli 默认内容自动加载
+    description: System Prompt 编辑器
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: PromptSettings.tsx 已完整实现 + 后端 get_system_prompt_config 等 7 命令注册 + 首读自动加载 j-cli 默认内容 + 9 Rust tests
+    notes: 已闭环
 
   - slug: yaml-config-editor
-    description: 全局 YamlConfig 查看/编辑 UI，后端已有 get_config/set_config
+    description: YamlConfig 查看/编辑 UI
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: 2026-05-10 TDD 完成——YamlConfigSettings.tsx + IPC wrappers + 5 tests
+    notes: 已闭环
 
   - slug: channel-provider-ui
-    description: 渠道 Provider CRUD UI + 模型选择器 + 测试连接
+    description: Channel / Provider 管理 UI
     depends_on: []
     status: done
     feature: null
     minimal_loop: false
-    notes: ChannelSettings.tsx + ChannelForm.tsx 已完整实现
+    notes: 已闭环
 
-  # ===== Phase B+: 数据模型修复 & 持久化补齐 (P0 阻塞) =====
   - slug: channel-model-unify
-    description: 增强 j-cli ModelProvider 为完整 Channel 模型——UUID id、ProviderType、models 数组、enabled、API Key 加密。升级 agent_config.json 格式并向后兼容迁移。前后端 IPC 对齐
+    description: Channel 数据模型统一——前后端 IPC 与本地存储口径对齐
     depends_on: []
     status: done
     feature: 2026-05-10-channel-model-unify
     minimal_loop: true
-    notes: ⭐ 最小闭环——修好后渠道创建/列表/选中端到端可用。涉及 jcli + j-gui 两个仓库
+    notes: 最小闭环项；渠道配置端到端可用
 
-  - slug: governance-bidirectional-sync
-    description: 治理命令补全 + 双向同步——注册 Skills/MCP 工作区持久化命令（write/toggle/delete/import），Hooks 从只读升级为可启停管理，写工作区时同步更新 j-cli 配置（disabled_skills/disabled_hooks/mcp_config.json）。合并原 Phase C #18
-    depends_on: []
-    status: planned
-    feature: null
-    minimal_loop: false
-    notes: 涉及 governance.rs 新增 ~12 个命令 + HooksSettings UI 升级
-
-  # ===== Phase C: 体验追平 (P2) =====
-  - slug: message-persistence
-    description: Chat 消息 JSONL (对接 j-cli session)
-    depends_on: []
-    status: planned
-    feature: null
-    minimal_loop: false
-    notes:
-
-  - slug: session-archive
-    description: 会话归档/搜索
-    depends_on: []
-    status: planned
-    feature: null
-    minimal_loop: false
-    notes:
-
-  - slug: error-toast
-    description: 统一错误提示 + 边界处理
-    depends_on: []
-    status: planned
-    feature: null
-    minimal_loop: false
-    notes:
-
-  # ===== Phase F: 移动端远程连接 (P4 远期) =====
-  - slug: remote-mobile-access
-    description: 桌面远程服务 + 移动端 Web UI——j-gui 启动 jcli remote WS bridge，显示局域网地址+二维码，手机扫码进入 Web UI 操作 Chat/Agent。PIN 码+Token 认证，仅局域网。依赖 #30
-    depends_on: [kernel-trait-abstraction]
-    status: planned
-    feature: null
-    minimal_loop: false
-    notes: jcli 已有 command::chat::remote 模块。手机无需安装 App，纯 Web UI
-
-  # ===== Phase E: 内核解耦 & Agent 升级 (P2) =====
   - slug: kernel-trait-abstraction
-    description: 3 trait + KernelError + types.rs DTO + JcliAdapter + _impl 测试模式。25 j_cli:: 导入→2（governance adapter 依赖）。115 Rust + 54 前端 tests
+    description: Kernel trait 抽象层——ChatKernel / ConfigKernel / GovernanceKernel + JcliAdapter
     depends_on: []
     status: done
     feature: 2026-05-10-kernel-trait-abstraction
     minimal_loop: true
-    notes: 2026-05-10 完成。9 steps all done, acceptance report written
+    notes: 已完成；为后续闭环工作提供稳定后端边界
 
-  - slug: agent-engine-jagent
-    description: 替换 CC SDK CLI 子进程为 j-agent crate——新增 JAgentBackend 实现 AgentBackend trait，支持流式 Agent Loop、工具审批/回传、中断处理、会话 resume。依赖 #27
-    depends_on: [channel-model-unify]
+  - slug: message-persistence
+    description: Chat 消息持久化与历史加载闭环
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: true
+    notes: 基于 2026-05-11 explore，Chat 主链路已形成发送、流式、落盘、继续加载闭环
+
+  - slug: error-toast
+    description: 基础错误提示与边界处理
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 基础 toast / boundary 已在；更高阶可观测性转入 #runtime-observability-gates
+
+  - slug: file-browser
+    description: 文件树浏览与基础文件操作
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 基础文件树已可用
+
+  - slug: branding-cleanup
+    description: 历史 Proma 痕迹清理
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 作为历史完成项保留
+
+  - slug: build-packaging
+    description: 基础打包配置
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 基础 bundle 配置已在
+
+  - slug: readme-docs
+    description: 基础文档入口
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 基础入口已建立；roadmap 真相校准由本次 update 继续承接
+
+  # ===== Phase B: P0 能力闭环 =====
+  - slug: stream-protocol-unify
+    description: 统一 Chat / Agent 的输入、流式事件和中断回传协议，消除字段错位与旧协议长期并存
+    depends_on: [channel-model-unify, kernel-trait-abstraction]
+    status: planned
+    feature: null
+    minimal_loop: true
+    notes: 覆盖 ChatSendInput 字段消费、Chat delta/content 口径、respond_agent_interrupt 统一化
+
+  - slug: agent-history-replay-closure
+    description: Agent 历史回放闭环——补齐 replay 数据源、fork、rewind、workspace move 与恢复后继续工作能力
+    depends_on: [stream-protocol-unify, message-persistence]
+    status: planned
+    feature: null
+    minimal_loop: true
+    notes: 当前与 Proma 的最高价值差距；这是 Agent 从“当前会话可用”升级到“长期工作台可信”的关键断点
+
+  - slug: agent-runtime-stability-recovery
+    description: Agent 运行时稳定性与恢复——超时、重试、中断、恢复后的状态一致性与可观测性
+    depends_on: [stream-protocol-unify, agent-history-replay-closure]
     status: planned
     feature: null
     minimal_loop: false
-    notes: jcli 仓库已发布 j-agent crate。保留 CLI 实现作为 fallback，通过 AgentBackend trait 切换
+    notes: 目标是显著降低日常使用中的断链和假恢复
 
-  # ===== Phase D: 发布就绪 (P3) =====
-  - slug: file-browser
-    description: 文件树操作 (open/delete/rename)
-    depends_on: []
-    status: done
+  # ===== Phase C: P1 体验与治理闭环 =====
+  - slug: governance-bidirectional-sync
+    description: 工作区治理双向同步——补齐 Skills / Hooks / MCP / workspace 配置的真实持久化与同步链路
+    depends_on: [kernel-trait-abstraction]
+    status: in-progress
     feature: null
     minimal_loop: false
-    notes: 2026-05-10 Phase D final audit——files.rs 已有 delete_file/rename_file/list_directory, RightSidePanel 已集成 FileBrowser
+    notes: 现有治理面已较完整，但 2026-05-11 快照下仍不应把所有子链路视为完全闭环
 
-  - slug: branding-cleanup
-    description: @proma/* 包名重命名为 @jgui/*
-    depends_on: []
-    status: done
+  - slug: chat-tools-ui
+    description: Chat Tools 管理 UI 基线
+    depends_on: [governance-bidirectional-sync]
+    status: in-progress
     feature: null
     minimal_loop: false
-    notes: 2026-05-10 Phase D final audit——依赖项已固定，无待重命名的 proma 包
+    notes: UI 已有，但 ToolSettings / 运行时闭环仍需 #toolsettings-runtime-closure 收口
 
-  - slug: readme-docs
-    description: README 完善 + 用户指南
-    depends_on: []
-    status: done
+  - slug: toolsettings-runtime-closure
+    description: ToolSettings / Chat Tools 运行时闭环——工具列表、启停、配置、校验与真实 runtime 生效一致
+    depends_on: [governance-bidirectional-sync, stream-protocol-unify, chat-tools-ui]
+    status: planned
     feature: null
     minimal_loop: false
-    notes: 2026-05-10 Phase D final audit——CLAUDE.md + ARCHITECTURE.md + attention.md 构成充分文档入口
+    notes: 解决“设置页存在但后端注册/运行时行为未完全证实”的问题
 
-  - slug: build-packaging
-    description: Tauri bundle (Windows/macOS/Linux)
-    depends_on: []
-    status: done
+  - slug: search-content-closure
+    description: 搜索内容闭环——从标题搜索升级到消息内容搜索、命中预览、消息锚点打开与跨模式一致性
+    depends_on: [message-persistence]
+    status: planned
     feature: null
     minimal_loop: false
-    notes: 2026-05-10 Phase D final audit——tauri.conf.json 已配置 bundle 元信息, cargo check + bun run test 通过
+    notes: 当前标题搜索可用，但内容搜索仍缺稳定后端闭环证据
+
+  - slug: session-archive
+    description: 会话归档与归档视图一致性
+    depends_on: [search-content-closure, agent-history-replay-closure]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 放在搜索与回放闭环之后推进，避免归档成为新的伪闭环入口
+
+  # ===== Phase D: P1 质量与 Proma 证据收口 =====
+  - slug: runtime-observability-gates
+    description: 关键闭环的错误暴露、回归测试与验收门禁
+    depends_on: [stream-protocol-unify, agent-runtime-stability-recovery, toolsettings-runtime-closure, search-content-closure]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 重点覆盖 Agent history replay、message-content search、ToolSettings runtime closure 三个高风险域
+
+  - slug: proma-parity-evidence-pass
+    description: Proma 对标证据收口——截图、录屏、验收记录与代码证据统一
+    depends_on: [agent-history-replay-closure, toolsettings-runtime-closure, search-content-closure, runtime-observability-gates]
+    status: in-progress
+    feature: null
+    minimal_loop: false
+    notes: 保留原有证据收集方向，但以后只在关键闭环完成后再推进通过判定
 
   - slug: tdd-coverage
-    description: 测试覆盖达标 + Rust 编码规约合规收口——90 pub item 补 /// 文档、6 处长路径引用改 use、9 处魔法值提取 const、1 处 .clone() 优化、clippy deny(all) 门禁
-    depends_on: []
-    status: done
+    description: 测试与规约门禁升级——从“已有大量测试”升级到“能真正挡住高价值闭环回归”
+    depends_on: [runtime-observability-gates]
+    status: in-progress
     feature: null
     minimal_loop: false
-    notes: 2026-05-10 final audit——136 Rust + 54 frontend tests 全部通过, clippy -D warnings 零告警(仅已知 j-cli 的 1 warning)
+    notes: 旧口径过于乐观；当前改为持续收口项，重点看高价值闭环而不是总数
+
+  # ===== Phase E: P2 自我开发闭环与超越 Proma =====
+  - slug: agent-engine-jagent
+    description: 评估并集成 j-agent 原生后端，减少 CLI 兼容层复杂度
+    depends_on: [channel-model-unify, stream-protocol-unify]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 价值在于更强控制力与更少兼容层；不应先于当前闭环问题
+
+  - slug: dogfooding-self-development-loop
+    description: 自开发闭环——让 j-gui 能稳定承担“用自己开发自己”的日常工作流
+    depends_on: [agent-history-replay-closure, toolsettings-runtime-closure, search-content-closure, runtime-observability-gates, proma-parity-evidence-pass]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: “超越 Proma”的首个落点不是更多功能，而是更可靠的自使用能力
+
+  # ===== Phase F: 远期 =====
+  - slug: remote-mobile-access
+    description: 桌面远程服务 + 移动端远程访问
+    depends_on: [kernel-trait-abstraction]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 远期保留，不参与当前 v1 能力闭环判断

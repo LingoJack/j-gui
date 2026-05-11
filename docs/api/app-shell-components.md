@@ -4,37 +4,37 @@ entry: app-shell-components
 category: React Components
 status: draft
 source_files:
+  - src/main.tsx
   - src/components/app-shell/AppShell.tsx
   - src/components/app-shell/LeftSidebar.tsx
-  - src/components/app-shell/MainArea.tsx
+  - src/components/tabs/MainArea.tsx
   - src/components/app-shell/RightSidePanel.tsx
   - src/components/app-shell/SearchDialog.tsx
-  - src/components/app-shell/WelcomePage.tsx
-summary: 工作台外壳、侧栏、主区、文件面板、搜索和欢迎页组件参考。
-last_reviewed: 2026-05-09
+  - src/components/welcome/WelcomeView.tsx
+summary: 工作台外壳、左侧栏、主区、右侧面板、全局搜索和空状态启动器的组件参考。
+last_reviewed: 2026-05-11
 ---
 
 # app-shell-components
 
 ## 概述
 
-这组组件构成 j-gui 当前桌面工作台外壳：
+这组组件构成 j-gui 当前工作台外壳。以 2026-05-11 的当前实现快照来看，职责已经分成两层：
+
+- `src/main.tsx` 负责全局初始化，例如 theme、Agent settings、通知、全局监听器和 tab 持久化恢复。
+- `AppShell` 负责三栏布局装配。
+- `MainArea` 负责主区的 tab 容器和设置浮窗挂载。
+- `SearchDialog` 提供跨 Chat / Agent 的全局搜索。
+- `WelcomeView` 不再是“纯欢迎页”，而是主区无 tab 时的空状态启动器。
+
+当前涉及的核心组件：
 
 - `AppShell`
 - `LeftSidebar`
 - `MainArea`
 - `RightSidePanel`
 - `SearchDialog`
-- `WelcomePage`
-
-它们负责：
-
-- 会话与 tab 的外壳组织
-- 左侧模式切换与会话列表
-- 主区内容切换
-- 跨模式搜索
-- 右侧文件浏览器
-- 无 provider 时的欢迎引导
+- `WelcomeView`
 
 ## 组件参考
 
@@ -44,76 +44,42 @@ last_reviewed: 2026-05-09
 
 职责：
 
-- 页面总装配
-- 初始加载配置和双模式 session 列表
-- 根据当前 active tab 拉取 chat / agent 消息
-- 打开设置、搜索和 toast 容器
+- 提供工作台三栏布局。
+- 根据当前模式和当前会话 ID 决定是否显示右侧面板。
+- 通过 `AppShellProvider` 下发 shell 级上下文。
 
-主要输入：
+要点：
 
-- 无 props
-
-主要输出：
-
-- 渲染 `LeftSidebar`、`MainArea`、`RightSidePanel`、`SettingsDialog`、`SearchDialog`、`ToastContainer`
-
-行为：
-
-- 挂载时读取 `getAgentConfig()`
-- 挂载时并行读取 `listSessions()` 与 `listAgentSessions()`
-- `activeTab` 切换时按 `type` 读取 `getSessionMessages()` 或 `getAgentSession()`
-- 通过 `deriveSessionTitle()` 回填标题覆盖
+- 不再承担应用初始化、会话列表加载或消息回填，这些逻辑已前移到 `src/main.tsx` 和各自视图内部。
+- 主区组件来自 `src/components/tabs/MainArea.tsx`，不是旧路径 `src/components/app-shell/MainArea.tsx`。
 
 ### `LeftSidebar`
 
 文件：`src/components/app-shell/LeftSidebar.tsx`
 
-props：
-
-- `onOpenSettings: () => void`
-
 职责：
 
-- 切换 Chat / Agent 模式
-- 展示当前模式下的会话列表
-- 新建 / 切换 / 删除 / 重命名会话
-- 控制侧栏折叠
+- 承载模式切换、会话列表入口和侧栏交互。
+- 与 tab / session 状态联动，但不是全局初始化入口。
 
-主要本地状态：
+说明：
 
-- `pinnedIds`
-- `showPinnedOnly`
-- `editingId`
-- `editValue`
-
-行为：
-
-- 按当前 `activeTab.type` 每 5 秒刷新一次会话列表
-- 会话按 `今天 / 昨天 / 更早` 分组
-- 双击会话标题进入重命名
-- 折叠态保留新建、只看置顶和设置入口
+- 该组件当前仍处于活跃开发区域，文档只保留稳定职责，不枚举易变的局部交互细节。
 
 ### `MainArea`
 
-文件：`src/components/app-shell/MainArea.tsx`
-
-props：
-
-- `onOpenSettings: () => void`
+文件：`src/components/tabs/MainArea.tsx`
 
 职责：
 
-- 管理 tab 条
-- 在无 tab 时创建默认 chat tab
-- 渲染 `ChatView` 或 `AgentView`
-- 流式中关闭 tab 时弹确认框
+- 组合 `TabBar` 和当前 tab 内容区。
+- 在无 tab 时渲染 `WelcomeView`。
+- 在主区外层常驻挂载 `SettingsDialog`。
 
-行为：
+要点：
 
-- `Ctrl+Tab` / `Ctrl+Shift+Tab` 切换 tab
-- 离开 agent tab 时调用 `stopAgent()`
-- 无 provider 时显示 `WelcomePage`
-- 有 provider 但无 tab 时显示“新建标签页”空态
+- 当前 `MainArea` 不直接创建默认 tab。
+- 当 `tabs` 非空但 `activeTabId` 为空时，会做一次防御性回填，自动激活第一个 tab。
 
 ### `RightSidePanel`
 
@@ -121,91 +87,79 @@ props：
 
 职责：
 
-- 提供右侧文件树浏览器
+- 根据当前模式渲染统一的 `SidePanel`。
+- Agent 模式下向 `SidePanel` 传入 `sessionPath`。
+- Chat 模式下也可以打开右侧面板，但 `sessionPath` 为空。
 
-主要本地状态：
+要点：
 
-- `tree`
-- `currentPath`
-- `loading`
-
-行为：
-
-- 默认从 `"."` 目录加载
-- 展开目录时按需异步加载子节点
-- 忽略 `.git`、`node_modules`、`target`
-- 提供 breadcrumb 导航和刷新按钮
+- 它不再是旧文档所述的“独立文件树浏览器”。
+- 当前真正的面板能力由 `src/components/agent/SidePanel.tsx` 承担。
 
 ### `SearchDialog`
 
 文件：`src/components/app-shell/SearchDialog.tsx`
 
-props：
+职责：
 
-- `open`
-- `onClose`
-- `chatSessions`
-- `agentSessions`
-- `onSelect`
+- 提供跨 Chat / Agent 会话的全局搜索弹窗。
+- 同时支持标题匹配和消息内容匹配。
+
+关键行为：
+
+- 标题匹配走前端即时过滤。
+- 消息内容匹配经过 debounce 后调用 IPC 搜索。
+- 支持 IME composition 保护、上下键导航、回车打开和 `Esc` 关闭。
+- Agent 结果可附带工作区名称标签。
+
+边界：
+
+- 这是会话/消息搜索，不是工作区文件搜索。
+
+### `WelcomeView`
+
+文件：`src/components/welcome/WelcomeView.tsx`
 
 职责：
 
-- 提供跨 Chat / Agent 的会话搜索弹窗
+- 在当前模式没有打开 tab 时负责“启动一个可用会话”。
+- 优先复用已有非归档会话；没有可复用会话时再创建 draft 会话。
 
-行为：
+要点：
 
-- 合并两组 session 后按 `updatedAt` 倒序
-- 搜索范围只包含 `title` 和 `id`
-- 支持 IME composing 保护
-- 支持 `ArrowUp` / `ArrowDown` / `Enter` / `Escape`
-
-### `WelcomePage`
-
-文件：`src/components/app-shell/WelcomePage.tsx`
-
-props：
-
-- `onOpenSettings`
-- `version`
-
-职责：
-
-- 在未配置 provider 时展示引导页
-
-内容：
-
-- 产品欢迎标题
-- 三步开始使用提示
-- 打开设置按钮
-- 版本号
+- 它不是旧版那种静态欢迎页。
+- 用户通常会直接进入完整的 `ChatView` 或 `AgentView`，而不是停留在文案空页。
+- Agent 模式下会等待 agent settings 就绪后再做初始化判断。
 
 ## 组件关系
 
 ```text
-AppShell
-  -> LeftSidebar
-  -> MainArea
-     -> WelcomePage | ChatView | AgentView
-  -> RightSidePanel?
-  -> SearchDialog
-  -> SettingsDialog
-  -> ToastContainer
+src/main.tsx
+  -> App
+     -> AppShell
+        -> LeftSidebar
+        -> MainArea
+           -> TabBar
+           -> WelcomeView | TabContent
+           -> SettingsDialog
+        -> RightSidePanel?
+        -> SearchDialog
 ```
 
 ## 关键边界
 
-- 这组组件直接依赖当前工作台状态 atoms，不是通用布局组件库。
-- `AppShell` 负责数据装填，`MainArea` 负责 tab 内容选择，两者职责分开。
-- `SearchDialog` 只处理会话搜索，不搜索消息正文。
-- `RightSidePanel` 当前是浏览器式文件树，不包含“添加工作区目录”这类更高层管理能力。
-- `LeftSidebar` 当前会话列表是按 active tab 类型单侧刷新，不是同时维护两套实时列表。
+- 应用初始化已经不在 `AppShell` 内部，查启动流程应先看 [src/main.tsx](/E:/Coding/AI/j-gui/src/main.tsx)。
+- `RightSidePanel` 现在是 Chat / Agent 共用入口，不应再按“Agent 专属文件树”理解。
+- `SearchDialog` 已经覆盖消息正文搜索，不再局限于 `title` / `id`。
+- `WelcomeView` 当前承担的是会话启动逻辑，不是品牌欢迎展示页。
 
 ## 相关条目
 
+- [src/main.tsx](/E:/Coding/AI/j-gui/src/main.tsx)
 - [src/components/app-shell/AppShell.tsx](/E:/Coding/AI/j-gui/src/components/app-shell/AppShell.tsx)
 - [src/components/app-shell/LeftSidebar.tsx](/E:/Coding/AI/j-gui/src/components/app-shell/LeftSidebar.tsx)
-- [src/components/app-shell/MainArea.tsx](/E:/Coding/AI/j-gui/src/components/app-shell/MainArea.tsx)
+- [src/components/tabs/MainArea.tsx](/E:/Coding/AI/j-gui/src/components/tabs/MainArea.tsx)
 - [src/components/app-shell/RightSidePanel.tsx](/E:/Coding/AI/j-gui/src/components/app-shell/RightSidePanel.tsx)
 - [src/components/app-shell/SearchDialog.tsx](/E:/Coding/AI/j-gui/src/components/app-shell/SearchDialog.tsx)
-- [src/components/app-shell/WelcomePage.tsx](/E:/Coding/AI/j-gui/src/components/app-shell/WelcomePage.tsx)
+- [src/components/welcome/WelcomeView.tsx](/E:/Coding/AI/j-gui/src/components/welcome/WelcomeView.tsx)
 - [frontend-app-shell](/E:/Coding/AI/j-gui/.codestable/architecture/frontend-app-shell.md)

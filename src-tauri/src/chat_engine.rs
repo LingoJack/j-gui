@@ -10,6 +10,8 @@ static SESSION_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+const TOKEN_COUNT_UNSUPPORTED: u32 = 0;
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum ChatEvent {
@@ -186,7 +188,9 @@ impl ChatEngine {
                 self.persist_response(&session_id, &full_text)?;
                 // TODO(#26): extract token count from LLM response — kernel API
                 // currently returns only the full response text, not usage stats.
-                let _ = on_event.send(ChatEvent::Done { total_tokens: 0 });
+                let _ = on_event.send(ChatEvent::Done {
+                    total_tokens: TOKEN_COUNT_UNSUPPORTED,
+                });
                 crate::commands::chat::clear_stopped_session(&session_id);
                 Ok(())
             }
@@ -254,10 +258,10 @@ impl ChatEngine {
     }
 
     pub fn delete_message(&self, session_id: &str, pair_index: usize) -> Result<(), String> {
+        Self::validate_session_id(session_id)?;
         let _lock = SESSION_WRITE_LOCK
             .lock()
             .map_err(|e| format!("锁定会话写入失败: {}", e))?;
-        Self::validate_session_id(session_id)?;
         self.chat_kernel
             .delete_message(session_id, pair_index)
             .map_err(|e| e.to_string())

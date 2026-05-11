@@ -9,6 +9,10 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use tauri::ipc::Channel;
 
+const CLAUDE_GRACE_PERIOD_MS: u64 = 500;
+const LOG_LINE_TRUNCATE_SDK: usize = 200;
+const LOG_LINE_TRUNCATE_UNKNOWN: usize = 120;
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "event", content = "data", rename_all = "camelCase")]
 pub enum AgentEvent {
@@ -100,11 +104,44 @@ impl AgentEngine {
         let stderr = process.stderr.take().ok_or("无法获取 claude stderr")?;
         let stdin = process.stdin.take().ok_or("无法获取 claude stdin")?;
 
-        // Spawn background thread to read stdout
-        let event_channel = on_event.clone();
-        let mode = permission_mode.to_string();
-        let sid = session_id.to_string();
-        let stdout_thread = std::thread::spawn(move || {
+        let stdout_thread = Self::spawn_stdout_reader(
+            stdout,
+            on_event.clone(),
+            permission_mode.to_string(),
+            session_id.to_string(),
+        );
+
+        // Background thread to log stderr
+        let stderr_thread = std::thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for l in reader.lines().map_while(Result::ok) {
+                eprintln!("[claude stderr] {}", l);
+            }
+        });
+
+        let transcript_path = agent_session::agent_sessions_dir()
+            .join(session_id)
+            .join("transcript.jsonl");
+
+        Ok(Self {
+            backend: AgentBackend::Cli {
+                process: Some(process),
+                stdin: Some(stdin),
+                stdout_thread: Some(stdout_thread),
+                stderr_thread: Some(stderr_thread),
+            },
+            session_id: session_id.to_string(),
+            transcript_path,
+        })
+    }
+
+    fn spawn_stdout_reader(
+        stdout: std::process::ChildStdout,
+        on_event: Channel<AgentEvent>,
+        mode: String,
+        session_id: String,
+    ) -> JoinHandle<()> {
+        std::thread::spawn(move || {
             let reader = BufReader::new(stdout);
             for line in reader.lines() {
                 let line = match line {
@@ -135,7 +172,6 @@ impl AgentEngine {
                         }
                         other => other,
                     };
-                    // Build timeline item before send (send moves event)
                     let timeline_item = match &event {
                         AgentEvent::AssistantContent { text } => Some(AgentTimelineItem {
                             id: agent_session::generate_item_id(),
@@ -191,47 +227,29 @@ impl AgentEngine {
                         }
                         _ => None,
                     };
-                    // Channel send fails = frontend unmounted, stop reading
-                    if event_channel.send(event).is_err() {
+                    if on_event.send(event).is_err() {
                         return;
                     }
                     if let Some((tool_id, content)) = tool_result_update {
                         if let Err(err) =
-                            agent_session::update_tool_call_result(&sid, &tool_id, &content)
+                            agent_session::update_tool_call_result(&session_id, &tool_id, &content)
                         {
-                            eprintln!("[AgentEngine::update_tool_call_result] session_id={}, tool_id={}, error={}", sid, tool_id, err);
+                            eprintln!(
+                                "[AgentEngine::update_tool_call_result] session_id={}, tool_id={}, error={}",
+                                session_id, tool_id, err
+                            );
                         }
                     }
                     if let Some(item) = timeline_item {
-                        if let Err(err) = agent_session::append_timeline_item(&sid, &item) {
-                            eprintln!("[AgentEngine::append_timeline_item] session_id={}, item_id={}, kind={}, error={}", sid, item.id, item.kind, err);
+                        if let Err(err) = agent_session::append_timeline_item(&session_id, &item) {
+                            eprintln!(
+                                "[AgentEngine::append_timeline_item] session_id={}, item_id={}, kind={}, error={}",
+                                session_id, item.id, item.kind, err
+                            );
                         }
                     }
                 }
             }
-        });
-
-        // Background thread to log stderr
-        let stderr_thread = std::thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for l in reader.lines().map_while(Result::ok) {
-                eprintln!("[claude stderr] {}", l);
-            }
-        });
-
-        let transcript_path = agent_session::agent_sessions_dir()
-            .join(session_id)
-            .join("transcript.jsonl");
-
-        Ok(Self {
-            backend: AgentBackend::Cli {
-                process: Some(process),
-                stdin: Some(stdin),
-                stdout_thread: Some(stdout_thread),
-                stderr_thread: Some(stderr_thread),
-            },
-            session_id: session_id.to_string(),
-            transcript_path,
         })
     }
 
@@ -353,7 +371,6 @@ impl AgentEngine {
                 return Err("当前 Agent 不支持中断响应".to_string());
             }
         };
-        agent_session::update_interrupt_response(&self.session_id, interrupt_id, content)?;
         let msg = serde_json::json!({
             "type": "user",
             "message": {
@@ -366,7 +383,8 @@ impl AgentEngine {
             "{}",
             serde_json::to_string(&msg).map_err(|e| e.to_string())?
         )
-        .map_err(|e| format!("写入 claude stdin 失败: {}", e))
+        .map_err(|e| format!("写入 claude stdin 失败: {}", e))?;
+        agent_session::update_interrupt_response(&self.session_id, interrupt_id, content)
     }
 
     pub fn close(&mut self) {
@@ -384,7 +402,7 @@ impl AgentEngine {
                 // Give the process a short grace period to exit naturally after stdin close,
                 // so it can flush remaining output before we force-kill.
                 if let Some(mut process) = process.take() {
-                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    std::thread::sleep(std::time::Duration::from_millis(CLAUDE_GRACE_PERIOD_MS));
                     match process.try_wait() {
                         Ok(Some(_)) => { /* exited naturally */ }
                         Ok(None) | Err(_) => {
@@ -461,7 +479,7 @@ fn parse_sdk_line(line: &str) -> Vec<AgentEvent> {
     if msg_type.is_empty() {
         eprintln!(
             "[warn] parse_sdk_line: missing or non-string 'type' field in SDK line: {}",
-            &line[..line.len().min(200)]
+            &line[..line.len().min(LOG_LINE_TRUNCATE_SDK)]
         );
     }
 
@@ -489,7 +507,7 @@ fn parse_sdk_line(line: &str) -> Vec<AgentEvent> {
             eprintln!(
                 "[warn] parse_sdk_line: unknown msg_type '{}' from SDK line: {}",
                 &msg_type,
-                &line[..line.len().min(120)]
+                &line[..line.len().min(LOG_LINE_TRUNCATE_UNKNOWN)]
             );
             Vec::new()
         }

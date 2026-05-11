@@ -93,8 +93,8 @@ src/main.tsx
 | Trait | 文件 | 方法数 | 说明 |
 |-------|------|--------|------|
 | `ChatKernel` | `kernel/chat.rs` | 11 | Chat 流式 + 会话 CRUD + 固定/归档 |
-| `ConfigKernel` | `kernel/config.rs` | 14 | Channel CRUD + Alias + SystemPrompt + YamlConfig + 主题 |
-| `GovernanceKernel` | `kernel/governance.rs` | 18 | Skills/Hooks/MCP CRUD + 工作区管理 + CC SDK 导入 |
+| `ConfigKernel` | `kernel/config.rs` | 18 | Channel CRUD + Alias + SystemPrompt + YamlConfig + 主题/系统 |
+| `GovernanceKernel` | `kernel/governance.rs` | 21 | Skills/Hooks/MCP CRUD + 工作区管理 + CC SDK 导入 |
 
 所有 trait 均标注 `Send + Sync`，`ConfigKernel` 和 `GovernanceKernel` 通过 `#[mockall::automock]` 支持 mock 测试。
 
@@ -134,7 +134,7 @@ src/main.tsx
 
 **测试覆盖**：Rust **136 测试**（kernel traits + adapter + commands） + 前端 **54 测试**（7 文件）。
 
-**数据目录**：GUI 配置与附件存 `%APPDATA%/j-gui/` (Windows) / `~/.j-gui/` (Unix)；Chat/Agent 会话存 `~/.jdata/`（j-cli constants）。
+**数据目录**：GUI 配置与附件存 `%APPDATA%/j-gui/` (Windows) / `~/.jgui/` (Unix)；Chat/Agent 会话存 `~/.jdata/`（j-cli constants）。
 
 ### 2.4 前端 IPC 层与全局事件监听
 
@@ -272,7 +272,7 @@ Claude Code 生态中，`npx skills add` 或 `npx @anthropic-ai/agent-skills` �
 - **设置面板**已从单体大文件拆分为 7 个标签组件 + 原语库，Channel 配置支持自动保存（debounce）+ 测试连接 + 拉取模型
 - **Agent 审批**有三种 kind（permission / ask_user / plan），分别由三个独立 Banner 处理
 - **后端 Agent 引擎**已移除 `-p` flag（单次模式），支持多轮 memory；`respond_interrupt` 签名改为 `content: &str`
-- **生成中止**：Chat 端新增 `stop_generation()` + `STOPPED_SESSIONS` 全局状态，当前为 TODO 半完成态
+- **生成中止**：Chat 端新增 `stop_generation()` + `STOPPED_SESSIONS` 全局状态，通过 STOPPED_SESSIONS 标志 + Channel drop 双重取消机制实现
 - **Kernel trait 隔离**：`ChatKernel` / `ConfigKernel` / `GovernanceKernel` 三个 trait 定义在 `kernel/` 下，`JcliAdapter` 是唯一实现。Tauri 命令层**不得直接导入 `j_cli::`**——所有 j-cli 依赖通过 trait 接口访问。`governance.rs` 中的少量遗留直接导入将在后续解耦
 - **`_impl` 测试模式**：每个 Tauri 命令的纯逻辑层放在 `fn foo_impl(kernel: &dyn Trait, ...)` 中，Tauri `#[tauri::command]` 函数仅做 managed state 提取和委托。这使得业务逻辑可以脱离 Tauri 运行时在纯 Rust 单元测试中验证
 

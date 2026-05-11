@@ -6,7 +6,7 @@
  * 确保所有现有派生 atoms 无需修改。
  */
 
-import { atom } from 'jotai'
+import { atom, type PrimitiveAtom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 import {
   streamingConversationIdsAtom,
@@ -44,13 +44,13 @@ export interface PersistedTabState {
 // ===== 核心 Atoms =====
 
 /** 所有打开的标签页列表（有序，控制 TabBar 显示顺序） */
-export const tabsAtom = atom<TabItem[]>([])
+export const tabsAtom: PrimitiveAtom<TabItem[]> = atom([])
 
 /** 当前激活的标签 ID */
-export const activeTabIdAtom = atom<string | null>(null)
+export const activeTabIdAtom = atom(null) as PrimitiveAtom<string | null>
 
 /** 标签页 MRU（最近使用）顺序，最近使用的 ID 排在前面 */
-export const tabMruAtom = atom<string[]>([])
+export const tabMruAtom: PrimitiveAtom<string[]> = atom([])
 
 /** 侧边栏是否收起（持久化） */
 export const sidebarCollapsedAtom = atomWithStorage<boolean>(
@@ -66,7 +66,7 @@ export interface TabMinimapItem {
   avatar?: string
   model?: string
 }
-export const tabMinimapCacheAtom = atom<Map<string, TabMinimapItem[]>>(new Map())
+export const tabMinimapCacheAtom: PrimitiveAtom<Map<string, TabMinimapItem[]>> = atom(new Map())
 
 // ===== 派生 Atoms =====
 

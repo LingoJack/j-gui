@@ -12,9 +12,10 @@ import * as React from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { appModeAtom, type AppMode } from '@/atoms/app-mode'
 import { conversationsAtom, currentConversationIdAtom } from '@/atoms/chat-atoms'
-import { agentSessionsAtom, currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
+import { agentSessionsAtom, currentAgentSessionIdAtom, currentAgentWorkspaceIdAtom } from '@/atoms/agent-atoms'
 import { tabsAtom } from '@/atoms/tab-atoms'
 import { useOpenSession } from '@/hooks/useOpenSession'
+import { useCreateSession } from '@/hooks/useCreateSession'
 import { Bot, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -26,14 +27,16 @@ const modes: { value: AppMode; label: string; icon: React.ReactNode }[] = [
 export function ModeSwitcher(): React.ReactElement {
   const [mode, setMode] = useAtom(appModeAtom)
   const openSession = useOpenSession()
+  const { createChat, createAgent } = useCreateSession()
   const conversations = useAtomValue(conversationsAtom)
   const agentSessions = useAtomValue(agentSessionsAtom)
   const currentConversationId = useAtomValue(currentConversationIdAtom)
   const currentAgentSessionId = useAtomValue(currentAgentSessionIdAtom)
+  const currentAgentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
   const tabs = useAtomValue(tabsAtom)
 
   /** 尝试恢复目标模式下的上一个对话/会话，按优先级 fallback */
-  const restoreSession = React.useCallback((targetMode: AppMode) => {
+  const restoreSession = React.useCallback(async (targetMode: AppMode) => {
     const isChatMode = targetMode === 'chat'
     const sessions = isChatMode ? conversations : agentSessions
     const lastId = isChatMode ? currentConversationId : currentAgentSessionId
@@ -58,13 +61,25 @@ export function ModeSwitcher(): React.ReactElement {
       openSession(targetMode, recent.id, recent.title)
       return
     }
-    // 4. 无任何对话，仅切换模式
+    // 4. 无任何会话时创建一个真实目标会话，避免只切外壳状态但主内容仍停留在旧 tab
+    if (isChatMode) {
+      await createChat({ draft: true })
+      return
+    }
+
+    if (currentAgentWorkspaceId) {
+      const createdSessionId = await createAgent({ draft: true })
+      if (createdSessionId) {
+        return
+      }
+    }
+
     setMode(targetMode)
-  }, [openSession, conversations, agentSessions, currentConversationId, currentAgentSessionId, tabs, setMode])
+  }, [openSession, conversations, agentSessions, currentConversationId, currentAgentSessionId, tabs, createChat, createAgent, currentAgentWorkspaceId, setMode])
 
   const handleModeSwitch = React.useCallback((targetMode: AppMode) => {
     if (targetMode === mode) return
-    restoreSession(targetMode)
+    void restoreSession(targetMode)
   }, [mode, restoreSession])
 
   return (

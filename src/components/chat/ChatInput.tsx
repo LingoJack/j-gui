@@ -227,7 +227,7 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
   }, [])
 
   return (
-    <div className="px-2.5 pb-2.5 md:px-[18px] md:pb-[18px]" data-input-mode="chat">
+    <div className="shrink-0 px-2.5 pb-2.5 md:px-[18px] md:pb-[18px]" data-input-mode="chat">
         {/* 卡片式输入容器 — 对标 Cherry Studio: border-radius 17px, 0.5px border */}
         <div
           className={cn(

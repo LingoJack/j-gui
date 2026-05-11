@@ -42,7 +42,7 @@ export function PermissionBanner({ sessionId }: PermissionBannerProps): React.Re
   const setStreamingStates = useSetAtom(agentStreamingStatesAtom)
   const requests = allRequests.get(sessionId) ?? []
   const [responding, setResponding] = React.useState(false)
-  const respondRef = React.useRef<(behavior: 'allow' | 'deny', alwaysAllow?: boolean) => void>()
+  const respondRef = React.useRef<((behavior: 'allow' | 'deny', alwaysAllow?: boolean) => void) | null>(null)
 
   const request = requests[0] ?? null
 

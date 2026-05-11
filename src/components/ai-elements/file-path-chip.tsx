@@ -102,11 +102,10 @@ export function FilePathChip({ filePath, basePath, basePaths, className }: FileP
   }, [trimmedPath, cleanPath, isAbsolute, candidateBases])
 
   const handleClick = React.useCallback(() => {
-    const bases = candidateBases.length > 0 ? candidateBases : undefined
-    ipc.previewFile(cleanPath, bases).catch((error: unknown) => {
+    ipc.openFile(displayPath).catch((error: unknown) => {
       console.error('[FilePathChip] 预览文件失败:', error)
     })
-  }, [cleanPath, candidateBases])
+  }, [displayPath])
 
   return (
     <button

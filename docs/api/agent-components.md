@@ -9,8 +9,8 @@ source_files:
   - src/components/agent/PermissionBanner.tsx
   - src/components/agent/TaskProgressCard.tsx
   - src/components/agent/ToolCallDisplay.tsx
-summary: Agent 主视图、时间线、审批横幅、任务进度卡片和工具调用展示组件参考。
-last_reviewed: 2026-05-09
+summary: Agent 主视图、消息区、审批横幅、任务进度卡片和工具调用展示组件参考。
+last_reviewed: 2026-05-11
 ---
 
 # agent-components
@@ -96,25 +96,20 @@ last_reviewed: 2026-05-09
 
 职责：
 
-- 渲染当前 Agent tab 的消息区
+- 渲染当前 Agent 会话的消息区
 - 空态时展示引导文案
-- 首先展示 `TaskProgressCard`
-- 按消息类型在 `ToolCallDisplay` 和 `MessageBubble` 之间切换
+- 统一渲染持久化消息与实时 SDK 消息
+- 在流式过程中展示运行态、重试态和压缩态
 
 主要输入：
 
 - 无 props
 
-主要依赖：
-
-- `agentMessagesAtom`
-- `agentStreamingAtom`
-
 渲染规则：
 
-- `messages.length === 0 && !streaming` 时显示空态
-- `message.toolCall` 存在时走 `ToolCallDisplay`
-- 否则走聊天气泡 `MessageBubble`
+- 无内容且未流式时显示空态
+- 当前主渲染路径基于 `SDKMessageRenderer` 的分组结果，不再使用旧文档描述的 `MessageBubble`
+- 流式过程中会按状态补充运行指示器、重试提示和压缩指示器
 
 ### `PermissionBanner`
 
@@ -190,14 +185,14 @@ props：
 AgentView
   -> AgentMessages
      -> TaskProgressCard
-     -> ToolCallDisplay | MessageBubble
+     -> SDKMessageRenderer / ToolCallDisplay
   -> PermissionBanner?
   -> ChatInput
 ```
 
 ## 关键边界
 
-- 这组组件强依赖 Jotai atoms 和 `src/lib/tauri.ts`，不是脱离工作台可独立复用的展示组件。
+- 这组组件强依赖 Jotai atoms 和 `src/lib/ipc.ts`，不是脱离工作台可独立复用的展示组件。
 - `AgentMessages` 自己不做事件消费，事件消费全部由 `AgentView` 完成。
 - `PermissionBanner` 只负责当前一个 interrupt，不维护审批队列。
 - `TaskProgressCard` 的任务识别来自工具名集合，不是通用任务协议。

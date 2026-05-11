@@ -10,7 +10,7 @@
  * 使用 localStorage 作为缓存，避免页面加载时闪烁。
  */
 
-import { atom } from 'jotai'
+import { atom, type PrimitiveAtom } from 'jotai'
 import type { ThemeMode, ThemeStyle } from '@/types'
 import * as ipc from '@/lib/ipc'
 
@@ -71,13 +71,13 @@ function cacheThemeStyle(style: ThemeStyle): void {
 }
 
 /** 用户选择的主题模式 */
-export const themeModeAtom = atom<ThemeMode>(getCachedThemeMode())
+export const themeModeAtom: PrimitiveAtom<ThemeMode> = atom(getCachedThemeMode())
 
 /** 用户选择的特殊风格 */
-export const themeStyleAtom = atom<ThemeStyle>(getCachedThemeStyle())
+export const themeStyleAtom: PrimitiveAtom<ThemeStyle> = atom(getCachedThemeStyle())
 
 /** 系统当前是否为深色模式 */
-export const systemIsDarkAtom = atom<boolean>(true)
+export const systemIsDarkAtom: PrimitiveAtom<boolean> = atom(true)
 
 /** 派生：最终解析的主题（light | dark） */
 export const resolvedThemeAtom = atom<'light' | 'dark'>((get) => {

@@ -127,6 +127,11 @@ function buildPreviewUrl(baseUrl: string, provider: ProviderType): string {
 /** auto-save 防抖延迟 */
 const AUTO_SAVE_DELAY = 600
 
+function isMaskedApiKey(value: string): boolean {
+  if (!value) return false
+  return value.includes('...') || value.includes('•') || /^\*+$/.test(value)
+}
+
 export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): React.ReactElement {
   const isEdit = channel !== null
 
@@ -134,8 +139,9 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
   const [name, setName] = React.useState(channel?.name ?? '')
   const [provider, setProvider] = React.useState<ProviderType>(channel?.provider ?? 'anthropic')
   const [baseUrl, setBaseUrl] = React.useState(channel?.baseUrl ?? PROVIDER_DEFAULT_URLS.anthropic)
-  const [apiKey, setApiKey] = React.useState('')
+  const [apiKey, setApiKey] = React.useState(channel?.apiKey ?? '')
   const [showApiKey, setShowApiKey] = React.useState(false)
+  const [loadingApiKey, setLoadingApiKey] = React.useState(false)
   const [models, setModels] = React.useState<ChannelModel[]>(channel?.models ?? [])
   const [enabled, setEnabled] = React.useState(channel?.enabled ?? true)
 
@@ -152,23 +158,9 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
   const [testResult, setTestResult] = React.useState<ChannelTestResult | null>(null)
   const [fetchingModels, setFetchingModels] = React.useState(false)
   const [fetchResult, setFetchResult] = React.useState<FetchModelsResult | null>(null)
-  const [apiKeyLoaded, setApiKeyLoaded] = React.useState(false)
   const [showExitDialog, setShowExitDialog] = React.useState(false)
 
   const setChannelFormDirty = useSetAtom(channelFormDirtyAtom)
-
-  /** 编辑模式下加载明文 API Key */
-  React.useEffect(() => {
-    if (isEdit && channel && !apiKeyLoaded) {
-      ipc.decryptApiKey(channel.id).then((key) => {
-        setApiKey(key)
-        setApiKeyLoaded(true)
-      }).catch((error) => {
-        console.error('[模型配置表单] 解密 API Key 失败:', error)
-        setApiKeyLoaded(true)
-      })
-    }
-  }, [isEdit, channel, apiKeyLoaded])
 
   // ===== Auto-save（仅编辑模式） =====
   const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -217,17 +209,15 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     }, AUTO_SAVE_DELAY)
   }, [isEdit, doAutoSave])
 
-  // API Key 加载完成后标记初始化
   React.useEffect(() => {
-    if (isEdit && apiKeyLoaded) {
-      // 延迟标记，避免加载时触发
+    if (isEdit) {
       const t = setTimeout(() => { initializedRef.current = true }, 100)
       return () => clearTimeout(t)
     }
     if (!isEdit) {
       initializedRef.current = true
     }
-  }, [isEdit, apiKeyLoaded])
+  }, [isEdit])
 
   // 监听字段变化触发 auto-save
   React.useEffect(() => {
@@ -245,21 +235,34 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     if (!isEdit && !name.trim()) {
       setName(PROVIDER_LABELS[p])
     }
-    // 预设模型：首次切换到对应 provider 且无模型时自动填充
-    if (models.length === 0) {
-      if (p === 'deepseek') {
-        setModels([
-          { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', enabled: true },
-          { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', enabled: true },
-        ])
-      } else if (p === 'kimi-api') {
-        setModels([
-          { id: 'kimi-k2.6', name: 'Kimi K2.6', enabled: true },
-        ])
-      } else if (p === 'kimi-coding') {
-        setModels([
-          { id: 'kimi-for-coding', name: 'Kimi for Coding', enabled: true },
-        ])
+    // 预设模型：无模型时全量填充，有模型时追加缺失的预置
+    const presetModels: ChannelModel[] = []
+    if (p === 'deepseek') {
+      presetModels.push(
+        { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', enabled: true },
+        { id: 'deepseek-v4-pro[1m]', name: 'DeepSeek V4 Pro (1M)', enabled: true },
+        { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', enabled: true },
+        { id: 'deepseek-v4-flash[1m]', name: 'DeepSeek V4 Flash (1M)', enabled: true },
+      )
+    } else if (p === 'kimi-api') {
+      presetModels.push(
+        { id: 'kimi-k2.6', name: 'Kimi K2.6', enabled: true },
+      )
+    } else if (p === 'kimi-coding') {
+      presetModels.push(
+        { id: 'kimi-for-coding', name: 'Kimi for Coding', enabled: true },
+      )
+    }
+    if (presetModels.length > 0) {
+      if (models.length === 0) {
+        setModels(presetModels)
+      } else {
+        // 将缺失的预置模型追加到列表末尾（默认禁用）
+        const existingIds = new Set(models.map((m) => m.id))
+        const missing = presetModels.filter((pm) => !existingIds.has(pm.id))
+        if (missing.length > 0) {
+          setModels([...models, ...missing.map((m) => ({ ...m, enabled: false }))])
+        }
       }
     }
   }
@@ -284,25 +287,31 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     setModels((prev) => prev.filter((m) => m.id !== modelId))
   }
 
-  /** 切换模型启用状态（点击可用模型 → 启用，点击已启用模型 → 禁用） */
+  /** 切换模型启用状态（即时保存，不经过 debounce） */
   const handleToggleModel = (modelId: string): void => {
-    setModels((prev) =>
-      prev.map((m) => (m.id === modelId ? { ...m, enabled: !m.enabled } : m))
-    )
+    setModels((prev) => prev.map((m) => (m.id === modelId ? { ...m, enabled: !m.enabled } : m)))
   }
 
   /** 从供应商 API 拉取可用模型列表 */
   const handleFetchModels = async (): Promise<void> => {
-    if (!apiKey.trim() || !baseUrl.trim()) return
+    if (!baseUrl.trim()) return
 
     setFetchingModels(true)
     setFetchResult(null)
 
     try {
+      const keyForFetch = isEdit && channel && isMaskedApiKey(apiKey)
+        ? await ipc.decryptApiKey(channel.id)
+        : apiKey
+      if (!keyForFetch.trim()) {
+        setFetchResult({ success: false, message: '缺少 API Key', models: [] })
+        return
+      }
+
       const result = await ipc.fetchModels({
         provider,
         baseUrl,
-        apiKey,
+        apiKey: keyForFetch,
       })
 
       setFetchResult(result)
@@ -326,23 +335,50 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
 
   /** 测试连接（直接使用表单当前值，无需先保存） */
   const handleTest = async (): Promise<void> => {
-    if (!apiKey.trim() || !baseUrl.trim()) return
+    if (!baseUrl.trim()) return
 
     setTesting(true)
     setTestResult(null)
 
     try {
-      const result = await ipc.testChannelDirect({
-        provider,
-        apiBase: baseUrl,
-        apiKey,
-      })
+      const result = isEdit && channel && isMaskedApiKey(apiKey)
+        ? await ipc.testSavedChannel(channel.id, {
+            provider,
+            baseUrl,
+            model: models.find((m) => m.enabled)?.id ?? models[0]?.id,
+          })
+        : await ipc.testChannelDirect({
+            provider,
+            apiBase: baseUrl,
+            apiKey,
+          })
       setTestResult(result)
     } catch (error) {
       setTestResult({ success: false, message: '测试请求失败' })
     } finally {
       setTesting(false)
     }
+  }
+
+  const handleToggleApiKeyVisibility = async (): Promise<void> => {
+    if (!showApiKey && isEdit && channel && isMaskedApiKey(apiKey)) {
+      setLoadingApiKey(true)
+      try {
+        const decrypted = await ipc.decryptApiKey(channel.id)
+        if (decrypted) {
+          setApiKey(decrypted)
+          setShowApiKey(true)
+          return
+        }
+      } catch (error) {
+        console.error('[模型配置表单] 读取 API Key 失败:', error)
+        toast.error('读取 API Key 失败')
+      } finally {
+        setLoadingApiKey(false)
+      }
+    }
+
+    setShowApiKey((prev) => !prev)
   }
 
   /** 执行创建渠道 */
@@ -354,10 +390,11 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     try {
       await ipc.createChannel({
         name,
+        provider,
         apiBase: baseUrl,
         apiKey,
-        model: models.find((m) => m.enabled)?.id ?? models[0]?.id ?? '',
-        supportsVision: provider === 'google',
+        models,
+        enabled,
       })
       toast.success('渠道创建成功')
       return true
@@ -368,7 +405,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     } finally {
       setSaving(false)
     }
-  }, [name, baseUrl, apiKey, models, provider])
+  }, [name, baseUrl, apiKey, models, provider, enabled])
 
   /** 创建渠道（仅新建模式） */
   const handleCreate = async (): Promise<void> => {
@@ -501,7 +538,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
                 size="sm"
                 type="button"
                 onClick={handleTest}
-                disabled={testing || !apiKey.trim() || !baseUrl.trim()}
+                disabled={testing || (!apiKey.trim() && !isEdit) || !baseUrl.trim()}
                 className="h-7 text-xs"
               >
                 {testing ? (
@@ -523,11 +560,12 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
               />
               <button
                 type="button"
-                onClick={() => setShowApiKey(!showApiKey)}
+                onClick={() => void handleToggleApiKeyVisibility()}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
                 tabIndex={-1}
+                disabled={loadingApiKey}
               >
-                {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                {loadingApiKey ? <Loader2 size={16} className="animate-spin" /> : showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
             {testResult && (

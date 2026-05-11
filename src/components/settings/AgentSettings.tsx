@@ -100,7 +100,6 @@ export function AgentSettings(): React.ReactElement {
   const [otherWorkspaces, setOtherWorkspaces] = React.useState<OtherWorkspaceSkillsGroup[]>([])
   const [showImportDialog, setShowImportDialog] = React.useState(false)
   const [importingSkill, setImportingSkill] = React.useState<string | null>(null)
-  const [updatingSkill, setUpdatingSkill] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [selectedSkillSlug, setSelectedSkillSlug] = React.useState<string | null>(null)
 
@@ -322,6 +321,7 @@ ${skillList}
     try {
       const imported = await ipc.importSkillFromWorkspace(workspaceSlug, sourceSlug, skillSlug)
       setSkills((prev) => prev.some((s) => s.slug === imported.slug) ? prev : [...prev, imported])
+      setSelectedSkillSlug(imported.slug)
       bumpCapabilitiesVersion((v) => v + 1)
       setShowImportDialog(false)
       toast.success(`已导入 Skill: ${imported.name}`)
@@ -358,6 +358,7 @@ ${skillList}
       // Refresh workspace skills after import
       const skillList = await ipc.getWorkspaceSkills(workspaceSlug)
       setSkills(skillList)
+      setSelectedSkillSlug(slug)
       bumpCapabilitiesVersion((v) => v + 1)
     } catch (error) {
       console.error('[Agent 设置] 导入 Skill 失败:', error)
@@ -365,23 +366,6 @@ ${skillList}
       toast.error('导入 Skill 失败', { description: message })
     } finally {
       setImportingExternal(null)
-    }
-  }
-
-  const handleUpdateSkill = async (skillSlug: string): Promise<void> => {
-    if (!workspaceSlug || updatingSkill) return
-    setUpdatingSkill(skillSlug)
-    try {
-      const updated = await ipc.updateSkillFromSource(workspaceSlug, skillSlug)
-      setSkills((prev) => prev.map((s) => s.slug === skillSlug ? updated : s))
-      bumpCapabilitiesVersion((v) => v + 1)
-      toast.success(`已同步更新 Skill: ${updated.name}`)
-    } catch (error) {
-      console.error('[Agent 设置] 更新 Skill 失败:', error)
-      const message = error instanceof Error ? error.message : '未知错误'
-      toast.error('更新 Skill 失败', { description: message })
-    } finally {
-      setUpdatingSkill(null)
     }
   }
 
@@ -506,7 +490,6 @@ ${skillList}
                     onSelect={setSelectedSkillSlug}
                     onDelete={handleDeleteSkill}
                     onToggle={handleToggleSkill}
-                    onUpdate={handleUpdateSkill}
                     skillsDir={skillsDir}
                   />
                   <div className="flex-1 overflow-y-auto">

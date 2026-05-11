@@ -9,21 +9,27 @@ import * as React from 'react'
 import { useAtomValue } from 'jotai'
 import { appModeAtom } from '@/atoms/app-mode'
 import { currentAgentSessionIdAtom, agentSessionPathMapAtom } from '@/atoms/agent-atoms'
+import { currentConversationIdAtom } from '@/atoms/chat-atoms'
 import { SidePanel } from '@/components/agent/SidePanel'
 
 export function RightSidePanel(): React.ReactElement | null {
   const appMode = useAtomValue(appModeAtom)
   const currentSessionId = useAtomValue(currentAgentSessionIdAtom)
+  const currentConversationId = useAtomValue(currentConversationIdAtom)
   const sessionPathMap = useAtomValue(agentSessionPathMapAtom)
 
-  // 仅在 Agent 模式且有当前会话时显示
-  if (appMode !== 'agent' || !currentSessionId) {
-    return null
+  if (appMode === 'agent' && currentSessionId) {
+    const sessionPath = sessionPathMap.get(currentSessionId) ?? null
+    return (
+      <SidePanel sessionId={currentSessionId} sessionPath={sessionPath} mode="agent" />
+    )
   }
 
-  const sessionPath = sessionPathMap.get(currentSessionId) ?? null
+  if (appMode === 'chat' && currentConversationId) {
+    return (
+      <SidePanel sessionId={currentConversationId} sessionPath={null} mode="chat" />
+    )
+  }
 
-  return (
-    <SidePanel sessionId={currentSessionId} sessionPath={sessionPath} />
-  )
+  return null
 }

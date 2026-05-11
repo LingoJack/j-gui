@@ -14,6 +14,7 @@ import { useAtomValue, useSetAtom, useAtom, useStore } from 'jotai'
 import { appModeAtom } from '@/atoms/app-mode'
 import { settingsOpenAtom, channelFormDirtyAtom, settingsCloseRequestedAtom } from '@/atoms/settings-tab'
 import { searchDialogOpenAtom } from '@/atoms/search-atoms'
+import { conversationsAtom, currentConversationIdAtom } from '@/atoms/chat-atoms'
 import {
   tabsAtom,
   activeTabIdAtom,
@@ -30,6 +31,7 @@ import { activeViewAtom } from '@/atoms/active-view'
 import { useCreateSession } from '@/hooks/useCreateSession'
 import { useShortcut } from '@/hooks/useShortcut'
 import { useCloseTab } from '@/hooks/useCloseTab'
+import { useOpenSession } from '@/hooks/useOpenSession'
 import * as ipc from '@/lib/ipc'
 import {
   initShortcutRegistry,
@@ -52,6 +54,13 @@ export function GlobalShortcuts(): null {
   const shortcutOverrides = useAtomValue(shortcutOverridesAtom)
   const setSendWithCmdEnter = useSetAtom(sendWithCmdEnterAtom)
   const { createChat, createAgent } = useCreateSession()
+  const openSession = useOpenSession()
+  const conversations = useAtomValue(conversationsAtom)
+  const currentConversationId = useAtomValue(currentConversationIdAtom)
+  const agentSessions = useAtomValue(agentSessionsAtom)
+  const currentAgentSessionId = useAtomValue(currentAgentSessionIdAtom)
+  const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
+  const store = useStore()
 
   // Tab 管理（用于关闭标签页）
   const activeTabId = useAtomValue(activeTabIdAtom)
@@ -109,6 +118,64 @@ export function GlobalShortcuts(): null {
   // 同时注册到快捷键系统（用于设置面板展示和自定义，实际触发走 IPC）
   useShortcut('close-tab', handleCloseTab)
 
+  const restoreModeSession = useCallback(async (targetMode: 'chat' | 'agent') => {
+    if (targetMode === 'chat') {
+      if (currentConversationId) {
+        const current = conversations.find((c) => c.id === currentConversationId)
+        if (current) {
+          openSession('chat', current.id, current.title)
+          return
+        }
+      }
+
+      const currentTabs = store.get(tabsAtom)
+      const chatTab = currentTabs.find((tab) => tab.type === 'chat')
+      if (chatTab) {
+        openSession('chat', chatTab.sessionId, chatTab.title)
+        return
+      }
+
+      const recentConversation = conversations.find((c) => !c.archived)
+      if (recentConversation) {
+        openSession('chat', recentConversation.id, recentConversation.title)
+        return
+      }
+
+      await createChat({ draft: true })
+      return
+    }
+
+    if (currentAgentSessionId) {
+      const current = agentSessions.find((s) => s.id === currentAgentSessionId)
+      if (current) {
+        openSession('agent', current.id, current.title)
+        return
+      }
+    }
+
+    const currentTabs = store.get(tabsAtom)
+    const agentTab = currentTabs.find((tab) => tab.type === 'agent')
+    if (agentTab) {
+      openSession('agent', agentTab.sessionId, agentTab.title)
+      return
+    }
+
+    const recentAgentSession = agentSessions.find((s) => !s.archived)
+    if (recentAgentSession) {
+      openSession('agent', recentAgentSession.id, recentAgentSession.title)
+      return
+    }
+
+    if (currentWorkspaceId) {
+      const createdSessionId = await createAgent({ draft: true })
+      if (createdSessionId) {
+        return
+      }
+    }
+
+    setAppMode('agent')
+  }, [agentSessions, conversations, createAgent, createChat, currentAgentSessionId, currentConversationId, currentWorkspaceId, openSession, setAppMode, store])
+
   // ===== 快捷键 Handler =====
 
   // Cmd+, → 打开设置
@@ -148,8 +215,8 @@ export function GlobalShortcuts(): null {
   useShortcut(
     'toggle-mode',
     useCallback(
-      () => setAppMode(appMode === 'chat' ? 'agent' : 'chat'),
-      [appMode, setAppMode],
+      () => { void restoreModeSession(appMode === 'chat' ? 'agent' : 'chat') },
+      [appMode, restoreModeSession],
     ),
   )
 
@@ -176,8 +243,6 @@ export function GlobalShortcuts(): null {
       window.dispatchEvent(new CustomEvent('jgui:stop-generation'))
     }, []),
   )
-
-  const store = useStore()
 
   // ===== 菜单栏 → 打开 / 创建会话 =====
 

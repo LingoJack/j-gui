@@ -9,6 +9,7 @@ interface TabErrorBoundaryProps {
 interface TabErrorBoundaryState {
   hasError: boolean
   errorMessage: string
+  retryKey: number
 }
 
 export class TabErrorBoundary extends React.Component<
@@ -17,12 +18,12 @@ export class TabErrorBoundary extends React.Component<
 > {
   constructor(props: TabErrorBoundaryProps) {
     super(props)
-    this.state = { hasError: false, errorMessage: '' }
+    this.state = { hasError: false, errorMessage: '', retryKey: 0 }
   }
 
   static getDerivedStateFromError(error: unknown): TabErrorBoundaryState {
     const msg = error instanceof Error ? error.message : String(error)
-    return { hasError: true, errorMessage: msg }
+    return { hasError: true, errorMessage: msg, retryKey: 0 }
   }
 
   override componentDidCatch(error: unknown, info: React.ErrorInfo): void {
@@ -30,7 +31,7 @@ export class TabErrorBoundary extends React.Component<
   }
 
   private handleReset = (): void => {
-    this.setState({ hasError: false, errorMessage: '' })
+    this.setState((prev) => ({ hasError: false, errorMessage: '', retryKey: prev.retryKey + 1 }))
   }
 
   override render(): React.ReactNode {
@@ -55,6 +56,6 @@ export class TabErrorBoundary extends React.Component<
         </div>
       )
     }
-    return this.props.children
+    return <div key={this.state.retryKey}>{this.props.children}</div>
   }
 }

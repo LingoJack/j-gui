@@ -5,7 +5,7 @@ category: Tauri IPC
 status: draft
 source_files:
   - src-tauri/src/commands/governance.rs
-  - src/lib/tauri.ts
+  - src/lib/ipc.ts
 summary: Skills、hooks 与 MCP 配置的 Tauri 命令参考。
 last_reviewed: 2026-05-09
 ---
@@ -20,7 +20,7 @@ last_reviewed: 2026-05-09
 - Hooks 列表
 - MCP server 配置
 
-Rust 侧通过 Tauri command 暴露，前端通过 `src/lib/tauri.ts` 的 wrapper 调用。
+Rust 侧通过 Tauri command 暴露，前端通过 `src/lib/ipc.ts` 的 wrapper 调用。
 
 ## API 参考
 
@@ -165,4 +165,4 @@ Rust command: `save_mcp_servers(servers: Vec<McpServerConfig>) -> Result<(), Str
 ## 相关条目
 
 - [src-tauri/src/commands/governance.rs](/E:/Coding/AI/j-gui/src-tauri/src/commands/governance.rs)
-- [src/lib/tauri.ts](/E:/Coding/AI/j-gui/src/lib/tauri.ts)
+- [src/lib/ipc.ts](/E:/Coding/AI/j-gui/src/lib/ipc.ts)

@@ -6,7 +6,7 @@
  * 支持多场景通知音选择（任务完成、权限审批、计划审批）。
  */
 
-import { atom } from 'jotai'
+import { atom, type PrimitiveAtom } from 'jotai'
 import type { NotificationSoundId, NotificationSoundType, NotificationSoundSettings } from '@/types/settings'
 
 // ===== 音频资源导入 =====
@@ -56,13 +56,13 @@ export const DEFAULT_NOTIFICATION_SOUNDS: Required<NotificationSoundSettings> = 
 // ===== Jotai Atoms =====
 
 /** 通知是否启用 */
-export const notificationsEnabledAtom = atom<boolean>(true)
+export const notificationsEnabledAtom: PrimitiveAtom<boolean> = atom<boolean>(true)
 
 /** 通知提示音是否启用 */
-export const notificationSoundEnabledAtom = atom<boolean>(true)
+export const notificationSoundEnabledAtom: PrimitiveAtom<boolean> = atom<boolean>(true)
 
 /** 各场景通知音配置 */
-export const notificationSoundsAtom = atom<NotificationSoundSettings>({})
+export const notificationSoundsAtom: PrimitiveAtom<NotificationSoundSettings> = atom<NotificationSoundSettings>({})
 
 // ===== 初始化 =====
 

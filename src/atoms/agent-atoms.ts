@@ -5,7 +5,7 @@
  * 模式照搬 chat-atoms.ts。
  */
 
-import { atom } from 'jotai'
+import { atom, type PrimitiveAtom } from 'jotai'
 import { atomFamily } from 'jotai/utils'
 import type { AgentSessionMeta, AgentEvent, AgentWorkspace, AgentPendingFile, RetryAttempt, JguiPermissionMode, PermissionRequest, AskUserRequest, ExitPlanModeRequest, ThinkingConfig, AgentEffort, TaskUsage, SDKMessage } from '@jgui/shared'
 import { calculateDockBadgeCount, countPendingRequests } from '@/lib/dock-badge-count'
@@ -246,22 +246,22 @@ export interface AgentPendingPrompt {
 
 // ===== Atoms =====
 
-export const agentSessionsAtom = atom<AgentSessionMeta[]>([])
-export const agentWorkspacesAtom = atom<AgentWorkspace[]>([])
-export const currentAgentWorkspaceIdAtom = atom<string | null>(null)
+export const agentSessionsAtom: PrimitiveAtom<AgentSessionMeta[]> = atom<AgentSessionMeta[]>([])
+export const agentWorkspacesAtom: PrimitiveAtom<AgentWorkspace[]> = atom<AgentWorkspace[]>([])
+export const currentAgentWorkspaceIdAtom = atom(null) as PrimitiveAtom<string | null>
 /** 全局默认渠道 ID（新会话继承用，从 settings.json 加载） */
-export const agentChannelIdAtom = atom<string | null>(null)
+export const agentChannelIdAtom = atom(null) as PrimitiveAtom<string | null>
 /** 全局默认模型 ID（新会话继承用，从 settings.json 加载） */
-export const agentModelIdAtom = atom<string | null>(null)
+export const agentModelIdAtom = atom(null) as PrimitiveAtom<string | null>
 /** Agent 启用的渠道 ID 列表（多选，设置页 Switch 开关控制） */
-export const agentChannelIdsAtom = atom<string[]>([])
+export const agentChannelIdsAtom: PrimitiveAtom<string[]> = atom<string[]>([])
 
 /** Per-session 渠道 ID Map — sessionId → channelId */
-export const agentSessionChannelMapAtom = atom<Map<string, string>>(new Map())
+export const agentSessionChannelMapAtom: PrimitiveAtom<Map<string, string>> = atom<Map<string, string>>(new Map())
 /** Per-session 模型 ID Map — sessionId → modelId */
-export const agentSessionModelMapAtom = atom<Map<string, string>>(new Map())
-export const currentAgentSessionIdAtom = atom<string | null>(null)
-export const agentStreamingStatesAtom = atom<Map<string, AgentStreamState>>(new Map())
+export const agentSessionModelMapAtom: PrimitiveAtom<Map<string, string>> = atom<Map<string, string>>(new Map())
+export const currentAgentSessionIdAtom = atom(null) as PrimitiveAtom<string | null>
+export const agentStreamingStatesAtom: PrimitiveAtom<Map<string, AgentStreamState>> = atom<Map<string, AgentStreamState>>(new Map())
 
 /**
  * 实时 SDKMessage 累积 Map — Phase 2 新增
@@ -269,23 +269,23 @@ export const agentStreamingStatesAtom = atom<Map<string, AgentStreamState>>(new 
  * 流式期间每条 SDKMessage 直接追加，供新 UI 渲染。
  * 流式完成后清空（持久化消息从 JSONL 加载）。
  */
-export const liveMessagesMapAtom = atom<Map<string, SDKMessage[]>>(new Map())
+export const liveMessagesMapAtom: PrimitiveAtom<Map<string, SDKMessage[]>> = atom<Map<string, SDKMessage[]>>(new Map())
 
-export const agentPendingPromptAtom = atom<AgentPendingPrompt | null>(null)
+export const agentPendingPromptAtom = atom(null) as PrimitiveAtom<AgentPendingPrompt | null>
 
 /** Agent 待发送文件列表 */
-export const agentPendingFilesAtom = atom<AgentPendingFile[]>([])
+export const agentPendingFilesAtom: PrimitiveAtom<AgentPendingFile[]> = atom<AgentPendingFile[]>([])
 
 /** 工作区能力版本号 — 每次修改 MCP/Skills 后自增，触发侧边栏重新获取 */
-export const workspaceCapabilitiesVersionAtom = atom(0)
+export const workspaceCapabilitiesVersionAtom: PrimitiveAtom<number> = atom(0)
 
 /** 工作区文件版本号 — 文件变化时自增，触发文件浏览器重新加载 */
-export const workspaceFilesVersionAtom = atom(0)
+export const workspaceFilesVersionAtom: PrimitiveAtom<number> = atom(0)
 
 // ===== 侧面板 Atoms =====
 
 /** 侧面板是否打开（per-session Map） */
-export const agentSidePanelOpenMapAtom = atom<Map<string, boolean>>(new Map())
+export const agentSidePanelOpenMapAtom: PrimitiveAtom<Map<string, boolean>> = atom<Map<string, boolean>>(new Map())
 
 /** 当前会话的侧面板是否打开（派生只读，供 AppShell 使用，避免全 Map 订阅导致无关重渲染） */
 export const currentSessionSidePanelOpenAtom = atom<boolean>((get) => {
@@ -295,7 +295,7 @@ export const currentSessionSidePanelOpenAtom = atom<boolean>((get) => {
 })
 
 /** 当前会话的工作路径 Map — sessionId → path */
-export const agentSessionPathMapAtom = atom<Map<string, string>>(new Map())
+export const agentSessionPathMapAtom: PrimitiveAtom<Map<string, string>> = atom<Map<string, string>>(new Map())
 
 /**
  * 文件浏览器自动定位信号：当 Agent 调用写入类工具（Write/Edit/MultiEdit/NotebookEdit）时，
@@ -307,14 +307,14 @@ export interface FileBrowserAutoReveal {
   path: string
   ts: number
 }
-export const fileBrowserAutoRevealAtom = atom<FileBrowserAutoReveal | null>(null)
+export const fileBrowserAutoRevealAtom = atom(null) as PrimitiveAtom<FileBrowserAutoReveal | null>
 
 /**
  * 最近被 Agent 修改的文件路径（per-session，path → 修改时间戳 ms）。
  * FileBrowser 据此在文件行左侧渲染竖条标记，60s 后自动消失，
  * 用于让用户在错过 0.8s 脉冲后仍能看到「最近修改」状态。
  */
-export const recentlyModifiedPathsAtom = atom<Map<string, Map<string, number>>>(new Map())
+export const recentlyModifiedPathsAtom: PrimitiveAtom<Map<string, Map<string, number>>> = atom<Map<string, Map<string, number>>>(new Map())
 
 /** 最近修改标记的存活时间（毫秒） */
 export const RECENTLY_MODIFIED_TTL_MS = 60_000
@@ -322,10 +322,10 @@ export const RECENTLY_MODIFIED_TTL_MS = 60_000
 // ===== 权限系统 Atoms =====
 
 /** 新会话默认权限模式 */
-export const agentDefaultPermissionModeAtom = atom<JguiPermissionMode>('bypassPermissions')
+export const agentDefaultPermissionModeAtom: PrimitiveAtom<JguiPermissionMode> = atom<JguiPermissionMode>('bypassPermissions')
 
 /** Per-session 权限模式 Map — sessionId → JguiPermissionMode */
-export const agentPermissionModeMapAtom = atom<Map<string, JguiPermissionMode>>(new Map())
+export const agentPermissionModeMapAtom: PrimitiveAtom<Map<string, JguiPermissionMode>> = atom<Map<string, JguiPermissionMode>>(new Map())
 
 /**
  * 按 sessionId 派生该 session 的持久化权限模式。
@@ -348,19 +348,19 @@ export const sessionExistsAtom = atomFamily((sessionId: string) =>
 )
 
 /** Agent 思考模式 */
-export const agentThinkingAtom = atom<ThinkingConfig | undefined>(undefined)
+export const agentThinkingAtom = atom(undefined) as PrimitiveAtom<ThinkingConfig | undefined>
 
 /** Agent 推理深度 */
-export const agentEffortAtom = atom<AgentEffort | undefined>(undefined)
+export const agentEffortAtom = atom(undefined) as PrimitiveAtom<AgentEffort | undefined>
 
 /** Agent 最大预算（美元/次） */
-export const agentMaxBudgetUsdAtom = atom<number | undefined>(undefined)
+export const agentMaxBudgetUsdAtom = atom(undefined) as PrimitiveAtom<number | undefined>
 
 /** Agent 最大轮次 */
-export const agentMaxTurnsAtom = atom<number | undefined>(undefined)
+export const agentMaxTurnsAtom = atom(undefined) as PrimitiveAtom<number | undefined>
 
 /** 待处理的权限请求 Map — 以 sessionId 为 key，切换会话时保留状态 */
-export const allPendingPermissionRequestsAtom = atom<Map<string, readonly PermissionRequest[]>>(new Map())
+export const allPendingPermissionRequestsAtom: PrimitiveAtom<Map<string, readonly PermissionRequest[]>> = atom<Map<string, readonly PermissionRequest[]>>(new Map())
 
 type PermissionRequestsUpdate = readonly PermissionRequest[] | ((prev: readonly PermissionRequest[]) => readonly PermissionRequest[])
 
@@ -386,7 +386,7 @@ export const pendingPermissionRequestsAtom = atom(
 )
 
 /** 待处理的 AskUser 请求 Map — 以 sessionId 为 key，切换会话时保留状态 */
-export const allPendingAskUserRequestsAtom = atom<Map<string, readonly AskUserRequest[]>>(new Map())
+export const allPendingAskUserRequestsAtom: PrimitiveAtom<Map<string, readonly AskUserRequest[]>> = atom<Map<string, readonly AskUserRequest[]>>(new Map())
 
 type AskUserRequestsUpdate = readonly AskUserRequest[] | ((prev: readonly AskUserRequest[]) => readonly AskUserRequest[])
 
@@ -412,10 +412,10 @@ export const pendingAskUserRequestsAtom = atom(
 )
 
 /** 待处理的 ExitPlanMode 请求 Map — 以 sessionId 为 key */
-export const allPendingExitPlanRequestsAtom = atom<Map<string, readonly ExitPlanModeRequest[]>>(new Map())
+export const allPendingExitPlanRequestsAtom: PrimitiveAtom<Map<string, readonly ExitPlanModeRequest[]>> = atom<Map<string, readonly ExitPlanModeRequest[]>>(new Map())
 
 /** 当前处于 Plan 模式的会话 ID 集合 */
-export const agentPlanModeSessionsAtom = atom<Set<string>>(new Set<string>())
+export const agentPlanModeSessionsAtom: PrimitiveAtom<Set<string>> = atom<Set<string>>(new Set<string>())
 
 export const currentAgentSessionAtom = atom<AgentSessionMeta | null>((get) => {
   const sessions = get(agentSessionsAtom)
@@ -873,14 +873,14 @@ export const agentContextStatusAtom = atom<AgentContextStatus>((get) => {
  * Agent 流式错误消息 Map — 以 sessionId 为 key
  * 错误发生时写入，下次发送或手动关闭时清除
  */
-export const agentStreamErrorsAtom = atom<Map<string, string>>(new Map())
+export const agentStreamErrorsAtom: PrimitiveAtom<Map<string, string>> = atom<Map<string, string>>(new Map())
 
 /**
  * Agent 消息刷新版本 Map — 以 sessionId 为 key
  * 全局监听器在流式完成/错误时递增版本号，
  * AgentView 监听版本号变化来重新加载消息。
  */
-export const agentMessageRefreshAtom = atom<Map<string, number>>(new Map())
+export const agentMessageRefreshAtom: PrimitiveAtom<Map<string, number>> = atom<Map<string, number>>(new Map())
 
 /** 当前 Agent 会话的错误消息（派生只读原子） */
 export const currentAgentErrorAtom = atom<string | null>((get) => {
@@ -893,27 +893,27 @@ export const currentAgentErrorAtom = atom<string | null>((get) => {
  * Agent 会话输入框草稿 Map — 以 sessionId 为 key
  * 用于在切换会话时保留输入框内容
  */
-export const agentSessionDraftsAtom = atom<Map<string, string>>(new Map())
+export const agentSessionDraftsAtom: PrimitiveAtom<Map<string, string>> = atom<Map<string, string>>(new Map())
 
 /**
  * Agent 会话输入框 HTML 草稿 Map — 以 sessionId 为 key
  * 保存 TipTap 编辑器的原始 HTML，用于切换会话时恢复 mention 等富文本节点
  */
-export const agentSessionDraftHtmlAtom = atom<Map<string, string>>(new Map())
+export const agentSessionDraftHtmlAtom: PrimitiveAtom<Map<string, string>> = atom<Map<string, string>>(new Map())
 
 /**
  * 会话附加目录 Map — 以 sessionId 为 key
  * 存储每个会话通过"附加文件夹"功能关联的外部目录路径列表。
  * 这些路径作为 SDK additionalDirectories 参数传递。
  */
-export const agentAttachedDirectoriesMapAtom = atom<Map<string, string[]>>(new Map())
+export const agentAttachedDirectoriesMapAtom: PrimitiveAtom<Map<string, string[]>> = atom<Map<string, string[]>>(new Map())
 
 /**
  * 工作区级附加目录列表（按 workspaceId 存储）
  *
  * 工作区内所有会话共享这些附加目录。
  */
-export const workspaceAttachedDirectoriesMapAtom = atom<Map<string, string[]>>(new Map())
+export const workspaceAttachedDirectoriesMapAtom: PrimitiveAtom<Map<string, string[]>> = atom<Map<string, string[]>>(new Map())
 
 /** 当前 Agent 会话的草稿内容（派生读写原子） */
 export const currentAgentSessionDraftAtom = atom(
@@ -940,7 +940,7 @@ export const currentAgentSessionDraftAtom = atom(
 // ===== 提示建议 Atoms =====
 
 /** Agent 提示建议 Map — 以 sessionId 为 key，存储最近一条建议 */
-export const agentPromptSuggestionsAtom = atom<Map<string, string>>(new Map())
+export const agentPromptSuggestionsAtom: PrimitiveAtom<Map<string, string>> = atom<Map<string, string>>(new Map())
 
 /** 当前 Agent 会话的提示建议（派生只读原子） */
 export const currentAgentSuggestionAtom = atom<string | null>((get) => {
@@ -984,9 +984,9 @@ export const backgroundTasksAtomFamily = atomFamily((sessionId: string) =>
 // ===== 用户打断状态 =====
 
 /** 被用户手动打断的会话集合（仅当前 streaming 周期有效，reload 后清除） */
-export const stoppedByUserSessionsAtom = atom<Set<string>>(new Set<string>())
+export const stoppedByUserSessionsAtom: PrimitiveAtom<Set<string>> = atom<Set<string>>(new Set<string>())
 
 // ===== 初始化就绪状态 =====
 
 /** AgentSettingsInitializer 是否已完成加载（渠道/工作区/设置全部就绪） */
-export const agentSettingsReadyAtom = atom(false)
+export const agentSettingsReadyAtom: PrimitiveAtom<boolean> = atom(false)

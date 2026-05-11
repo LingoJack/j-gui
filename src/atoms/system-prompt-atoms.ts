@@ -7,7 +7,7 @@
  * - 解析后的最终 systemMessage
  */
 
-import { atom } from 'jotai'
+import { atom, type PrimitiveAtom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 import {
   BUILTIN_DEFAULT_ID,
@@ -78,7 +78,7 @@ export const resolvedSystemMessageAtom = atom<string | undefined>((get) => {
 // ===== Per-conversation 系统提示词 =====
 
 /** 每个对话选中的提示词 ID（分屏时独立） */
-export const conversationPromptIdAtom = atom<Map<string, string>>(new Map())
+export const conversationPromptIdAtom: PrimitiveAtom<Map<string, string>> = atom<Map<string, string>>(new Map())
 
 /** 根据 promptId 解析 systemMessage（纯函数，不依赖全局 atom） */
 export function resolveSystemMessage(

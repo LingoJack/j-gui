@@ -95,6 +95,12 @@ function setupInvokeMocks(jCliServers: any[] = mockJCliServers, workspaceServers
         return Promise.resolve('')
       case 'list_skills':
         return Promise.resolve([])
+      case 'scan_global_skills':
+        return Promise.resolve([
+          { name: 'Global Skill', description: 'From global', source: 'global:.claude/agents/skills/global-skill', dirPath: '/skills/global-skill' },
+        ])
+      case 'copy_skill_to_workspace':
+        return Promise.resolve(undefined)
       case 'list_agent_workspaces':
         return Promise.resolve([mockWorkspace])
       case 'get_settings':
@@ -241,5 +247,25 @@ describe('MCP Dual Source UI', () => {
 
     // SSE badge (for the puppeteer server)
     expect(screen.getByText('SSE')).toBeInTheDocument()
+  })
+
+  it('selects imported external skill after importing from global source', async () => {
+    await renderAgentSettings()
+
+    fireEvent.click(screen.getByRole('button', { name: '扫描全局' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Global Skill')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '导入到工作区' }))
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('copy_skill_to_workspace', {
+        sourceDir: '/skills/global-skill',
+        workspaceSlug: 'test-workspace',
+        skillSlug: 'global-skill',
+      })
+    })
   })
 })

@@ -1,0 +1,36 @@
+refactor: 2026-05-11-audit-fix
+steps:
+  - id: "1"
+    action: "提取魔法值常量 — agent_engine.rs (3) + commands/agent.rs (2) + commands/channels.rs (2) + chat_engine.rs (1)"
+    method: M-L2-04
+    files:
+      - src-tauri/src/agent_engine.rs
+      - src-tauri/src/commands/agent.rs
+      - src-tauri/src/commands/channels.rs
+      - src-tauri/src/chat_engine.rs
+    checks:
+      - cargo test -- 151 tests pass
+      - cargo clippy -- -D warnings -- 0 new warnings
+    verify: AI
+    revert: git revert single commit
+
+  - id: "2"
+    action: "提取 agent_engine::start() stdout 解析闭包为 spawn_stdout_reader() 方法"
+    method: M-L2-01
+    files:
+      - src-tauri/src/agent_engine.rs
+    checks:
+      - cargo test agent_engine -- 18 tests pass
+    verify: AI
+    revert: git revert single commit
+
+  - id: "3"
+    action: "提取 adapter::run_agent_loop() 基础设施构建为 build_agent_shared_state() + spawn_bridge_thread()"
+    method: M-L2-01
+    files:
+      - src-tauri/src/kernel/adapter.rs
+    checks:
+      - cargo test kernel::adapter -- all pass
+      - cargo clippy -- -D warnings -- 0 new warnings
+    verify: AI
+    revert: git revert single commit
