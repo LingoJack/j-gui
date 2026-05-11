@@ -22,8 +22,14 @@ export type ProviderType =
   | 'qwen'
   | 'custom'
 
+export type ChatProtocolHint =
+  | 'auto'
+  | 'openai-chat-completions'
+  | 'openai-responses'
+  | 'anthropic-messages'
+
 /**
- * 各供应商的默认 Base URL
+ * 各供应商的默认基础 URL
  */
 export const PROVIDER_DEFAULT_URLS: Record<ProviderType, string> = {
   anthropic: 'https://api.anthropic.com',
@@ -102,7 +108,9 @@ export interface Channel {
   name: string
   /** AI 供应商类型 */
   provider: ProviderType
-  /** API Base URL */
+  /** 显式聊天协议提示；auto 表示按后端默认规则解析 */
+  protocolHint?: ChatProtocolHint
+  /** API 基础 URL */
   baseUrl: string
   /** 加密后的 API Key（base64 编码） */
   apiKey: string
@@ -122,6 +130,7 @@ export interface Channel {
 export interface ChannelCreateInput {
   name: string
   provider: ProviderType
+  protocolHint?: ChatProtocolHint
   baseUrl: string
   /** 明文 API Key，主进程会加密后存储 */
   apiKey: string
@@ -135,6 +144,7 @@ export interface ChannelCreateInput {
 export interface ChannelUpdateInput {
   name?: string
   provider?: ProviderType
+  protocolHint?: ChatProtocolHint
   baseUrl?: string
   /** 明文 API Key，为空字符串表示不更新 */
   apiKey?: string
@@ -167,6 +177,7 @@ export interface ChannelTestResult {
  */
 export interface FetchModelsInput {
   provider: ProviderType
+  protocolHint?: ChatProtocolHint
   baseUrl: string
   /** 明文 API Key */
   apiKey: string

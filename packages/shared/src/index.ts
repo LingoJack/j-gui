@@ -1,5 +1,5 @@
 /**
- * @jgui/shared - Shared types, configs and utilities
+ * @jgui/shared - 共享类型、配置与工具函数
  */
 
 export * from './types/index'

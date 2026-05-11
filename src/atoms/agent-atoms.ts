@@ -43,7 +43,7 @@ export type TeammateStatus = 'running' | 'completed' | 'failed' | 'stopped'
 
 /** 单个 teammate 的实时状态（Agent Teams 功能） */
 export interface TeammateState {
-  /** SDK task_id */
+  /** SDK 的 task_id */
   taskId: string
   /** 关联的 tool_use_id（Task 工具调用 ID） */
   toolUseId?: string
@@ -61,9 +61,9 @@ export interface TeammateState {
   currentToolName?: string
   /** 当前工具已运行秒数 */
   currentToolElapsedSeconds?: number
-  /** 当前工具 toolUseId */
+  /** 当前工具的 toolUseId */
   currentToolUseId?: string
-  /** 已使用的工具历史记录（最近 N 个，去重） */
+  /** 已使用的工具历史记录（最近 N 个，已去重） */
   toolHistory: string[]
   /** 完成时的摘要 */
   summary?: string
@@ -145,13 +145,13 @@ export interface AgentStreamState {
     /** 是否已失败 */
     failed: boolean
   }
-  /** Agent Teams: teammate 状态列表 */
+  /** Agent Teams：teammate 状态列表 */
   teammates: TeammateState[]
-  /** 是否等待 auto-resume（teammate 结果收集中） */
+  /** 是否等待 auto-resume（正在收集 teammate 结果） */
   waitingResume?: boolean
 }
 
-/** 从 ToolActivity 派生状态 */
+/** 从 ToolActivity 派生状态值 */
 export function getActivityStatus(activity: ToolActivity): ActivityStatus {
   if (activity.isBackground) return 'backgrounded'
   if (!activity.done) return 'running'
@@ -238,13 +238,13 @@ export function isActivityGroup(item: ActivityGroup | ToolActivity): item is Act
 }
 
 
-/** 待自动发送的 Agent 提示（从设置页"对话完成配置"触发） */
+/** 待自动发送的 Agent 提示词（从设置页“对话完成配置”触发） */
 export interface AgentPendingPrompt {
   sessionId: string
   message: string
 }
 
-// ===== Atoms =====
+// ===== 原子状态 =====
 
 export const agentSessionsAtom: PrimitiveAtom<AgentSessionMeta[]> = atom<AgentSessionMeta[]>([])
 export const agentWorkspacesAtom: PrimitiveAtom<AgentWorkspace[]> = atom<AgentWorkspace[]>([])
@@ -256,11 +256,20 @@ export const agentModelIdAtom = atom(null) as PrimitiveAtom<string | null>
 /** Agent 启用的渠道 ID 列表（多选，设置页 Switch 开关控制） */
 export const agentChannelIdsAtom: PrimitiveAtom<string[]> = atom<string[]>([])
 
-/** Per-session 渠道 ID Map — sessionId → channelId */
+/** 按会话隔离的渠道 ID 映射 — sessionId -> channelId */
 export const agentSessionChannelMapAtom: PrimitiveAtom<Map<string, string>> = atom<Map<string, string>>(new Map())
-/** Per-session 模型 ID Map — sessionId → modelId */
+/** 按会话隔离的模型 ID 映射 — sessionId -> modelId */
 export const agentSessionModelMapAtom: PrimitiveAtom<Map<string, string>> = atom<Map<string, string>>(new Map())
 export const currentAgentSessionIdAtom = atom(null) as PrimitiveAtom<string | null>
+
+/** 搜索/导航后需要定位到的 Agent 消息锚点 */
+export interface AgentMessageTarget {
+  sessionId: string
+  messageId: string
+  nonce: number
+}
+
+export const agentMessageTargetAtom = atom(null) as PrimitiveAtom<AgentMessageTarget | null>
 export const agentStreamingStatesAtom: PrimitiveAtom<Map<string, AgentStreamState>> = atom<Map<string, AgentStreamState>>(new Map())
 
 /**
@@ -276,7 +285,7 @@ export const agentPendingPromptAtom = atom(null) as PrimitiveAtom<AgentPendingPr
 /** Agent 待发送文件列表 */
 export const agentPendingFilesAtom: PrimitiveAtom<AgentPendingFile[]> = atom<AgentPendingFile[]>([])
 
-/** 工作区能力版本号 — 每次修改 MCP/Skills 后自增，触发侧边栏重新获取 */
+/** 工作区能力版本号 — 每次修改 MCP/技能后自增，触发侧边栏重新获取 */
 export const workspaceCapabilitiesVersionAtom: PrimitiveAtom<number> = atom(0)
 
 /** 工作区文件版本号 — 文件变化时自增，触发文件浏览器重新加载 */
@@ -284,7 +293,7 @@ export const workspaceFilesVersionAtom: PrimitiveAtom<number> = atom(0)
 
 // ===== 侧面板 Atoms =====
 
-/** 侧面板是否打开（per-session Map） */
+/** 侧面板是否打开（按会话隔离的映射） */
 export const agentSidePanelOpenMapAtom: PrimitiveAtom<Map<string, boolean>> = atom<Map<string, boolean>>(new Map())
 
 /** 当前会话的侧面板是否打开（派生只读，供 AppShell 使用，避免全 Map 订阅导致无关重渲染） */
@@ -294,7 +303,7 @@ export const currentSessionSidePanelOpenAtom = atom<boolean>((get) => {
   return get(agentSidePanelOpenMapAtom).get(currentId) ?? true
 })
 
-/** 当前会话的工作路径 Map — sessionId → path */
+/** 当前会话的工作路径映射 — sessionId -> path */
 export const agentSessionPathMapAtom: PrimitiveAtom<Map<string, string>> = atom<Map<string, string>>(new Map())
 
 /**
@@ -324,7 +333,7 @@ export const RECENTLY_MODIFIED_TTL_MS = 60_000
 /** 新会话默认权限模式 */
 export const agentDefaultPermissionModeAtom: PrimitiveAtom<JguiPermissionMode> = atom<JguiPermissionMode>('bypassPermissions')
 
-/** Per-session 权限模式 Map — sessionId → JguiPermissionMode */
+/** 按会话隔离的权限模式映射 — sessionId -> JguiPermissionMode */
 export const agentPermissionModeMapAtom: PrimitiveAtom<Map<string, JguiPermissionMode>> = atom<Map<string, JguiPermissionMode>>(new Map())
 
 /**
@@ -359,7 +368,7 @@ export const agentMaxBudgetUsdAtom = atom(undefined) as PrimitiveAtom<number | u
 /** Agent 最大轮次 */
 export const agentMaxTurnsAtom = atom(undefined) as PrimitiveAtom<number | undefined>
 
-/** 待处理的权限请求 Map — 以 sessionId 为 key，切换会话时保留状态 */
+/** 待处理的权限请求映射 — 以 sessionId 为键，切换会话时保留状态 */
 export const allPendingPermissionRequestsAtom: PrimitiveAtom<Map<string, readonly PermissionRequest[]>> = atom<Map<string, readonly PermissionRequest[]>>(new Map())
 
 type PermissionRequestsUpdate = readonly PermissionRequest[] | ((prev: readonly PermissionRequest[]) => readonly PermissionRequest[])
@@ -385,7 +394,7 @@ export const pendingPermissionRequestsAtom = atom(
   }
 )
 
-/** 待处理的 AskUser 请求 Map — 以 sessionId 为 key，切换会话时保留状态 */
+/** 待处理的 AskUser 请求映射 — 以 sessionId 为键，切换会话时保留状态 */
 export const allPendingAskUserRequestsAtom: PrimitiveAtom<Map<string, readonly AskUserRequest[]>> = atom<Map<string, readonly AskUserRequest[]>>(new Map())
 
 type AskUserRequestsUpdate = readonly AskUserRequest[] | ((prev: readonly AskUserRequest[]) => readonly AskUserRequest[])
@@ -411,7 +420,7 @@ export const pendingAskUserRequestsAtom = atom(
   }
 )
 
-/** 待处理的 ExitPlanMode 请求 Map — 以 sessionId 为 key */
+/** 待处理的 ExitPlanMode 请求映射 — 以 sessionId 为键 */
 export const allPendingExitPlanRequestsAtom: PrimitiveAtom<Map<string, readonly ExitPlanModeRequest[]>> = atom<Map<string, readonly ExitPlanModeRequest[]>>(new Map())
 
 /** 当前处于 Plan 模式的会话 ID 集合 */
@@ -939,7 +948,7 @@ export const currentAgentSessionDraftAtom = atom(
 
 // ===== 提示建议 Atoms =====
 
-/** Agent 提示建议 Map — 以 sessionId 为 key，存储最近一条建议 */
+/** Agent 提示建议映射 — 以 sessionId 为键，存储最近一条建议 */
 export const agentPromptSuggestionsAtom: PrimitiveAtom<Map<string, string>> = atom<Map<string, string>>(new Map())
 
 /** 当前 Agent 会话的提示建议（派生只读原子） */

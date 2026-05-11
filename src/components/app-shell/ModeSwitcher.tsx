@@ -35,7 +35,7 @@ export function ModeSwitcher(): React.ReactElement {
   const currentAgentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
   const tabs = useAtomValue(tabsAtom)
 
-  /** 尝试恢复目标模式下的上一个对话/会话，按优先级 fallback */
+  /** 尝试恢复目标模式下的上一个对话/会话，按优先级兜底 */
   const restoreSession = React.useCallback(async (targetMode: AppMode) => {
     const isChatMode = targetMode === 'chat'
     const sessions = isChatMode ? conversations : agentSessions
@@ -49,7 +49,7 @@ export function ModeSwitcher(): React.ReactElement {
         return
       }
     }
-    // 2. 已打开的同类型 Tab → 聚焦
+    // 2. 已打开的同类型标签页 -> 聚焦
     const tab = tabs.find((t) => t.type === targetMode)
     if (tab) {
       openSession(targetMode, tab.sessionId, tab.title)
@@ -61,7 +61,7 @@ export function ModeSwitcher(): React.ReactElement {
       openSession(targetMode, recent.id, recent.title)
       return
     }
-    // 4. 无任何会话时创建一个真实目标会话，避免只切外壳状态但主内容仍停留在旧 tab
+    // 4. 无任何会话时创建一个真实目标会话，避免只切外壳状态但主内容仍停留在旧标签页
     if (isChatMode) {
       await createChat({ draft: true })
       return

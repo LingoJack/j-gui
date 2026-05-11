@@ -1,8 +1,7 @@
 /**
- * Shared type definitions for j-gui
+ * j-gui 的共享类型定义
  */
 
-// Placeholder types - will be expanded as needed
 export interface Workspace {
   id: string
   name: string

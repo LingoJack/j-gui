@@ -1,5 +1,5 @@
 /**
- * useConversationSettings — per-conversation 设置读写 hooks
+ * useConversationSettings — 按对话隔离的设置读写钩子
  *
  * 从 Map atoms 中按 conversationId 读取，缺省时返回全局默认值。
  * 通过 ConversationContext 获取 conversationId，避免 props 透传。
@@ -23,7 +23,7 @@ import {
   conversationPromptIdAtom,
 } from '@/atoms/system-prompt-atoms'
 
-// ===== 通用 Map 读写辅助 =====
+// ===== 通用映射读写辅助 =====
 
 type MapAtom<T> = import('jotai').WritableAtom<Map<string, T>, [import('jotai').SetStateAction<Map<string, T>>], void>
 
@@ -54,7 +54,7 @@ function useMapSetter<T>(
   )
 }
 
-// ===== Per-conversation Hooks =====
+// ===== 按对话隔离的钩子 =====
 
 /** 每个对话独立的模型选择 */
 export function useConversationModel(): [SelectedModel | null, (m: SelectedModel | null) => void] {
@@ -65,7 +65,7 @@ export function useConversationModel(): [SelectedModel | null, (m: SelectedModel
   return [value, setter]
 }
 
-/** 可选版本：在 Provider 外返回 null（ModelSelector 双模式用） */
+/** 可选版本：在提供器外返回 null（ModelSelector 双模式用） */
 export function useConversationModelOptional(): [SelectedModel | null, ((m: SelectedModel | null) => void) | null] {
   const conversationId = useConversationIdOptional()
   const defaultModel = useAtomValue(selectedModelAtom)

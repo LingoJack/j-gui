@@ -7,7 +7,7 @@
 import { atom, type PrimitiveAtom } from 'jotai'
 import * as ipc from '@/lib/ipc'
 
-// ===== Jotai Atoms =====
+// ===== Jotai 原子 =====
 
 /** 是否显示用户消息悬浮置顶条 */
 export const stickyUserMessageEnabledAtom: PrimitiveAtom<boolean> = atom<boolean>(true)

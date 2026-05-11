@@ -12,16 +12,9 @@ mod kernel;
 use commands::agent::AgentState;
 use std::sync::{Arc, Mutex};
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_dialog::init())
-        .manage(AgentState(Arc::new(Mutex::new(None))))
-        .manage(Arc::new(kernel::JcliAdapter::new()))
-        .invoke_handler(tauri::generate_handler![
+macro_rules! register_invoke_handler {
+    ($builder:expr) => {
+        $builder.invoke_handler(tauri::generate_handler![
             commands::agent::start_agent,
             commands::agent::send_agent_message,
             commands::agent::stop_agent,
@@ -29,7 +22,12 @@ pub fn run() {
             commands::agent::create_agent_session,
             commands::agent::list_agent_sessions,
             commands::agent::get_agent_session,
+            commands::agent::get_agent_session_sdk_messages,
+            commands::agent::search_agent_session_messages,
             commands::agent::delete_agent_session,
+            commands::agent::move_agent_session_to_workspace,
+            commands::agent::fork_agent_session,
+            commands::agent::rewind_session,
             commands::agent::generate_agent_title,
             commands::agent::update_agent_session_title,
             commands::agent::respond_permission,
@@ -37,6 +35,7 @@ pub fn run() {
             commands::agent::update_session_permission_mode,
             commands::agent::toggle_pin_agent_session,
             commands::agent::toggle_archive_agent_session,
+            commands::agent::toggle_manual_working_agent_session,
             commands::alias::list_aliases,
             commands::alias::set_alias,
             commands::alias::remove_alias,
@@ -58,18 +57,29 @@ pub fn run() {
             commands::config::get_system_prompt,
             commands::config::set_system_prompt,
             commands::files::open_file_dialog,
+            commands::files::open_folder_dialog,
             commands::files::save_attachment,
             commands::files::read_attachment,
+            commands::files::delete_attachment,
             commands::files::list_directory,
             commands::files::delete_file,
             commands::files::rename_file,
+            commands::files::attach_directory,
+            commands::files::detach_directory,
+            commands::files::attach_workspace_directory,
+            commands::files::detach_workspace_directory,
+            commands::files::get_workspace_directories,
+            commands::files::get_agent_session_path,
+            commands::files::get_workspace_files_path,
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::settings::get_user_profile,
             commands::settings::update_user_profile,
             commands::settings::list_agent_workspaces,
             commands::settings::create_agent_workspace,
+            commands::settings::update_agent_workspace,
             commands::settings::delete_agent_workspace,
+            commands::settings::reorder_agent_workspaces,
             commands::settings::check_environment,
             commands::settings::get_system_prompts,
             commands::settings::get_system_prompt_config,
@@ -108,11 +118,29 @@ pub fn run() {
             commands::governance::get_workspace_skills_dir,
             commands::governance::get_other_workspace_skills,
             commands::governance::import_skill_from_workspace,
+            commands::governance::get_workspace_capabilities,
+            commands::governance::test_mcp_server,
             commands::governance::get_workspace_mcp_config,
             commands::governance::save_workspace_mcp_config,
             commands::governance::import_cc_sdk_hooks,
             commands::governance::import_cc_sdk_mcp,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    };
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let app = register_invoke_handler!(tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(AgentState(Arc::new(Mutex::new(
+            std::collections::HashMap::new()
+        ))))
+        .manage(Arc::new(kernel::JcliAdapter::new())));
+
+    if let Err(err) = app.run(tauri::generate_context!()) {
+        panic!("error while running tauri application: {err}");
+    }
 }

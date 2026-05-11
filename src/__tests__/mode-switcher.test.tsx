@@ -29,7 +29,18 @@ describe('ModeSwitcher', () => {
         case 'create_session':
           return Promise.resolve('chat-created')
         case 'create_agent_session':
-          return Promise.resolve('agent-created')
+          return Promise.resolve({
+            id: 'agent-created',
+            title: '新 Agent 会话',
+            workspaceId: 'ws-1',
+            channelId: 'channel-1',
+            updatedAt: Date.now(),
+            pinned: false,
+            archived: false,
+            manualWorking: false,
+            stoppedByUser: false,
+            permissionMode: 'bypassPermissions',
+          })
         case 'update_settings':
           return Promise.resolve({})
         default:

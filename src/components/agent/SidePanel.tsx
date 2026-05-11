@@ -89,7 +89,7 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
   // 加载工作区级附加目录
   React.useEffect(() => {
     if (!workspaceSlug || !currentWorkspaceId) return
-    ipc.getWorkspaceDirectories()
+    ipc.getWorkspaceDirectories(workspaceSlug)
       .then((dirs) => {
         setWsAttachedDirsMap((prev) => {
           const map = new Map(prev)

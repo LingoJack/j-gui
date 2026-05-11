@@ -7,7 +7,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { AliasSettings } from '@/components/settings/AliasSettings'
 import * as ipc from '@/lib/ipc'
 
-// Mock the IPC module used by AliasSettings
+// 模拟 AliasSettings 使用的 IPC 模块
 vi.mock('@/lib/ipc', () => ({
   listAliases: vi.fn(),
   setAlias: vi.fn(),
@@ -30,7 +30,7 @@ describe('AliasSettings', () => {
 
     render(<AliasSettings />)
 
-    // Wait for aliases to load and render
+    // 等待别名加载并渲染
     await waitFor(() => {
       expect(screen.getByText('路径别名')).toBeInTheDocument()
     })
@@ -38,7 +38,7 @@ describe('AliasSettings', () => {
     expect(screen.getByText('外网 URL 别名')).toBeInTheDocument()
     expect(screen.getByText('脚本别名')).toBeInTheDocument()
 
-    // Alias names and values should be displayed
+    // 应显示别名名称和值
     expect(screen.getByText('j')).toBeInTheDocument()
     expect(screen.getByText('/usr/bin/j')).toBeInTheDocument()
     expect(screen.getByText('dev')).toBeInTheDocument()
@@ -58,11 +58,11 @@ describe('AliasSettings', () => {
       expect(screen.getByText('路径别名')).toBeInTheDocument()
     })
 
-    // Click the first "添加别名" button
+    // 点击第一个“添加别名”按钮
     const addButtons = screen.getAllByText('添加别名')
     fireEvent.click(addButtons[0])
 
-    // Inline form inputs should appear
+    // 应出现行内表单输入框
     expect(screen.getByPlaceholderText('别名名称')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('别名值')).toBeInTheDocument()
   })
@@ -80,7 +80,7 @@ describe('AliasSettings', () => {
       expect(screen.getByText('j')).toBeInTheDocument()
     })
 
-    // Find and click the delete button (it has title="删除")
+    // 找到并点击删除按钮（其 title 为“删除”）
     const deleteButton = screen.getByTitle('删除')
     fireEvent.click(deleteButton)
 
@@ -100,7 +100,7 @@ describe('AliasSettings', () => {
     expect(screen.getByText('外网 URL 别名')).toBeInTheDocument()
     expect(screen.getByText('脚本别名')).toBeInTheDocument()
 
-    // Should show add buttons (not loading)
+    // 应显示添加按钮（非加载态）
     expect(screen.getAllByText('添加别名').length).toBe(4)
   })
 })

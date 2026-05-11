@@ -1,12 +1,12 @@
 /**
  * URL 规范化工具
  *
- * 各供应商 Base URL 的规范化处理。
+ * 各供应商基础 URL 的规范化处理。
  * 所有 Anthropic URL 规范化逻辑统一收口在此文件，避免分散重复。
  */
 
 /**
- * 规范化 Anthropic Base URL（用于 j-gui Chat 直接调用 API）
+ * 规范化 Anthropic 基础 URL（用于 j-gui Chat 直接调用 API）
  *
  * 去除尾部斜杠，去除误填的 /messages 后缀，如果没有版本路径则追加 /v1。
  * 结果用于直接拼接 /messages 发起请求。
@@ -37,7 +37,7 @@ export function normalizeAnthropicBaseUrl(baseUrl: string): string {
 }
 
 /**
- * 规范化 Anthropic Base URL（用于 Agent SDK 环境变量 ANTHROPIC_BASE_URL）
+ * 规范化 Anthropic 基础 URL（用于 Agent SDK 环境变量 ANTHROPIC_BASE_URL）
  *
  * SDK 内部会自动拼接 /v1/messages，所以这里需要去除用户误填的路径后缀，
  * 只保留根路径。
@@ -58,7 +58,7 @@ export function normalizeAnthropicBaseUrlForSdk(baseUrl: string): string {
 }
 
 /**
- * 规范化通用 Base URL
+ * 规范化通用基础 URL
  *
  * 仅去除尾部斜杠，适用于 OpenAI / Google 等。
  */

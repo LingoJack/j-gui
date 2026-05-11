@@ -481,7 +481,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     }
   }, [sessionId, openSession, setAgentSessions])
 
-  /** 快照回退：同一会话内回退到指定消息点，恢复文件 + 截断对话 */
+  /** 快照回退：同一会话内回退到指定消息点，仅截断对话时间线 */
   const [rewindTargetUuid, setRewindTargetUuid] = React.useState<string | null>(null)
 
   const handleRewindRequest = React.useCallback((assistantMessageUuid: string): void => {
@@ -513,10 +513,10 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         })
       } else if (result.fileRewind?.error) {
         toast.warning('已回退对话', {
-          description: `文件恢复不可用：${result.fileRewind.error}`,
+          description: result.fileRewind.error,
         })
       } else {
-        toast.success('已回退到此处')
+        toast.success('已回退对话')
       }
     } catch (error) {
       console.error('[AgentView] 回退失败:', error)
@@ -794,7 +794,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         <AlertDialogHeader>
           <AlertDialogTitle>确认回退</AlertDialogTitle>
           <AlertDialogDescription>
-            回退将截断该消息之后的所有对话，并恢复文件到该时刻的状态。此操作不可撤销，确定要回退吗？
+            回退将截断该消息之后的所有对话。当前版本不会恢复文件现场，此操作不可撤销，确定要回退吗？
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

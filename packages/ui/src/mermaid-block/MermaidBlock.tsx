@@ -3,17 +3,17 @@
  *
  * 使用 beautiful-mermaid 将 mermaid 源码渲染为 SVG 图表。
  *
- * 核心策略 —— "源码优先，SVG 覆盖淡入"：
+ * 核心策略 —— “源码优先，SVG 覆盖淡入”：
  *
- * 布局结构（关键：源码层永远在文档流中，SVG 层永远 absolute）：
+ * 布局结构（关键：源码层永远在文档流中，SVG 层永远绝对定位）：
  *   <div relative>
- *     <pre>源码（始终 static，提供稳定高度）</pre>
+ *     <pre>源码（始终留在文档流中，提供稳定高度）</pre>
  *     <div absolute inset-0>SVG 覆盖层（不参与布局）</div>
  *   </div>
  *
  * 渲染时序：
  *   流式输出 → 源码自然增长（零跳动）
- *   code 稳定 350ms → 后台 renderMermaid
+ *   源码稳定 350ms → 后台执行 renderMermaid
  *   成功 → SVG 淡入覆盖，源码淡出（一次性过渡）
  *   失败 → 保持源码展示
  *
@@ -107,7 +107,7 @@ export function MermaidBlock({ code }: MermaidBlockProps): React.ReactElement {
 
   codeRef.current = code
 
-  // ==== 唯一的渲染 effect：全部走防抖，generation 防竞态 ====
+  // ==== 唯一的渲染副作用：全部走防抖，generation 防竞态 ====
   React.useEffect(() => {
     // 每次 code 变化递增 generation，作废所有旧的异步渲染
     generationRef.current++
@@ -238,9 +238,9 @@ export function MermaidBlock({ code }: MermaidBlockProps): React.ReactElement {
       </div>
 
       {/*
-        内容区 —— 双层叠加，永不切换 position
-        源码层：永远 static（提供稳定高度，零跳动）
-        SVG 层：永远 absolute（不影响布局）
+        内容区 —— 双层叠加，永不切换定位方式
+        源码层：始终留在文档流中（提供稳定高度，零跳动）
+        SVG 层：始终绝对定位覆盖（不影响布局）
         两层只通过 opacity 交叉淡入淡出
       */}
       <div className="relative overflow-hidden">
@@ -255,7 +255,7 @@ export function MermaidBlock({ code }: MermaidBlockProps): React.ReactElement {
           <code>{code}</code>
         </pre>
 
-        {/* SVG 层 —— absolute 覆盖，渲染成功后淡入，不影响文档流 */}
+        {/* SVG 层 —— 绝对定位覆盖，渲染成功后淡入，不影响文档流 */}
         {svgHtml && (
           <div
             ref={svgContainerRef}

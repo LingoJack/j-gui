@@ -1,8 +1,8 @@
 /**
- * AgentSettings - Agent 设置页
+ * AgentSettings - Agent 设置页面
  *
- * Tab 布局：
- * 1. Skills — Master-Detail 视图（左列列表 + 右列详情 + 内联编辑）
+ * 标签布局：
+ * 1. Skills — 主从视图（左列列表 + 右列详情 + 内联编辑）
  * 2. MCP 服务器 — 管理当前工作区的 MCP 服务器配置
  * 3. 内置工具 — 只读展示内置工具状态
  */
@@ -38,7 +38,7 @@ import { BuiltinAgentTools } from './BuiltinAgentTools'
 import { getSkillSourceType, getSkillSourceBadge, externalSkillSlug } from './skill-helpers'
 import * as ipc from '@/lib/ipc'
 
-// ===== Types =====
+// ===== 类型 =====
 
 type ViewMode = 'list' | 'create' | 'edit'
 
@@ -64,7 +64,7 @@ interface ExternalSkill {
   dirPath: string
 }
 
-// ===== Main Component =====
+// ===== 主体组件 =====
 
 export function AgentSettings(): React.ReactElement {
   const workspaces = useAtomValue(agentWorkspacesAtom)
@@ -80,15 +80,15 @@ export function AgentSettings(): React.ReactElement {
   const currentWorkspace = workspaces.find((w) => w.id === currentWorkspaceId)
   const workspaceSlug = currentWorkspace?.slug ?? ''
 
-  // Tab & view state
+  // 标签页和视图状态
   const [activeTab, setActiveTab] = React.useState('skills')
   const [viewMode, setViewMode] = React.useState<ViewMode>('list')
   const [editingServer, setEditingServer] = React.useState<EditingServer | null>(null)
 
-  // MCP source selector
+  // MCP 数据源选择
   const [mcpSource, setMcpSource] = React.useState<'workspace' | 'jcli'>('workspace')
 
-  // Data
+  // 数据状态
   const [mcpConfig, setMcpConfig] = React.useState<WorkspaceMcpConfig>({ servers: {} })
   const [jCliMcpServers, setJCliMcpServers] = React.useState<JCliMcpServer[]>([])
   const [skills, setSkills] = React.useState<SkillMeta[]>([])
@@ -166,7 +166,7 @@ export function AgentSettings(): React.ReactElement {
 
   const buildMcpPrompt = (): string => {
     const configPath = `~/${configDirName}/agent-workspaces/${workspaceSlug}/mcp.json`
-    // Sanitize env/headers values to avoid leaking credentials to LLM
+    // 清洗 env/headers 的值，避免凭据泄露给 LLM
     const sanitized = {
       servers: Object.fromEntries(Object.entries(mcpConfig.servers).map(([k, v]) => [k, {
         ...v, env: v.env ? Object.keys(v.env).reduce((acc, key) => ({ ...acc, [key]: '***' }), {}) : undefined,
@@ -256,7 +256,7 @@ ${skillList}
     }
   }
 
-  // MCP handlers
+  // MCP 相关处理函数
   const handleDeleteMcp = async (serverName: string): Promise<void> => {
     const entry = mcpConfig.servers[serverName]
     if (entry?.isBuiltin) return
@@ -290,7 +290,7 @@ ${skillList}
     }
   }
 
-  // Skill handlers
+  // Skill 相关处理函数
   const handleDeleteSkill = async (skillSlug: string, skillName: string): Promise<void> => {
     if (!confirm(`确定删除 Skill「${skillName}」？此操作不可恢复。`)) return
     try {
@@ -355,7 +355,7 @@ ${skillList}
     try {
       await ipc.copySkillToWorkspace(sourceDir, workspaceSlug, slug)
       toast.success(`已导入 Skill: ${name}`)
-      // Refresh workspace skills after import
+      // 导入后刷新工作区技能列表
       const skillList = await ipc.getWorkspaceSkills(workspaceSlug)
       setSkills(skillList)
       setSelectedSkillSlug(slug)
@@ -388,7 +388,7 @@ ${skillList}
     setActiveTab('mcp')
   }
 
-  // MCP form early-return
+  // MCP 表单提前返回分支
   if (viewMode === 'create' || viewMode === 'edit') {
     return (
       <McpServerForm
@@ -436,7 +436,7 @@ ${skillList}
           ))}
         </div>
 
-        {/* ===== Skills Tab ===== */}
+        {/* ===== Skills 标签页 ===== */}
         <TabsContent value="skills" className="mt-4 space-y-4">
           <SettingsSection
             title="Skills"
@@ -482,7 +482,7 @@ ${skillList}
               <div className="text-sm text-muted-foreground py-8 text-center">加载中...</div>
             ) : (
               <>
-                {/* Workspace Skills Master-Detail */}
+                {/* 工作区 Skills 主从视图 */}
                 <div className="flex border border-border rounded-lg overflow-hidden" style={{ minHeight: 420 }}>
                   <SkillListPanel
                     skills={skills}
@@ -523,7 +523,7 @@ ${skillList}
                   />
                 )}
 
-                {/* Global Skills */}
+                {/* 全局 Skills */}
                 {globalSkills.length > 0 && (
                   <ExternalSkillsSection
                     title="全局 Skills"
@@ -543,7 +543,7 @@ ${skillList}
           </SettingsSection>
         </TabsContent>
 
-        {/* ===== MCP Tab ===== */}
+        {/* ===== MCP 标签页 ===== */}
         <TabsContent value="mcp" className="mt-4 space-y-4">
           <SettingsSection
             title="MCP 服务器"
@@ -625,7 +625,7 @@ ${skillList}
           </SettingsSection>
         </TabsContent>
 
-        {/* ===== Built-in Tools Tab ===== */}
+        {/* ===== 内置工具标签页 ===== */}
         <TabsContent value="tools" className="mt-4">
           <BuiltinAgentTools />
         </TabsContent>
@@ -643,7 +643,7 @@ ${skillList}
   )
 }
 
-// ===== MCP Server Row =====
+// ===== MCP 服务器行 =====
 
 const TRANSPORT_LABELS: Record<string, string> = { stdio: 'stdio', http: 'HTTP', sse: 'SSE' }
 
@@ -688,13 +688,13 @@ function McpServerRow({ name, entry, onEdit, onDelete, onToggle }: McpServerRowP
   )
 }
 
-// ===== Skill List Panel — extracted to SkillListPanel.tsx =====
+// ===== Skill 列表面板 - 已拆到 SkillListPanel.tsx =====
 
-// ===== Skill Detail Panel — extracted to SkillDetailPanel.tsx =====
+// ===== Skill 详情面板 - 已拆到 SkillDetailPanel.tsx =====
 
-// ===== Skill Detail Panel — extracted to SkillDetailPanel.tsx =====
+// ===== Skill 详情面板 - 已拆到 SkillDetailPanel.tsx =====
 
-// ===== j-cli MCP View (Read-only) =====
+// ===== j-cli MCP 视图（只读） =====
 
 interface JCliMcpViewProps {
   servers: JCliMcpServer[]
@@ -742,7 +742,7 @@ function JCliMcpView({ servers }: JCliMcpViewProps): React.ReactElement {
   )
 }
 
-// ===== External Skills Section (j-cli / global) =====
+// ===== 外部 Skills 区域（j-cli / global） =====
 
 interface ExternalSkillsSectionProps {
   title: string
@@ -803,7 +803,7 @@ function ExternalSkillsSection({ title, icon, skills, importingExternal, onImpor
   )
 }
 
-// ===== Import Skill Dialog =====
+// ===== 导入 Skill 对话框 =====
 
 interface ImportSkillFromWorkspaceDialogProps {
   open: boolean

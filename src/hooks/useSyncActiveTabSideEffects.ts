@@ -48,7 +48,7 @@ export function useSyncActiveTabSideEffects(): SyncActiveTabSideEffects {
         return
       }
 
-      // Agent
+      // Agent 模式
       setAppMode('agent')
       setCurrentAgentSessionId(newActiveTab.sessionId)
       setCurrentConversationId(null)

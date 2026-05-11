@@ -1,10 +1,9 @@
 /**
- * Shared utility functions for j-gui
+ * j-gui 的共享工具函数
  */
 
-// Placeholder - will be expanded as needed
 export function noop(): void {
-  // no-op
+  // 空操作
 }
 
 export { diffCapabilities } from './capabilities-diff'

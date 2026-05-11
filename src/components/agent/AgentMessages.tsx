@@ -6,7 +6,7 @@
  */
 
 import * as React from 'react'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { Bot, RotateCw, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
 import { WelcomeEmptyState } from '@/components/welcome/WelcomeEmptyState'
 import {
@@ -30,6 +30,7 @@ import { getModelLogo, resolveModelDisplayName } from '@/lib/model-logo'
 import { userProfileAtom } from '@/atoms/user-profile'
 import { tabMinimapCacheAtom } from '@/atoms/tab-atoms'
 import { channelsAtom } from '@/atoms/chat-atoms'
+import { agentMessageTargetAtom } from '@/atoms/agent-atoms'
 import { ScrollPositionManager } from '@/hooks/useScrollPositionMemory'
 import { cn } from '@/lib/utils'
 import { Spinner } from '@/components/ui/spinner'
@@ -349,6 +350,7 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
   const userProfile = useAtomValue(userProfileAtom)
   const setMinimapCache = useSetAtom(tabMinimapCacheAtom)
   const channels = useAtomValue(channelsAtom)
+  const [messageTarget, setMessageTarget] = useAtom(agentMessageTargetAtom)
   /** 淡入控制：切换会话时先隐藏，等布局完成后再显示。 */
   const [ready, setReady] = React.useState(false)
   const prevSessionIdRef = React.useRef<string | null>(null)
@@ -451,6 +453,36 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
   const allGroups = React.useMemo(() => {
     return groupIntoTurns(allSDKMessages, sessionModelId)
   }, [allSDKMessages, sessionModelId])
+
+  React.useEffect(() => {
+    if (!messageTarget || messageTarget.sessionId !== sessionId) return
+
+    const selector = `[data-message-id="${messageTarget.messageId}"]`
+    let cancelled = false
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+    const scrollToTarget = (): void => {
+      const element = document.querySelector<HTMLElement>(selector)
+      if (!element || cancelled) return
+      element.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      element.classList.add('ring-2', 'ring-primary/30', 'rounded-xl')
+      timeoutId = setTimeout(() => {
+        element.classList.remove('ring-2', 'ring-primary/30', 'rounded-xl')
+        setMessageTarget((prev) =>
+          prev?.sessionId === sessionId && prev.messageId === messageTarget.messageId
+            ? null
+            : prev
+        )
+      }, 1800)
+    }
+
+    const rafId = requestAnimationFrame(scrollToTarget)
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(rafId)
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [messageTarget, sessionId, allGroups, setMessageTarget])
 
   // 标记哪些 group 属于实时流式消息（用于 isStreaming / onFork 差异化渲染）
   const liveGroupSet = React.useMemo(() => {

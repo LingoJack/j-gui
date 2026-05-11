@@ -1,6 +1,6 @@
 /**
- * NavigatorPanel - Middle panel for list-based navigation
- * Displays a header with title and scrollable content area
+ * NavigatorPanel - 用于列表导航的中间面板
+ * 展示带标题的头部和可滚动内容区
  */
 
 import * as React from 'react'
@@ -8,11 +8,11 @@ import { Panel } from './Panel'
 import { PanelHeader } from './PanelHeader'
 
 export interface NavigatorPanelProps {
-  /** Panel title */
+  /** 面板标题 */
   title: string
-  /** Panel width in pixels */
+  /** 面板宽度（像素） */
   width: number
-  /** Main content */
+  /** 主要内容 */
   children: React.ReactNode
 }
 

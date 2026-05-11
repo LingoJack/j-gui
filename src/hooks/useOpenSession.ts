@@ -1,5 +1,5 @@
 /**
- * useOpenSession — 统一的"打开/聚焦会话 Tab"操作
+ * useOpenSession — 统一的“打开/聚焦会话标签页”操作
  *
  * 封装 openTab + setTabs + setActiveTabId + setAppMode + setCurrentXxxId，
  * 确保所有打开会话的入口都能正确同步 appMode 和 currentSessionId。
@@ -9,29 +9,36 @@ import * as React from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { tabsAtom, activeTabIdAtom, openTab, type TabType } from '@/atoms/tab-atoms'
 import { appModeAtom } from '@/atoms/app-mode'
-import { currentConversationIdAtom } from '@/atoms/chat-atoms'
+import { currentConversationIdAtom, chatMessageTargetAtom } from '@/atoms/chat-atoms'
 import * as ipc from '@/lib/ipc'
 import {
   currentAgentSessionIdAtom,
   agentSessionsAtom,
   currentAgentWorkspaceIdAtom,
   unviewedCompletedSessionIdsAtom,
+  agentMessageTargetAtom,
 } from '@/atoms/agent-atoms'
 
-type OpenSessionFn = (type: TabType, sessionId: string, title: string) => void
+interface OpenSessionOptions {
+  messageId?: string
+}
+
+type OpenSessionFn = (type: TabType, sessionId: string, title: string, options?: OpenSessionOptions) => void
 
 export function useOpenSession(): OpenSessionFn {
   const [tabs, setTabs] = useAtom(tabsAtom)
   const setActiveTabId = useSetAtom(activeTabIdAtom)
   const setAppMode = useSetAtom(appModeAtom)
   const setCurrentConversationId = useSetAtom(currentConversationIdAtom)
+  const setChatMessageTarget = useSetAtom(chatMessageTargetAtom)
   const setCurrentAgentSessionId = useSetAtom(currentAgentSessionIdAtom)
   const agentSessions = useAtomValue(agentSessionsAtom)
   const setCurrentAgentWorkspaceId = useSetAtom(currentAgentWorkspaceIdAtom)
   const setUnviewedCompleted = useSetAtom(unviewedCompletedSessionIdsAtom)
+  const setAgentMessageTarget = useSetAtom(agentMessageTargetAtom)
 
   return React.useCallback(
-    (type: TabType, sessionId: string, title: string): void => {
+    (type: TabType, sessionId: string, title: string, options?: OpenSessionOptions): void => {
       const result = openTab(tabs, { type, sessionId, title })
       setTabs(result.tabs)
       setActiveTabId(result.activeTabId)
@@ -39,8 +46,24 @@ export function useOpenSession(): OpenSessionFn {
 
       if (type === 'chat') {
         setCurrentConversationId(sessionId)
+        setAgentMessageTarget(null)
+        setChatMessageTarget(options?.messageId
+          ? {
+              conversationId: sessionId,
+              messageId: options.messageId,
+              nonce: Date.now(),
+            }
+          : null)
       } else {
         setCurrentAgentSessionId(sessionId)
+        setChatMessageTarget(null)
+        setAgentMessageTarget(options?.messageId
+          ? {
+              sessionId,
+              messageId: options.messageId,
+              nonce: Date.now(),
+            }
+          : null)
 
         // 清除该会话的"已完成未查看"标记，与 TabBar.handleActivate 保持一致
         setUnviewedCompleted((prev) => {
@@ -52,14 +75,13 @@ export function useOpenSession(): OpenSessionFn {
 
         // 同步 workspaceId，确保与 TabBar 切换行为一致
         const session = agentSessions.find((s) => s.id === sessionId)
-        if (session?.workspaceId) {
-          setCurrentAgentWorkspaceId(session.workspaceId)
-          ipc.updateSettings({
-            agentWorkspaceId: session.workspaceId,
-          }).catch(console.error)
-        }
+        const workspaceId = session?.workspaceId ?? null
+        setCurrentAgentWorkspaceId(workspaceId)
+        ipc.updateSettings({
+          agentWorkspaceId: workspaceId,
+        }).catch(console.error)
       }
     },
-    [tabs, setTabs, setActiveTabId, setAppMode, setCurrentConversationId, setCurrentAgentSessionId, agentSessions, setCurrentAgentWorkspaceId, setUnviewedCompleted],
+    [tabs, setTabs, setActiveTabId, setAppMode, setCurrentConversationId, setChatMessageTarget, setCurrentAgentSessionId, agentSessions, setCurrentAgentWorkspaceId, setUnviewedCompleted, setAgentMessageTarget],
   )
 }

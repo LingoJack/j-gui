@@ -36,7 +36,7 @@ import type {
   SDKSystemMessage,
 } from '@jgui/shared'
 
-// ===== useToolResult Hook =====
+// ===== useToolResult 相关钩子 =====
 
 interface ToolResultData {
   result?: string
@@ -74,7 +74,7 @@ function useToolResult(toolUseId: string, allMessages: SDKMessage[]): ToolResult
   }, [toolUseId, allMessages])
 }
 
-// ===== useSubAgentMeta Hook =====
+// ===== useSubAgentMeta 相关钩子 =====
 
 interface SubAgentMeta {
   durationMs: number
@@ -107,11 +107,11 @@ function useSubAgentMeta(toolUseId: string, allMessages: SDKMessage[]): SubAgent
 interface ParsedAgentResult {
   /** 清理后的输出文本（去除元数据） */
   text: string
-  /** 从 <usage> 标签解析的用量数据（作为 task_notification 的备用） */
+  /** 从 <usage> 标签解析出的用量数据（作为 task_notification 的备用值） */
   usage?: SubAgentMeta
 }
 
-/** 从 Agent tool_result 文本中分离内容与元数据（agentId 行 + <usage> 标签） */
+/** 从 Agent tool_result 文本中分离内容与元数据（agentId 行和 <usage> 标签） */
 function parseAgentResultText(raw: string): ParsedAgentResult {
   let text = raw
 
@@ -187,7 +187,7 @@ function SubAgentFooter({
   )
 }
 
-// ===== ContentBlock Props =====
+// ===== ContentBlock 属性 =====
 
 export interface ContentBlockProps {
   /** 内容块数据 */
@@ -200,11 +200,11 @@ export interface ContentBlockProps {
   animate?: boolean
   /** 在父级中的索引（用于动画延迟） */
   index?: number
-  /** 当 turn 中已有主要内容（text）时，非主要块（tool/thinking）颜色变淡 */
+  /** 当 turn 中已有主要内容（text）时，非主要块（tool/thinking）的颜色变淡 */
   dimmed?: boolean
   /** 子代理的内容块（Agent/Task 工具调用的嵌套子块） */
   childBlocks?: SDKContentBlock[]
-  /** 是否正在流式输出中（仅流式中的未完成工具调用才显示 spinner） */
+  /** 是否正在流式输出中（仅流式中的未完成工具调用才显示加载指示） */
   isStreaming?: boolean
 }
 
@@ -337,7 +337,7 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
             )}
           />
 
-          {/* 状态指示：仅流式中的未完成工具才显示 spinner */}
+          {/* 状态指示：仅流式中的未完成工具才显示加载指示 */}
           {!isCompleted && isStreaming ? (
             <Loader2 className="size-3.5 animate-spin text-primary/50 shrink-0" />
           ) : isError ? (
@@ -382,7 +382,7 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
               />
             ))}
 
-            {/* SubAgent 完成信息 */}
+            {/* 子代理完成信息 */}
             {isCompleted && (
               <SubAgentFooter
                 meta={subAgentMeta}

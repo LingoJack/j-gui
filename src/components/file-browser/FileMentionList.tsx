@@ -21,7 +21,7 @@ import { FileTypeIcon } from './FileTypeIcon'
 import { ChevronRight, Folder } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 
-// ===== Error Boundary =====
+// ===== 错误边界 =====
 
 class MentionErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -59,7 +59,7 @@ interface FileTreeNode {
   expanded: boolean
 }
 
-// ===== Props & Ref =====
+// ===== 属性与 Ref =====
 
 export interface FileMentionListProps {
   sessionEntries: FileIndexEntry[]

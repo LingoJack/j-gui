@@ -1,7 +1,7 @@
 /**
- * TabPreviewPanel — Tab 悬浮预览面板
+ * TabPreviewPanel — 标签页悬浮预览面板
  *
- * 在 Tab hover 时向下弹出，显示：
+ * 在标签页悬浮时向下弹出，显示：
  * 1. 对话标题
  * 2. 消息列表（复用 minimap 风格）
  * 无搜索、无最小条目限制。

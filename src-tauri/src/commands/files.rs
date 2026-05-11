@@ -2,32 +2,78 @@ use crate::commands::settings::dirs_next;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;
+use uuid::Uuid;
 
-fn attachments_dir() -> PathBuf {
+pub(crate) fn attachments_dir() -> PathBuf {
     let mut p = dirs_next().unwrap_or_else(|| PathBuf::from("."));
     p.push("attachments");
     p
 }
 
-/// 防止路径穿越：规范化路径并验证其在 allowed_dir 内
-fn safe_path(allowed_dir: &PathBuf, user_path: &str) -> Result<PathBuf, String> {
-    let clean = PathBuf::from(user_path)
-        .file_name()
-        .ok_or("无效的文件名")?
-        .to_os_string();
-    let resolved = allowed_dir.join(&clean);
-    let canonical = std::fs::canonicalize(allowed_dir)
-        .map_err(|_| "附件目录不存在，请先创建目录".to_string())?;
-    if !resolved.starts_with(&canonical) {
-        return Err("路径穿越被拒绝".into());
+fn sanitize_relative_path(user_path: &str) -> Result<PathBuf, String> {
+    let path = Path::new(user_path);
+    if path.is_absolute() {
+        return Err("不允许使用绝对路径".into());
     }
-    Ok(resolved)
+
+    let mut clean = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(part) => clean.push(part),
+            _ => return Err("路径穿越被拒绝".into()),
+        }
+    }
+
+    if clean.as_os_str().is_empty() {
+        return Err("无效的文件路径".into());
+    }
+    Ok(clean)
+}
+
+pub(crate) fn resolve_attachment_path(local_path: &str) -> Result<PathBuf, String> {
+    let clean = sanitize_relative_path(local_path)?;
+    Ok(attachments_dir().join(clean))
+}
+
+fn file_extension(filename: &str) -> Option<String> {
+    Path::new(filename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.is_empty())
+        .map(ToString::to_string)
+}
+
+fn validate_workspace_slug(slug: &str) -> Result<(), String> {
+    if slug.is_empty() || slug.contains("..") || slug.contains('/') || slug.contains('\\') {
+        return Err(format!("非法工作区标识: {}", slug));
+    }
+    Ok(())
+}
+
+fn workspace_dir(workspace_slug: &str) -> Result<PathBuf, String> {
+    validate_workspace_slug(workspace_slug)?;
+    let base = dirs_next().unwrap_or_else(|| PathBuf::from("."));
+    Ok(base.join("agent-workspaces").join(workspace_slug))
+}
+
+fn unique_attachment_relative_path(
+    conversation_id: &str,
+    filename: &str,
+) -> Result<String, String> {
+    let conversation = sanitize_relative_path(conversation_id)?;
+    let mut relative = conversation;
+    let unique_name = match file_extension(filename) {
+        Some(ext) => format!("{}.{}", Uuid::new_v4(), ext),
+        None => Uuid::new_v4().to_string(),
+    };
+    relative.push(unique_name);
+    Ok(relative.to_string_lossy().replace('\\', "/"))
 }
 
 // ============================================================
-// Types
+// 类型定义
 // ============================================================
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -35,21 +81,33 @@ fn safe_path(allowed_dir: &PathBuf, user_path: &str) -> Result<PathBuf, String> 
 pub struct FileDialogResult {
     pub canceled: bool,
     pub file_paths: Vec<String>,
+    pub path: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveAttachmentArgs {
-    pub file_name: String,
-    /// base64-encoded file data
+    pub conversation_id: String,
+    pub filename: String,
+    pub media_type: String,
+    /// 经过 base64 编码的文件数据
     pub data: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SaveAttachmentResult {
+pub struct SavedAttachment {
+    pub id: String,
+    pub filename: String,
+    pub media_type: String,
     pub local_path: String,
-    pub file_name: String,
+    pub size: u64,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAttachmentResult {
+    pub attachment: SavedAttachment,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -62,7 +120,7 @@ pub struct DirEntry {
 }
 
 // ============================================================
-// Commands
+// 命令
 // ============================================================
 
 #[tauri::command]
@@ -75,38 +133,67 @@ pub fn open_file_dialog(app: tauri::AppHandle) -> Result<FileDialogResult, Strin
                 .flat_map(|p| p.as_path())
                 .map(|p| p.to_string_lossy().to_string())
                 .collect(),
+            path: None,
         }),
         _ => Ok(FileDialogResult {
             canceled: true,
             file_paths: vec![],
+            path: None,
         }),
     }
 }
 
 #[tauri::command]
-pub fn save_attachment(args: SaveAttachmentArgs) -> Result<SaveAttachmentResult, String> {
+pub fn open_folder_dialog(app: tauri::AppHandle) -> Result<FileDialogResult, String> {
+    match app.dialog().file().blocking_pick_folder() {
+        Some(folder) => {
+            let path = folder
+                .as_path()
+                .map(|folder_path| folder_path.to_string_lossy().to_string())
+                .ok_or_else(|| "无法解析目录路径".to_string())?;
+            Ok(FileDialogResult {
+                canceled: false,
+                file_paths: vec![path.clone()],
+                path: Some(path),
+            })
+        }
+        None => Ok(FileDialogResult {
+            canceled: true,
+            file_paths: vec![],
+            path: None,
+        }),
+    }
+}
+
+#[tauri::command]
+pub fn save_attachment(input: SaveAttachmentArgs) -> Result<SaveAttachmentResult, String> {
     let bytes = base64::engine::general_purpose::STANDARD
-        .decode(&args.data)
-        .map_err(|e| format!("Failed to decode base64: {}", e))?;
+        .decode(&input.data)
+        .map_err(|e| format!("base64 解码失败: {}", e))?;
 
-    let dir = attachments_dir();
-    fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create attachments directory: {}", e))?;
-
-    let file_path = safe_path(&dir, &args.file_name)?;
-    fs::write(&file_path, &bytes).map_err(|e| format!("Failed to write file: {}", e))?;
+    let relative_path = unique_attachment_relative_path(&input.conversation_id, &input.filename)?;
+    let file_path = resolve_attachment_path(&relative_path)?;
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("创建附件目录失败: {}", e))?;
+    }
+    fs::create_dir_all(attachments_dir()).map_err(|e| format!("创建附件目录失败: {}", e))?;
+    fs::write(&file_path, &bytes).map_err(|e| format!("写入文件失败: {}", e))?;
 
     Ok(SaveAttachmentResult {
-        local_path: file_path.to_string_lossy().to_string(),
-        file_name: args.file_name,
+        attachment: SavedAttachment {
+            id: Uuid::new_v4().to_string(),
+            filename: input.filename,
+            media_type: input.media_type,
+            local_path: relative_path,
+            size: bytes.len() as u64,
+        },
     })
 }
 
 #[tauri::command]
 pub fn read_attachment(local_path: String) -> Result<String, String> {
-    let dir = attachments_dir();
-    let resolved = safe_path(&dir, &local_path)?;
-    let data = fs::read(&resolved).map_err(|e| format!("Failed to read file: {}", e))?;
+    let resolved = resolve_attachment_path(&local_path)?;
+    let data = fs::read(&resolved).map_err(|e| format!("读取文件失败: {}", e))?;
     Ok(base64::engine::general_purpose::STANDARD.encode(&data))
 }
 
@@ -125,6 +212,15 @@ pub fn delete_file(file_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn delete_attachment(local_path: String) -> Result<(), String> {
+    let resolved = resolve_attachment_path(&local_path)?;
+    if !resolved.exists() {
+        return Ok(());
+    }
+    fs::remove_file(&resolved).map_err(|e| format!("删除附件失败: {}", e))
+}
+
+#[tauri::command]
 pub fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
     let old = PathBuf::from(&old_path);
     let new = PathBuf::from(&new_path);
@@ -140,8 +236,7 @@ pub fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn list_directory(dir_path: String) -> Result<Vec<DirEntry>, String> {
-    let entries =
-        fs::read_dir(&dir_path).map_err(|e| format!("Failed to read directory: {}", e))?;
+    let entries = fs::read_dir(&dir_path).map_err(|e| format!("读取目录失败: {}", e))?;
 
     let mut result = Vec::new();
     for entry in entries {
@@ -157,8 +252,153 @@ pub fn list_directory(dir_path: String) -> Result<Vec<DirEntry>, String> {
     Ok(result)
 }
 
+#[tauri::command]
+pub fn get_agent_session_path(session_id: String) -> Result<String, String> {
+    let sessions = crate::agent_session::list_agent_sessions()?;
+    let session = sessions
+        .into_iter()
+        .find(|item| item.id == session_id)
+        .ok_or_else(|| "会话不存在".to_string())?;
+    if let Some(workspace_id) = session.workspace_id {
+        let workspaces = crate::commands::settings::list_agent_workspaces()?;
+        if let Some(workspace) = workspaces.into_iter().find(|item| item.id == workspace_id) {
+            let path = workspace_dir(&workspace.slug)?;
+            fs::create_dir_all(&path).map_err(|e| format!("创建工作区目录失败: {}", e))?;
+            return Ok(path.to_string_lossy().to_string());
+        }
+    }
+    crate::agent_session::get_agent_session(&session_id)?;
+    Ok(crate::agent_session::agent_sessions_dir()
+        .join(session_id)
+        .to_string_lossy()
+        .to_string())
+}
+
+fn session_attached_directories_base_dir(session_id: &str) -> Result<PathBuf, String> {
+    let sessions = crate::agent_session::list_agent_sessions()?;
+    let session = sessions
+        .into_iter()
+        .find(|item| item.id == session_id)
+        .ok_or_else(|| "会话不存在".to_string())?;
+    if let Some(workspace_id) = session.workspace_id {
+        let workspaces = crate::commands::settings::list_agent_workspaces()?;
+        if let Some(workspace) = workspaces.into_iter().find(|item| item.id == workspace_id) {
+            let path = workspace_dir(&workspace.slug)?;
+            fs::create_dir_all(&path).map_err(|e| format!("创建工作区目录失败: {}", e))?;
+            return Ok(path);
+        }
+    }
+    let session_dir = crate::agent_session::agent_sessions_dir().join(session_id);
+    fs::create_dir_all(&session_dir).map_err(|e| format!("创建会话目录失败: {}", e))?;
+    Ok(session_dir)
+}
+
+#[tauri::command]
+pub fn get_workspace_files_path(workspace_slug: String) -> Result<String, String> {
+    let path = workspace_dir(&workspace_slug)?.join("files");
+    fs::create_dir_all(&path).map_err(|e| format!("创建工作区文件目录失败: {}", e))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+fn attached_directories_path(base_dir: &Path) -> PathBuf {
+    base_dir.join("attached-directories.json")
+}
+
+fn load_attached_directories(base_dir: &Path) -> Result<Vec<String>, String> {
+    let path = attached_directories_path(base_dir);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content = fs::read_to_string(&path).map_err(|e| format!("读取附加目录失败: {}", e))?;
+    serde_json::from_str::<Vec<String>>(&content).map_err(|e| format!("解析附加目录失败: {}", e))
+}
+
+fn save_attached_directories(base_dir: &Path, directories: &[String]) -> Result<(), String> {
+    fs::create_dir_all(base_dir).map_err(|e| format!("创建目录失败: {}", e))?;
+    let content = serde_json::to_string_pretty(directories)
+        .map_err(|e| format!("序列化附加目录失败: {}", e))?;
+    fs::write(attached_directories_path(base_dir), content)
+        .map_err(|e| format!("写入附加目录失败: {}", e))
+}
+
+fn normalize_directory_path(directory_path: String) -> Result<String, String> {
+    let path = PathBuf::from(&directory_path);
+    if !path.is_dir() {
+        return Err(format!("目录不存在: {}", directory_path));
+    }
+    path.canonicalize()
+        .map(|canonical| canonical.to_string_lossy().to_string())
+        .map_err(|e| format!("解析目录失败: {}", e))
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachDirectoryInput {
+    pub session_id: String,
+    pub directory_path: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachWorkspaceDirectoryInput {
+    pub workspace_slug: String,
+    pub directory_path: String,
+}
+
+#[tauri::command]
+pub fn attach_directory(input: AttachDirectoryInput) -> Result<Vec<String>, String> {
+    crate::agent_session::get_agent_session(&input.session_id)?;
+    let normalized = normalize_directory_path(input.directory_path)?;
+    let session_dir = session_attached_directories_base_dir(&input.session_id)?;
+    let mut directories = load_attached_directories(&session_dir)?;
+    if !directories.iter().any(|entry| entry == &normalized) {
+        directories.push(normalized);
+    }
+    save_attached_directories(&session_dir, &directories)?;
+    Ok(directories)
+}
+
+#[tauri::command]
+pub fn detach_directory(session_id: String, dir_path: String) -> Result<(), String> {
+    crate::agent_session::get_agent_session(&session_id)?;
+    let session_dir = session_attached_directories_base_dir(&session_id)?;
+    let normalized = normalize_directory_path(dir_path)?;
+    let mut directories = load_attached_directories(&session_dir)?;
+    directories.retain(|entry| entry != &normalized);
+    save_attached_directories(&session_dir, &directories)
+}
+
+#[tauri::command]
+pub fn attach_workspace_directory(
+    input: AttachWorkspaceDirectoryInput,
+) -> Result<Vec<String>, String> {
+    let normalized = normalize_directory_path(input.directory_path)?;
+    let workspace_base = workspace_dir(&input.workspace_slug)?;
+    let mut directories = load_attached_directories(&workspace_base)?;
+    if !directories.iter().any(|entry| entry == &normalized) {
+        directories.push(normalized);
+    }
+    save_attached_directories(&workspace_base, &directories)?;
+    Ok(directories)
+}
+
+#[tauri::command]
+pub fn detach_workspace_directory(workspace_slug: String, dir_path: String) -> Result<(), String> {
+    let workspace_base = workspace_dir(&workspace_slug)?;
+    let normalized = normalize_directory_path(dir_path)?;
+    let mut directories = load_attached_directories(&workspace_base)?;
+    directories.retain(|entry| entry != &normalized);
+    save_attached_directories(&workspace_base, &directories)
+}
+
+#[tauri::command]
+pub fn get_workspace_directories(workspace_slug: String) -> Result<Vec<String>, String> {
+    let workspace_base = workspace_dir(&workspace_slug)?;
+    load_attached_directories(&workspace_base)
+}
+
 // ============================================================
-// Tests
+// 测试
 // ============================================================
 
 #[cfg(test)]
@@ -174,7 +414,7 @@ mod tests {
         let test_data = b"hello world";
         let b64 = base64::engine::general_purpose::STANDARD.encode(test_data);
 
-        // Write via command logic
+        // 按命令逻辑写入文件
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(&b64)
             .unwrap();
@@ -182,7 +422,7 @@ mod tests {
         let file_path = dir.join("test.txt");
         fs::write(&file_path, &bytes).unwrap();
 
-        // Read via command logic
+        // 按命令逻辑读取文件
         let read_data = fs::read(&file_path).unwrap();
         let read_b64 = base64::engine::general_purpose::STANDARD.encode(&read_data);
 

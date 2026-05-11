@@ -10,7 +10,7 @@
 export interface MemoryConfig {
   /** 是否启用记忆功能 */
   enabled: boolean
-  /** MemOS Cloud API Key */
+  /** MemOS Cloud API 密钥 */
   apiKey: string
   /** 用户标识 */
   userId: string
@@ -523,6 +523,29 @@ export type AgentStreamPayload =
   | { kind: 'sdk_message'; message: SDKMessage }
   | { kind: 'jgui_event'; event: JguiEvent }
 
+/**
+ * Agent 流式解码后的共享协议形状
+ *
+ * 仅用于 ipc-stream-protocol 这一层的归一化返回值。
+ */
+export type AgentStreamDecodeEvent =
+  | {
+      kind: 'payload'
+      sessionId: string
+      payload: AgentStreamPayload
+    }
+  | {
+      kind: 'complete'
+      sessionId: string
+      totalTokens?: number
+      resultSubtype?: string
+    }
+  | {
+      kind: 'error'
+      sessionId: string
+      error: string
+    }
+
 // ===== Agent 会话管理 =====
 
 /**
@@ -584,7 +607,7 @@ export interface AgentMessage {
   model?: string
   /** 工具活动数据（agent 事件列表，用于回放工具调用） */
   events?: AgentEvent[]
-  /** 错误代码（status 消息，role='status' 时使用） */
+  /** 错误代码（status 消息，`role='status'` 时使用） */
   errorCode?: ErrorCode
   /** 错误标题（status 消息） */
   errorTitle?: string
@@ -681,7 +704,7 @@ export interface WorkspaceMcpConfig {
 export interface SkillImportSource {
   sourceWorkspaceSlug: string
   sourceWorkspaceName: string
-  importedAt: string        // ISO 8601
+  importedAt: string        // ISO 8601 时间字符串
   sourceVersion: string     // 导入时源 Skill 的 version，无则 '0.0.0'
 }
 
@@ -753,9 +776,9 @@ export interface AgentQueueMessageInput {
   /** 前端预生成的 UUID（用于乐观更新去重） */
   uuid?: string
   /**
-   * 软中断当前 Agent turn 后再追加消息。
-   * true：先调用 SDK query.interrupt() 立即打断正在输出的 turn，再注入消息。
-   * false / undefined：排队追加（默认行为，turn 结束后才会被消费）。
+   * 软中断当前 Agent 轮次后再追加消息。
+   * true：先调用 SDK query.interrupt() 立即打断正在输出的轮次，再注入消息。
+   * false / undefined：排队追加（默认行为，轮次结束后才会被消费）。
    */
   interrupt?: boolean
 }
@@ -792,7 +815,7 @@ export interface RewindSessionInput {
 export interface RewindSessionResult {
   /** 截断后剩余的消息数 */
   remainingMessages: number
-  /** 文件恢复结果（enableFileCheckpointing 启用时可用） */
+  /** 文件恢复结果（当前版本通常为不可用，用于明确告知边界） */
   fileRewind?: {
     canRewind: boolean
     error?: string
@@ -864,6 +887,14 @@ export interface AgentStreamCompletePayload {
   startedAt?: number
   /** SDK result 消息的 subtype（success / error_max_turns / error_max_budget_usd / error_during_execution 等） */
   resultSubtype?: string
+}
+
+/** 响应 Agent 中断请求的输入参数 */
+export interface RespondAgentInterruptInput {
+  sessionId: string
+  interruptId: string
+  kind: 'permission' | 'ask_user' | 'plan'
+  response: Record<string, unknown>
 }
 
 // ===== 文件浏览器 =====
@@ -965,6 +996,8 @@ export interface AskUserQuestionOption {
 
 /** AskUserQuestion 工具的问题定义 */
 export interface AskUserQuestion {
+  /** 稳定题目标识（用于回传答案时保真） */
+  id?: string
   /** 问题内容 */
   question: string
   /** 短标签（chip 显示） */
@@ -988,11 +1021,21 @@ export interface AskUserRequest {
 }
 
 /** AskUser 响应（渲染进程 → 主进程） */
+export interface AskUserAnswerResponse {
+  /** 稳定题目标识 */
+  questionId: string
+  /** 选中的选项 */
+  selectedOptions: string[]
+  /** 自定义文本答案 */
+  customText?: string
+}
+
+/** AskUser 响应（渲染进程 → 主进程） */
 export interface AskUserResponse {
   /** 请求 ID */
   requestId: string
-  /** 用户答案（问题文本 → 答案文本，与 SDK 约定一致） */
-  answers: Record<string, string>
+  /** 用户答案；兼容旧 map 形状，但主口径已统一为结构化 answers[] */
+  answers: AskUserAnswerResponse[] | Record<string, string>
 }
 
 // ===== ExitPlanMode 计划审批类型 =====
@@ -1106,7 +1149,7 @@ export interface TeamConfig {
 
 /** Team 成员 */
 export interface TeamMember {
-  /** Agent ID */
+  /** Agent 标识 */
   agentId: string
   /** 显示名称 */
   name: string
@@ -1197,7 +1240,7 @@ export const AGENT_IPC_CHANNELS = {
   MOVE_SESSION_TO_WORKSPACE: 'agent:move-session-to-workspace',
   /** 分叉会话（从指定消息处创建新会话） */
   FORK_SESSION: 'agent:fork-session',
-  /** 快照回退（同一会话内回退到指定点，恢复文件 + 截断对话） */
+  /** 快照回退（同一会话内回退到指定点，当前版本仅截断对话） */
   REWIND_SESSION: 'agent:rewind-session',
 
   // 工作区管理

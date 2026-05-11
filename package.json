@@ -16,7 +16,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint": "bash scripts/check_lint.sh",
+    "lint:fix": "bash scripts/check_lint.sh --fix"
   },
   "dependencies": {
     "@jgui/core": "workspace:*",

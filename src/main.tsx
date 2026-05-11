@@ -33,7 +33,7 @@ import 'katex/dist/katex.min.css'
 import * as ipc from '@/lib/ipc'
 
 // ============================================================
-// Initializer Components
+// 初始化用组件
 // ============================================================
 
 function ThemeInitializer(): null {
@@ -206,7 +206,7 @@ function TabStatePersistenceInitializer(): null {
 }
 
 // ============================================================
-// Render
+// 应用渲染
 // ============================================================
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

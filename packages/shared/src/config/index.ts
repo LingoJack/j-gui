@@ -1,6 +1,5 @@
 /**
- * Shared configuration for j-gui
+ * j-gui 的共享配置
  */
 
-// Placeholder - will be expanded as needed
 export const APP_NAME = 'j-gui'

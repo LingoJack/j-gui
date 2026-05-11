@@ -1,22 +1,22 @@
 /**
- * useSmoothStream - 流式文本平滑渲染 Hook
+ * useSmoothStream - 流式文本平滑渲染钩子
  *
  * 将后端推送的流式文本（可能每秒几十次更新）转化为
  * 平滑的逐字渲染效果，类似打字机。
  *
  * 核心机制：
- * 1. 新增 delta 通过 Intl.Segmenter 拆分为字符粒度后入队
+ * 1. 新增增量通过 Intl.Segmenter 拆分为字符粒度后入队
  * 2. requestAnimationFrame 驱动渲染循环
  * 3. 每帧动态计算渲染字符数（队列长时加速追赶，短时放慢）
- * 4. 流结束后加速但渐进排空队列（不一次性 dump，避免跳动）
+ * 4. 流结束后加速但渐进排空队列（不一次性清空，避免跳动）
  *
- * 参考 Cherry Studio 的 useSmoothStream 实现。
+ * 参考 Cherry Studio 的同名实现思路。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 interface UseSmoothStreamOptions {
-  /** 原始流式内容（每次 chunk 累积后的完整文本） */
+  /** 原始流式内容（每次数据块累积后的完整文本） */
   content: string
   /** 是否正在流式输出中 */
   isStreaming: boolean
@@ -40,9 +40,9 @@ function segmentText(text: string): string[] {
 }
 
 /**
- * 流式文本平滑渲染 Hook
+ * 流式文本平滑渲染钩子
  *
- * @example
+ * @example 示例
  * ```tsx
  * const streamingContent = useAtomValue(streamingContentAtom)
  * const isStreaming = useAtomValue(streamingAtom)
@@ -64,11 +64,11 @@ export function useSmoothStream({
 
   // 字符队列（待渲染的字符）
   const chunkQueueRef = useRef<string[]>([])
-  // rAF ID
+  // rAF 句柄 ID
   const rafRef = useRef<number | null>(null)
   // 已渲染到 UI 的文本
   const displayedRef = useRef(content)
-  // 上一次收到的完整内容（用于计算 delta）
+  // 上一次收到的完整内容（用于计算增量）
   const prevContentRef = useRef(content)
   // 上次渲染时间
   const lastRenderTimeRef = useRef(0)
@@ -78,7 +78,7 @@ export function useSmoothStream({
   // 同步 streamDone 状态
   streamDoneRef.current = !isStreaming
 
-  // 检测内容变化，计算 delta 并入队
+  // 检测内容变化，计算增量并入队
   useEffect(() => {
     const prevContent = prevContentRef.current
     const newContent = content

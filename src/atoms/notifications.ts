@@ -53,7 +53,7 @@ export const DEFAULT_NOTIFICATION_SOUNDS: Required<NotificationSoundSettings> = 
   exitPlanMode: 'ding-dong',
 }
 
-// ===== Jotai Atoms =====
+// ===== Jotai 原子 =====
 
 /** 通知是否启用 */
 export const notificationsEnabledAtom: PrimitiveAtom<boolean> = atom<boolean>(true)

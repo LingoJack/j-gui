@@ -1,7 +1,7 @@
 import { vi } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 
-// Mock Tauri APIs for test environment
+// 为测试环境模拟 Tauri API
 class MockChannel {
   onmessage: ((event: any) => void) | null = null
 }

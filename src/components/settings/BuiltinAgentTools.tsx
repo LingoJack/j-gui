@@ -1,7 +1,7 @@
 /**
- * BuiltinAgentTools - Read-only display of built-in tools available to the agent
+ * BuiltinAgentTools - 只读展示 Agent 可用的内置工具
  *
- * Extracted from AgentSettings.tsx to reduce component size.
+ * 从 AgentSettings.tsx 中拆出，以缩小组件体积。
  */
 
 import * as React from 'react'

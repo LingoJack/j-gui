@@ -92,7 +92,7 @@ export interface DingTalkBridgeState {
 
 /** 单个 Bot 的 Bridge 状态（包含身份信息） */
 export interface DingTalkBotBridgeState extends DingTalkBridgeState {
-  /** Bot ID */
+  /** Bot 标识 */
   botId: string
   /** Bot 显示名称 */
   botName: string

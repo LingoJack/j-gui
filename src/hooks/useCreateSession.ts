@@ -37,13 +37,13 @@ export function useCreateSession(): CreateSessionActions {
   const setActiveView = useSetAtom(activeViewAtom)
   const setDraftSessionIds = useSetAtom(draftSessionIdsAtom)
 
-  // Chat
+  // Chat 模式
   const setConversations = useSetAtom(conversationsAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
   const promptConfig = useAtomValue(promptConfigAtom)
   const setSelectedPromptId = useSetAtom(selectedPromptIdAtom)
 
-  // Agent
+  // Agent 模式
   const setAgentSessions = useSetAtom(agentSessionsAtom)
   const agentChannelId = useAtomValue(agentChannelIdAtom)
   const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)

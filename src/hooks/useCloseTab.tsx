@@ -2,12 +2,12 @@
  * useCloseTab — 统一的标签页关闭逻辑
  *
  * 被 TabBar（×按钮/中键）和 GlobalShortcuts（Cmd+W）共用，
- * 解决原实现"关闭 Agent Tab 时不调 stopAgent 导致 claude 子进程残留"的问题。
+ * 解决原实现“关闭 Agent 标签页时不调 stopAgent 导致 claude 子进程残留”的问题。
  *
  * 关键行为：
- * - Agent Tab 关闭前先调 ipc.stopAgent(sessionId) 终止子进程
- * - 若 Agent 正在流式中，先弹 AlertDialog 让用户确认（通过 pendingCloseTabIdAtom 驱动）
- * - Chat Tab 走原有 UI 清理链路
+ * - Agent 标签页关闭前先调 ipc.stopAgent(sessionId) 终止子进程
+ * - 若 Agent 正在流式中，先弹确认对话框让用户确认（通过 pendingCloseTabIdAtom 驱动）
+ * - Chat 标签页走原有 UI 清理链路
  */
 
 import * as React from 'react'
@@ -61,7 +61,7 @@ export function useCloseTab(): UseCloseTabReturn {
   const setWorkingDone = useSetAtom(workingDoneSessionIdsAtom)
   const syncActiveTabSideEffects = useSyncActiveTabSideEffects()
 
-  // per-conversation / per-session Map atoms（关闭 Tab 时需要清理对应条目）
+  // 按对话 / 按会话隔离的 Map 原子（关闭标签页时需要清理对应条目）
   const setConvModels = useSetAtom(conversationModelsAtom)
   const setConvContextLength = useSetAtom(conversationContextLengthAtom)
   const setConvThinking = useSetAtom(conversationThinkingEnabledAtom)

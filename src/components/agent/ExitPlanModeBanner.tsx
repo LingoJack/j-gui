@@ -99,6 +99,7 @@ export function ExitPlanModeBanner({ sessionId }: ExitPlanModeBannerProps): Reac
     setSubmitting(true)
     try {
       await ipc.respondExitPlanMode({
+        sessionId,
         requestId: request.requestId,
         action,
         feedback: action === 'feedback' ? feedbackText.trim() : undefined,

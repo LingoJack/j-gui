@@ -5,7 +5,7 @@
  * 以及 Chat 模块的 IPC 通道常量。
  */
 
-import type { ProviderType } from './channel'
+import type { ChatProtocolHint, ProviderType } from './channel'
 
 // ===== 附件相关 =====
 
@@ -188,6 +188,38 @@ export interface ChatSendInput {
   thinkingEnabled?: boolean
   /** 本次请求启用的工具 ID 列表（由前端工具选择器决定） */
   enabledToolIds?: string[]
+  /** 显式协议提示；通常来自渠道配置 */
+  protocolHint?: ChatProtocolHint
+}
+
+/**
+ * Chat 规范请求输入
+ *
+ * 用于 IPC / 后端请求 DTO 的共享真相，不包含 UI 层的消息历史。
+ */
+export interface ChatRequestInput {
+  /** 会话 ID */
+  sessionId: string
+  /** 本次发送内容 */
+  content: string
+  /** 渠道 ID */
+  channelId?: string
+  /** 模型 ID */
+  modelId?: string
+  /** 系统提示词 */
+  systemMessage?: string | null
+  /** 上下文长度（轮数），'infinite' 表示全部包含 */
+  contextLength?: number | 'infinite'
+  /** 上下文分隔线对应的消息 ID 列表 */
+  contextDividers?: string[]
+  /** 文件附件列表 */
+  attachments?: FileAttachment[]
+  /** 是否启用思考模式 */
+  thinkingEnabled?: boolean
+  /** 本次请求启用的工具 ID 列表 */
+  enabledToolIds?: string[]
+  /** 显式协议提示；通常由渠道配置驱动 */
+  protocolHint?: ChatProtocolHint
 }
 
 // ===== 标题生成 =====
@@ -224,6 +256,8 @@ export interface StreamReasoningEvent {
   conversationId: string
   /** 推理增量 */
   delta: string
+  /** 片段序号 */
+  index?: number
 }
 
 /**
@@ -247,6 +281,88 @@ export interface StreamErrorEvent {
   /** 错误信息 */
   error: string
 }
+
+/**
+ * Chat 流式解码后的共享协议形状
+ *
+ * 仅用于 ipc-stream-protocol 这一层的归一化返回值。
+ */
+export type ChatStreamDecodeEvent =
+  | {
+      kind: 'chunk'
+      conversationId: string
+      delta: string
+      index?: number
+    }
+  | {
+      kind: 'reasoning'
+      conversationId: string
+      delta: string
+      index?: number
+    }
+  | {
+      kind: 'complete'
+      conversationId: string
+      totalTokens?: number
+    }
+  | {
+      kind: 'error'
+      conversationId: string
+      error: string
+    }
+
+/**
+ * Chat 流式规范 payload
+ *
+ * 这是共享层定义的协议真相，后续步骤会逐步让 IPC / 监听侧对齐。
+ */
+export interface ChatChunkPayload {
+  type: 'chunk'
+  sessionId: string
+  delta: string
+  index: number
+}
+
+/** Chat 完成 payload */
+export interface ChatCompletePayload {
+  type: 'complete'
+  sessionId: string
+  totalTokens: number
+}
+
+/** Chat 推理 payload */
+export interface ChatReasoningPayload {
+  type: 'reasoning'
+  sessionId: string
+  delta: string
+  index: number
+}
+
+/** Chat 错误 payload */
+export interface ChatStreamErrorPayload {
+  type: 'error'
+  sessionId: string
+  message: string
+  code?: string
+}
+
+/** Chat 不支持字段 payload */
+export interface ChatUnsupportedFieldsPayload {
+  type: 'unsupported_fields'
+  sessionId: string
+  fields: string[]
+  message: string
+}
+
+/**
+ * Chat 规范流式 payload
+ */
+export type ChatStreamPayload =
+  | ChatChunkPayload
+  | ChatReasoningPayload
+  | ChatCompletePayload
+  | ChatStreamErrorPayload
+  | ChatUnsupportedFieldsPayload
 
 /**
  * Chat 工具活动（记忆工具调用状态）

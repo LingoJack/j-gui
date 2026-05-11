@@ -15,7 +15,7 @@ import {
 import { tabsAtom } from './tab-atoms'
 import { draftSessionIdsAtom } from './draft-session-atoms'
 
-/** Working 区域三组会话 */
+/** Working 区域的三组会话 */
 export interface WorkingSessionGroups {
   todo: AgentSessionMeta[]
   running: AgentSessionMeta[]
@@ -26,7 +26,7 @@ export interface WorkingSessionGroups {
  * 派生 atom：计算 Working 区域的三组会话（跨工作区，不按当前工作区过滤）
  * - todo: blocked（orange，等待用户决策）
  * - running: running（blue，Agent 执行中）
- * - done: 完成且 Tab 仍打开（green / idle），包含手动标记为工作中的会话
+ * - done: 完成且标签页仍打开（green / idle），包含手动标记为工作中的会话
  *
  * manualWorking 会话始终纳入工作中，按当前 indicator 分配到对应子组
  */
@@ -47,7 +47,7 @@ export const workingSessionGroupsAtom = atom<WorkingSessionGroups>((get) => {
   const done: AgentSessionMeta[] = []
   const includedIds = new Set<string>()
 
-  // 从 indicatorMap 提取 blocked + running
+  // 从 indicatorMap 提取 blocked 和 running
   for (const [id, status] of indicatorMap) {
     const session = sessionMap.get(id)
     if (!session || draftIds.has(id)) continue
@@ -83,7 +83,7 @@ export const workingSessionGroupsAtom = atom<WorkingSessionGroups>((get) => {
   return { todo, running, done }
 })
 
-/** Working 区域中所有会话 ID 的集合（用于从 Pinned 和日期分组列表中排除） */
+/** Working 区域中所有会话 ID 的集合（用于从置顶和日期分组列表中排除） */
 export const workingSessionIdsSetAtom = atom<Set<string>>((get) => {
   const { todo, running, done } = get(workingSessionGroupsAtom)
   const set = new Set<string>()

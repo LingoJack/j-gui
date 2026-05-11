@@ -38,7 +38,7 @@ interface OpenAIToolCall {
   function: { name: string; arguments: string }
 }
 
-/** OpenAI 消息格式（扩展支持 tool role） */
+/** OpenAI 消息格式（扩展支持 `tool` 角色） */
 interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string | OpenAIContentBlock[] | null
@@ -99,14 +99,14 @@ function buildMessageContent(
 /**
  * 将统一消息历史转换为 OpenAI 格式
  *
- * OpenAI 是唯一支持 system 角色消息的 provider。
+ * OpenAI 是唯一支持 system 角色消息的供应商。
  * 包含历史消息附件的处理。
  */
 function toOpenAIMessages(input: StreamRequestInput): OpenAIMessage[] {
   const { history, userMessage, systemMessage, attachments, readImageAttachments } = input
   const messages: OpenAIMessage[] = []
 
-  // System 消息作为独立 role
+  // 系统消息作为独立 `role`
   if (systemMessage) {
     messages.push({ role: 'system', content: systemMessage })
   }

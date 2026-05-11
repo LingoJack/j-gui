@@ -309,7 +309,7 @@
   }
 }
 
-/* Draggable title bar region for Electron window */
+/* 可拖拽标题栏区域（兼容桌面窗口） */
 .titlebar-drag-region {
   -webkit-app-region: drag;
   app-region: drag;

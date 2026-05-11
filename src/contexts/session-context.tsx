@@ -1,12 +1,12 @@
 /**
- * Session Context — 为 ChatView / AgentView 提供 conversationId / sessionId
+ * 会话上下文 — 为 ChatView / AgentView 提供 conversationId / sessionId
  *
  * 避免逐层 props 透传，子组件通过 useConversationId() / useAgentSessionId() 获取。
  */
 
 import * as React from 'react'
 
-// ===== Conversation（Chat 模式）=====
+// ===== 对话上下文（Chat 模式）=====
 
 const ConversationContext = React.createContext<string | null>(null)
 
@@ -30,12 +30,12 @@ export function useConversationId(): string {
   return id
 }
 
-/** 可选版本：在 Provider 外返回 null（用于 ModelSelector 等双模式组件） */
+/** 可选版本：在提供器外返回 null（用于 ModelSelector 等双模式组件） */
 export function useConversationIdOptional(): string | null {
   return React.useContext(ConversationContext)
 }
 
-// ===== Agent Session =====
+// ===== Agent 会话上下文 =====
 
 const AgentSessionContext = React.createContext<string | null>(null)
 

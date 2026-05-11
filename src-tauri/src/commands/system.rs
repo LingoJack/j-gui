@@ -7,37 +7,37 @@ use crate::kernel::{ConfigKernel, JcliAdapter};
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelInfo {
-    /// j-cli crate version embedded in j-gui at compile time.
+    /// 编译期内嵌在 j-gui 中的 j-cli crate 版本。
     pub crate_version: String,
-    /// j-gui application version from Tauri config.
+    /// 来自 Tauri 配置的 j-gui 应用版本。
     pub app_version: String,
-    /// Locally installed j CLI version (detected via `j version`).
+    /// 本机安装的 j CLI 版本（通过 `j version` 探测）。
     pub local_cli_version: Option<String>,
-    /// Whether the local j CLI is installed and accessible on PATH.
+    /// 本机 j CLI 是否已安装且可通过 PATH 访问。
     pub local_cli_installed: bool,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
-    /// Current embedded crate version.
+    /// 当前内嵌 crate 版本。
     pub current: String,
-    /// Latest version available on crates.io (None if check failed).
+    /// crates.io 上可获取的最新版本（检查失败时为 None）。
     pub latest: Option<String>,
-    /// Whether an update is available.
+    /// 是否存在可用更新。
     pub update_available: bool,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppUpdateInfo {
-    /// Current j-gui app version.
+    /// 当前 j-gui 应用版本。
     pub current: String,
-    /// Latest release tag on GitHub (None if check failed).
+    /// GitHub 上的最新发布标签（检查失败时为 None）。
     pub latest: Option<String>,
-    /// Download URL for the latest release.
+    /// 最新版本的下载地址。
     pub download_url: Option<String>,
-    /// Whether an update is available.
+    /// 是否存在可用更新。
     pub update_available: bool,
 }
 
@@ -57,13 +57,13 @@ fn get_kernel_info_impl(config: &dyn ConfigKernel) -> KernelInfo {
     }
 }
 
-/// Strip ANSI escape codes (CSI sequences like `\x1b[0m`, `\x1b[39m`).
+/// 去除 ANSI 转义序列（例如 `\x1b[0m`、`\x1b[39m` 这类 CSI 序列）。
 fn strip_ansi(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\x1b' && chars.peek() == Some(&'[') {
-            chars.next(); // skip '['
+            chars.next(); // 跳过 '['
             while let Some(&d) = chars.peek() {
                 if d == 'm' {
                     chars.next();
@@ -78,8 +78,8 @@ fn strip_ansi(s: &str) -> String {
     result
 }
 
-/// Detect the locally installed j CLI version.
-/// Runs `j version` and parses the "kernel" row from the table output.
+/// 探测本机安装的 j CLI 版本。
+/// 通过执行 `j version`，解析表格输出中的 `kernel` 行。
 fn detect_local_j_cli() -> (Option<String>, bool) {
     let output = std::process::Command::new("j").arg("version").output();
     match output {

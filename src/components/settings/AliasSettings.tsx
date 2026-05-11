@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 import * as ipc from '@/lib/ipc'
 
 // ============================================================
-// Types
+// 类型
 // ============================================================
 
 interface AliasEntry {
@@ -33,7 +33,7 @@ const SECTION_LABELS: Record<string, string> = {
 }
 
 // ============================================================
-// AliasRow
+// 别名行
 // ============================================================
 
 interface AliasRowProps {
@@ -63,7 +63,7 @@ function AliasRow({ name, value, onDelete }: AliasRowProps): React.ReactElement 
 }
 
 // ============================================================
-// AddAliasForm
+// 添加别名表单
 // ============================================================
 
 interface AddAliasFormProps {
@@ -122,7 +122,7 @@ function AddAliasForm({
 }
 
 // ============================================================
-// AliasSection
+// 别名分组
 // ============================================================
 
 interface AliasSectionProps {
@@ -192,7 +192,7 @@ function AliasSectionComponent({
 }
 
 // ============================================================
-// AliasSettings (main)
+// AliasSettings 主组件
 // ============================================================
 
 export function AliasSettings(): React.ReactElement {

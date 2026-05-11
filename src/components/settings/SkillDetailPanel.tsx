@@ -1,7 +1,7 @@
 /**
- * SkillDetailPanel - Master-detail right panel showing skill detail with inline editing
+ * SkillDetailPanel - 在主从布局右侧展示 Skill 详情，并支持就地编辑
  *
- * Extracted from AgentSettings.tsx to reduce component size.
+ * 从 AgentSettings.tsx 中拆出，以缩小组件体积。
  */
 
 import * as React from 'react'
@@ -15,7 +15,7 @@ import { extractSkillBody, rebuildSkillMd } from './skill-helpers'
 import type { SkillMeta } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 
-// ===== Props =====
+// ===== 属性 =====
 
 export interface SkillDetailPanelProps {
   skill: SkillMeta
@@ -23,7 +23,7 @@ export interface SkillDetailPanelProps {
   onSaved: () => void
 }
 
-// ===== Component =====
+// ===== 组件 =====
 
 export function SkillDetailPanel({ skill, workspaceSlug, onSaved }: SkillDetailPanelProps): React.ReactElement {
   const [content, setContent] = React.useState<string | null>(null)
@@ -115,7 +115,7 @@ export function SkillDetailPanel({ skill, workspaceSlug, onSaved }: SkillDetailP
 
   return (
     <div className="p-5 space-y-6">
-      {/* Header */}
+      {/* 头部 */}
       <div className="flex items-start gap-3">
         <div className="rounded-xl bg-amber-500/12 p-2.5 text-amber-500 shrink-0">
           <Sparkles size={20} />
@@ -128,7 +128,7 @@ export function SkillDetailPanel({ skill, workspaceSlug, onSaved }: SkillDetailP
         </div>
       </div>
 
-      {/* Metadata Section */}
+      {/* 元数据区域 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h4 className="text-sm font-medium text-foreground">元数据</h4>
@@ -167,7 +167,7 @@ export function SkillDetailPanel({ skill, workspaceSlug, onSaved }: SkillDetailP
         </SettingsCard>
       </div>
 
-      {/* Body Section */}
+      {/* 正文区域 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h4 className="text-sm font-medium text-foreground">说明</h4>
@@ -208,7 +208,7 @@ export function SkillDetailPanel({ skill, workspaceSlug, onSaved }: SkillDetailP
   )
 }
 
-// ===== Metadata Helpers =====
+// ===== 元数据辅助组件 =====
 
 function MetadataRow({ label, value }: { label: string; value: string }): React.ReactElement {
   return (

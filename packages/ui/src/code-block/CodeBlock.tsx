@@ -2,7 +2,7 @@
  * CodeBlock - 代码块组件
  *
  * 提供语法高亮（Shiki）、语言标签和复制按钮。
- * 用于 react-markdown 的 pre 元素自定义渲染。
+ * 用于 react-markdown 的 `pre` 元素自定义渲染。
  *
  * 流式渲染策略（类 Cherry Studio 方案）：
  * 1. 使用 highlightToTokens 获取结构化 token，逐行渲染为 React 元素
@@ -23,14 +23,14 @@ import * as React from 'react'
 import { highlightCode, highlightToTokens } from '@jgui/core'
 import type { HighlightToken, HighlightTokensResult } from '@jgui/core'
 
-/** react-markdown 传入的 <code> 元素 props */
+/** react-markdown 传入的 `<code>` 元素属性 */
 interface CodeElementProps {
   className?: string
   children?: React.ReactNode
 }
 
 interface CodeBlockProps {
-  /** react-markdown 传入的 <pre> 子元素（内含 <code>） */
+  /** react-markdown 传入的 `<pre>` 子元素（内含 `<code>`） */
   children: React.ReactNode
 }
 
@@ -120,7 +120,7 @@ const checkIconPath = <polyline points="20 6 9 17 4 12" />
 
 interface CodeLineProps {
   tokens: HighlightToken[]
-  /** 该行的原始文本（token 未覆盖部分作为 fallback） */
+  /** 该行的原始文本（token 未覆盖部分作为兜底） */
   rawLine: string
 }
 

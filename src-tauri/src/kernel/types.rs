@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
-//! j-gui owned domain types for the kernel trait boundary.
-//! These are NOT jcli types — adapter does the conversion.
+//! j-gui 在 kernel trait 边界上自有的一组领域类型。
+//! 这些不是 jcli 原生类型，适配器层会负责转换。
 //!
-//! All types derive Clone + Debug + PartialEq for mockall compatibility.
+//! 所有类型都派生了 `Clone`、`Debug` 与 `PartialEq`，以兼容 mockall。
 
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc;
@@ -11,10 +11,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::Channel;
 
 // ---------------------------------------------------------------------------
-// Provider / Channel types
+// 提供方 / 渠道相关类型
 // ---------------------------------------------------------------------------
 
-/// Model entry within a provider/channel.
+/// 渠道配置下的模型条目。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelChannelModel {
@@ -23,14 +23,16 @@ pub struct KernelChannelModel {
     pub enabled: bool,
 }
 
-/// Provider configuration for LLM calls.
-/// Fields are kept snake_case for agent_config.json backward compat with jcli;
-/// new fields use explicit #[serde(rename)] for camelCase.
+/// LLM 调用所需的提供方配置。
+/// 字段保持 snake_case，以兼容 jcli 的 agent_config.json；
+/// 新增字段通过显式 `#[serde(rename)]` 映射为 camelCase。
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct KernelProvider {
     pub id: String,
     pub name: String,
     pub provider: String,
+    #[serde(default)]
+    pub protocol_hint: Option<String>,
     pub api_base: String,
     pub api_key: String,
     pub models: Vec<KernelChannelModel>,
@@ -42,38 +44,74 @@ pub struct KernelProvider {
     pub updated_at: u64,
 }
 
-/// Input for creating a new channel.
+/// 创建新渠道时的输入。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelCreateChannelInput {
     pub name: String,
     pub provider: String,
+    pub protocol_hint: Option<String>,
     pub api_base: String,
     pub api_key: String,
     pub models: Vec<KernelChannelModel>,
     pub enabled: bool,
 }
 
-/// Input for updating an existing channel (all fields optional).
+/// 更新已有渠道时的输入（所有字段均可选）。
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelUpdateChannelInput {
     pub name: Option<String>,
     pub provider: Option<String>,
+    pub protocol_hint: Option<String>,
     pub api_base: Option<String>,
     pub api_key: Option<String>,
     pub models: Option<Vec<KernelChannelModel>>,
     pub enabled: Option<bool>,
 }
 
-/// Chat message.
+/// 文件附件信息。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KernelFileAttachment {
+    pub id: String,
+    pub filename: String,
+    pub media_type: String,
+    pub local_path: String,
+    pub size: u64,
+}
+
+/// 聊天消息。
 #[derive(Clone, Debug, PartialEq)]
 pub struct KernelChatMessage {
     pub role: String,
     pub content: String,
+    pub reasoning: Option<String>,
+    pub attachments: Option<Vec<KernelFileAttachment>>,
 }
 
-/// Session summary for listing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct KernelChatRequestOptions {
+    pub thinking_enabled: Option<bool>,
+    pub protocol_family: Option<ChatProtocolFamily>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChatProtocolFamily {
+    OpenAiChatCompletions,
+    OpenAiResponses,
+    AnthropicMessages,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChatTransportRoute {
+    pub family: ChatProtocolFamily,
+    pub provider_key: String,
+    pub base_url: String,
+    pub model_id: Option<String>,
+}
+
+/// 用于列表展示的会话摘要。
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelSessionSummary {
@@ -87,15 +125,17 @@ pub struct KernelSessionSummary {
     pub archived: bool,
 }
 
-/// Session event from transcript.
+/// 从会话 transcript 读取出的事件。
 #[derive(Clone, Debug, PartialEq)]
 pub struct KernelSessionEvent {
     pub role: String,
     pub content: String,
+    pub reasoning: Option<String>,
+    pub attachments: Option<Vec<KernelFileAttachment>>,
     pub timestamp: u64,
 }
 
-/// Alias entry.
+/// 别名条目。
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelAliasEntry {
@@ -104,7 +144,7 @@ pub struct KernelAliasEntry {
     pub value: String,
 }
 
-/// Skill info.
+/// 技能信息。
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelSkillInfo {
@@ -114,7 +154,7 @@ pub struct KernelSkillInfo {
     pub dir_path: String,
 }
 
-/// Hook info.
+/// 钩子信息。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelHookInfo {
@@ -134,7 +174,7 @@ fn default_true() -> bool {
     true
 }
 
-/// MCP server config.
+/// MCP 服务配置。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelMcpServerConfig {
@@ -147,14 +187,14 @@ pub struct KernelMcpServerConfig {
     pub disabled: bool,
 }
 
-/// Per-workspace MCP configuration.
+/// 工作区级 MCP 配置。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelMcpWorkspaceConfig {
     pub servers: Vec<KernelMcpServerConfig>,
 }
 
-/// Built-in tool info.
+/// 内置工具信息。
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelToolInfo {
@@ -164,10 +204,10 @@ pub struct KernelToolInfo {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers (shared between adapter and commands)
+// 辅助函数（adapter 与 commands 共享）
 // ---------------------------------------------------------------------------
 
-/// Current unix timestamp in milliseconds.
+/// 当前 Unix 毫秒时间戳。
 pub fn current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -175,9 +215,26 @@ pub fn current_timestamp() -> u64 {
         .as_millis() as u64
 }
 
-/// Infer provider type string from an API base URL.
+/// 将提供方别名归一化为 shared/frontend 使用的标准 provider key。
+pub fn canonical_provider_key(provider: &str) -> String {
+    match provider.trim().to_ascii_lowercase().as_str() {
+        "tongyi" => "qwen".into(),
+        other => other.to_string(),
+    }
+}
+
+/// 根据 API base URL 推断提供方类型字符串。
 pub fn infer_provider(api_base: &str) -> String {
     let base = api_base.to_lowercase();
+    if base.contains("dashscope.aliyuncs.com") || base.contains("qwen") || base.contains("tongyi") {
+        return "qwen".into();
+    }
+    if base.contains("api.kimi.com/coding") {
+        return "kimi-coding".into();
+    }
+    if base.contains("moonshot.cn/anthropic") {
+        return "kimi-api".into();
+    }
     if base.contains("deepseek") {
         return "deepseek".into();
     }
@@ -202,24 +259,60 @@ pub fn infer_provider(api_base: &str) -> String {
     if base.contains("doubao") || base.contains("volc") {
         return "doubao".into();
     }
-    if base.contains("qwen") || base.contains("tongyi") {
-        return "tongyi".into();
-    }
     "custom".into()
 }
 
-/// Parameters for running the jcli agent loop directly through ChatKernel.
+/// 判断提供方是否应走 Anthropic Messages 兼容协议族。
+pub fn is_anthropic_compatible_provider(provider: Option<&str>) -> bool {
+    provider.is_some_and(|value| {
+        matches!(
+            canonical_provider_key(value).as_str(),
+            "anthropic" | "deepseek" | "kimi-api" | "kimi-coding"
+        )
+    })
+}
+
+/// 直接通过 ChatKernel 运行 jcli agent loop 所需的参数。
 #[derive(Clone)]
 pub struct KernelAgentParams {
     pub session_id: String,
     pub messages: Vec<KernelChatMessage>,
     pub system_prompt: Option<String>,
     pub permission_mode: String,
-    /// Channel for streaming agent events as JSON strings.
-    /// The frontend should parse each string as JSON.
+    /// 以 JSON 字符串流式发送 Agent 事件的通道。
+    /// 前端需要把每个字符串当作 JSON 解析。
     pub on_event: Channel<String>,
-    /// Optional Rust-side interceptor for streamed event JSON strings.
-    /// When set, every JSON string sent through on_event is also forwarded here.
-    /// Used by JAgent backend to bridge events to the existing AgentEvent system.
+    /// Rust 侧可选的流式事件 JSON 拦截器。
+    /// 设置后，所有通过 on_event 发送的 JSON 字符串也会同步转发到这里。
+    /// JAgent 后端用它把事件桥接到现有的 AgentEvent 系统。
     pub event_interceptor: Option<mpsc::Sender<String>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::infer_provider;
+
+    #[test]
+    fn infer_provider_recognizes_qwen_dashscope_url() {
+        assert_eq!(
+            infer_provider("https://dashscope.aliyuncs.com/compatible-mode/v1"),
+            "qwen"
+        );
+    }
+
+    #[test]
+    fn infer_provider_recognizes_kimi_api_anthropic_url() {
+        assert_eq!(
+            infer_provider("https://api.moonshot.cn/anthropic"),
+            "kimi-api"
+        );
+    }
+
+    #[test]
+    fn infer_provider_recognizes_kimi_coding_url() {
+        assert_eq!(
+            infer_provider("https://api.kimi.com/coding/v1"),
+            "kimi-coding"
+        );
+    }
 }

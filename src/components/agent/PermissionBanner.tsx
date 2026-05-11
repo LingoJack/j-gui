@@ -98,6 +98,7 @@ export function PermissionBanner({ sessionId }: PermissionBannerProps): React.Re
 
     try {
       await ipc.respondPermission({
+        sessionId,
         requestId: request.requestId,
         behavior,
         alwaysAllow,

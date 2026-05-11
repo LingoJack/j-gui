@@ -48,7 +48,7 @@ const TAIL_TABS: TabItem[] = [
   { id: "about", label: "关于", icon: <Info size={16} /> },
 ];
 
-/** Per-tab error boundary */
+/** 每个标签页独立的错误边界 */
 class TabErrorBoundary extends React.Component<
   { tab: string; children: React.ReactNode }, { error: Error | null }
 > {

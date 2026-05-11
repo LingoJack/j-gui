@@ -15,7 +15,7 @@ const isMac =
 
 // ===== 注册表状态 =====
 
-/** shortcutId → handler 集合 */
+/** shortcutId → 处理器集合 */
 const handlers = new Map<string, Set<() => void>>()
 
 /** 当前用户自定义配置 */
@@ -94,7 +94,7 @@ function rebuildCache(): void {
 /**
  * 全局 keydown 事件处理器
  *
- * 遍历所有注册的快捷键，匹配后执行对应 handler
+ * 遍历所有注册的快捷键，匹配后执行对应处理器
  */
 function dispatchShortcut(e: KeyboardEvent): void {
   // 忽略输入法组合过程
@@ -106,7 +106,7 @@ function dispatchShortcut(e: KeyboardEvent): void {
       if (handlerSet && handlerSet.size > 0) {
         e.preventDefault()
         e.stopPropagation()
-        // 执行所有注册的 handler
+        // 执行所有注册的处理器
         for (const handler of handlerSet) {
           handler()
         }
@@ -131,7 +131,7 @@ export function initShortcutRegistry(): void {
 }
 
 /**
- * 注册快捷键 handler
+ * 注册快捷键处理器
  *
  * @returns 注销函数
  */

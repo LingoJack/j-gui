@@ -1,8 +1,8 @@
 /**
- * MCP Dual Source UI — Phase B #13
+ * MCP 双数据源界面测试 - Phase B #13
  *
- * Tests for the MCP tab source selector that switches between
- * workspace MCP (full CRUD) and j-cli MCP (read-only) views.
+ * 测试 MCP 标签页的数据源选择器在工作区 MCP（完整增删改查）
+ * 与 j-cli MCP（只读）视图之间切换的行为。
  */
 
 import * as React from 'react'
@@ -20,7 +20,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import type { AgentWorkspace } from '@jgui/shared'
 import { invoke } from '@tauri-apps/api/core'
 
-// ===== Mock Data =====
+// ===== 模拟数据 =====
 
 const mockWorkspace: AgentWorkspace = {
   id: 'ws-test',
@@ -74,10 +74,10 @@ const mockWorkspaceServers: Record<string, any> = {
   },
 }
 
-// ===== IPC Mock =====
+// ===== IPC 模拟 =====
 
-// Use vi.mocked() on the globally mocked invoke from setup.ts
-// rather than redeclaring vi.mock, to avoid overriding the global mock.
+// 对 setup.ts 中全局模拟的 invoke 使用 vi.mocked()
+// 不要重新声明 vi.mock，以免覆盖全局 mock。
 const mockInvoke = vi.mocked(invoke)
 
 function setupInvokeMocks(jCliServers: any[] = mockJCliServers, workspaceServers: Record<string, any> = mockWorkspaceServers): void {
@@ -127,7 +127,7 @@ function setupInvokeMocks(jCliServers: any[] = mockJCliServers, workspaceServers
   })
 }
 
-// ===== Test Helpers =====
+// ===== 测试辅助函数 =====
 
 function createTestStore(): ReturnType<typeof createStore> {
   const store = createStore()
@@ -150,20 +150,20 @@ async function renderAgentSettings(): Promise<ReturnType<typeof render>> {
       </TooltipProvider>
     </Provider>,
   )
-  // Wait for initial loadData to complete
+    // 等待初始数据加载完成
   await waitFor(() => {
     expect(screen.queryByText('加载中...')).not.toBeInTheDocument()
   })
   return result
 }
 
-/** Switch to the MCP tab after rendering (Skills tab is default) */
+/** 渲染后切换到 MCP 标签页（默认显示技能标签） */
 function switchToMcpTab(): void {
   const mcpTabButton = screen.getByRole('button', { name: 'MCP' })
   fireEvent.click(mcpTabButton)
 }
 
-// ===== Tests =====
+// ===== 测试用例 =====
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -183,10 +183,10 @@ describe('MCP Dual Source UI', () => {
     await renderAgentSettings()
     await switchToMcpTab()
 
-    // Workspace view should show existing servers
+    // 工作区视图应显示现有服务器
     expect(screen.getByText('custom-db')).toBeInTheDocument()
     expect(screen.getByText('custom-api')).toBeInTheDocument()
-    // Workspace CRUD buttons should be visible
+    // 工作区增删改查按钮应可见
     expect(screen.getByText('添加服务器')).toBeInTheDocument()
     expect(screen.getByText('AI 配置')).toBeInTheDocument()
   })
@@ -195,19 +195,19 @@ describe('MCP Dual Source UI', () => {
     await renderAgentSettings()
     await switchToMcpTab()
 
-    // Click j-cli MCP button
+    // 点击 j-cli MCP 按钮
     fireEvent.click(screen.getByText('j-cli MCP'))
 
-    // j-cli servers should be visible
+    // j-cli 服务器应可见
     expect(screen.getByText('server-filesystem')).toBeInTheDocument()
     expect(screen.getByText('server-github')).toBeInTheDocument()
     expect(screen.getByText('server-puppeteer')).toBeInTheDocument()
 
-    // Workspace CRUD buttons should be hidden
+    // 工作区增删改查按钮应隐藏
     expect(screen.queryByText('添加服务器')).not.toBeInTheDocument()
     expect(screen.queryByText('AI 配置')).not.toBeInTheDocument()
 
-    // j-cli disabled badge should show for disabled server
+    // 禁用的 j-cli 服务器应显示禁用徽标
     expect(screen.getByText('已禁用')).toBeInTheDocument()
   })
 
@@ -225,11 +225,11 @@ describe('MCP Dual Source UI', () => {
     await renderAgentSettings()
     await switchToMcpTab()
 
-    // Switch to j-cli view
+    // 切换到 j-cli 视图
     fireEvent.click(screen.getByText('j-cli MCP'))
     expect(screen.getByText('server-filesystem')).toBeInTheDocument()
 
-    // Switch back to workspace view
+    // 切回工作区视图
     fireEvent.click(screen.getByText('工作区 MCP'))
     expect(screen.getByText('custom-db')).toBeInTheDocument()
     expect(screen.getByText('添加服务器')).toBeInTheDocument()
@@ -241,11 +241,11 @@ describe('MCP Dual Source UI', () => {
 
     fireEvent.click(screen.getByText('j-cli MCP'))
 
-    // stdio badge (for the first two servers)
+    // stdio 徽标（前两个服务器）
     const stdioBadges = screen.getAllByText('stdio')
     expect(stdioBadges).toHaveLength(2)
 
-    // SSE badge (for the puppeteer server)
+    // SSE 徽标（puppeteer 服务器）
     expect(screen.getByText('SSE')).toBeInTheDocument()
   })
 

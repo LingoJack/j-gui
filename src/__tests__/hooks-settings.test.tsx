@@ -7,7 +7,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { HooksSettings } from '@/components/settings/HooksSettings'
 import * as ipc from '@/lib/ipc'
 
-// Mock the IPC module used by HooksSettings
+// 模拟 HooksSettings 使用的 IPC 模块
 vi.mock('@/lib/ipc', () => ({
   listHooks: vi.fn(),
   toggleHook: vi.fn(),
@@ -59,20 +59,20 @@ describe('HooksSettings', () => {
 
     render(<HooksSettings />)
 
-    // Wait for hooks to load
+    // 等待钩子加载完成
     await waitFor(() => {
       expect(screen.getByText('消息验证')).toBeInTheDocument()
     })
 
-    // Event group headers (headings, not filter dropdown options)
+    // 事件分组标题（标题本身，不是筛选下拉项）
     expect(screen.getByRole('heading', { name: 'PreSendMessage' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'PostLlmResponse' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'SessionStart' })).toBeInTheDocument()
 
-    // Hook details
+    // 钩子详情
     expect(screen.getByText('validate-message')).toBeInTheDocument()
     expect(screen.getByText('LLM 响应后处理')).toBeInTheDocument()
-    // "user" and "builtin" appear as source badges and filter options
+    // “user”和“builtin”应显示为来源徽标与筛选项
     expect(screen.getAllByText('user').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('bash')).toBeInTheDocument()
   })
@@ -86,11 +86,11 @@ describe('HooksSettings', () => {
       expect(screen.getByText('消息验证')).toBeInTheDocument()
     })
 
-    // Timeout values — use regex to match across text nodes
+    // 超时值 - 使用正则跨文本节点匹配
     expect(screen.getByText(/超时: 5000ms/)).toBeInTheDocument()
     expect(screen.getByText(/超时: 3000ms/)).toBeInTheDocument()
 
-    // onError values — use regex since text is inside "出错: ..." span
+    // onError 的值需要用正则匹配，因为文本位于“出错: ...”节点内
     expect(screen.getByText(/出错: skip/)).toBeInTheDocument()
     expect(screen.getByText(/出错: stop/)).toBeInTheDocument()
   })
@@ -129,7 +129,7 @@ describe('HooksSettings', () => {
       expect(screen.getByText('格式检查')).toBeInTheDocument()
     })
     expect(screen.getByText('消息验证')).toBeInTheDocument()
-    // Both hooks in PreSendMessage
+    // PreSendMessage 分组中的两个钩子
     expect(screen.getByText('validate-message')).toBeInTheDocument()
     expect(screen.getByText('check-format')).toBeInTheDocument()
   })

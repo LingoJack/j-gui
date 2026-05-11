@@ -1,9 +1,8 @@
 /**
- * useToolCredentials - Encapsulates shared loading/toggle/test logic for tool settings
+ * useToolCredentials - 封装工具设置共用的加载、开关与测试逻辑
  *
- * WebSearchSettings and NanoBananaSettings share ~150 lines of boilerplate
- * around handleBlurSave, handleToggle, handleTest, and loading state. This
- * hook factors the common patterns into a single place.
+ * WebSearchSettings 和 NanoBananaSettings 在 handleBlurSave、handleToggle、
+ * handleTest 以及加载状态周围共享约 150 行样板代码，这个 hook 将通用模式集中到一处。
  */
 
 import * as React from 'react'

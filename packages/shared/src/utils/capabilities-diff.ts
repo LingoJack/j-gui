@@ -46,7 +46,7 @@ export function diffCapabilities(
     }
   }
 
-  // --- Skills ---
+  // --- 技能 ---
   const prevSkillMap = new Map(prev.skills.map((s) => [s.slug, s]))
   const nextSkillMap = new Map(next.skills.map((s) => [s.slug, s]))
 

@@ -3,8 +3,8 @@
  *
  * 在没有会话时展示：
  * 1. 个性化时段问候
- * 2. 平台感知的小 Tips
- * 3. Chat/Agent 模式切换 Tab
+ * 2. 平台感知的小提示
+ * 3. Chat/Agent 模式切换标签页
  */
 
 import * as React from 'react'
@@ -35,7 +35,7 @@ export function WelcomeEmptyState(): React.ReactElement {
   const [mode, setMode] = useAtom(appModeAtom)
   const themeStyle = useAtomValue(themeStyleAtom)
 
-  // 稳定的随机 Tip（组件挂载时选一条）
+  // 稳定的随机提示（组件挂载时选一条）
   const [tip] = React.useState<Tip>(() => getRandomTip(getPlatform()))
 
   const hour = new Date().getHours()
@@ -58,13 +58,13 @@ export function WelcomeEmptyState(): React.ReactElement {
         {displayName}，{greeting}
       </h1>
 
-      {/* Tips */}
+      {/* 提示语 */}
       <div className="flex items-center gap-2.5 rounded-full bg-muted/50 px-4 py-2 text-[13px] text-muted-foreground">
         <Lightbulb size={14} className="flex-shrink-0 text-amber-500/80" />
         <span>{tip.text}</span>
       </div>
 
-      {/* 模式切换 Tab */}
+      {/* 模式切换标签页 */}
       <div className="relative flex rounded-xl bg-muted/60 p-1">
         {/* 滑动背景指示器 */}
         <div

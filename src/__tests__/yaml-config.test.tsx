@@ -7,7 +7,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { YamlConfigSettings } from '@/components/settings/YamlConfigSettings'
 import * as ipc from '@/lib/ipc'
 
-// Mock the IPC module used by YamlConfigSettings
+// 模拟 YamlConfigSettings 使用的 IPC 模块
 vi.mock('@/lib/ipc', () => ({
   getConfig: vi.fn(),
   setConfig: vi.fn(),
@@ -31,7 +31,7 @@ describe('YamlConfigSettings', () => {
 
     render(<YamlConfigSettings />)
 
-    // Wait for sections to load
+    // 等待分组加载完成
     await waitFor(() => {
       expect(screen.getByText('path')).toBeInTheDocument()
     })
@@ -48,12 +48,12 @@ describe('YamlConfigSettings', () => {
       expect(screen.getByText('j')).toBeInTheDocument()
     })
 
-    // Key names
+    // 键名
     expect(screen.getByText('j')).toBeInTheDocument()
     expect(screen.getByText('data')).toBeInTheDocument()
     expect(screen.getByText('dev')).toBeInTheDocument()
 
-    // Values
+    // 值
     expect(screen.getByText('/usr/bin/j')).toBeInTheDocument()
     expect(screen.getByText('/var/data')).toBeInTheDocument()
     expect(screen.getByText('http://localhost:3000')).toBeInTheDocument()
@@ -79,22 +79,22 @@ describe('YamlConfigSettings', () => {
       expect(screen.getByText('j')).toBeInTheDocument()
     })
 
-    // Click the value to start editing
+    // 点击值以开始编辑
     const valueElement = screen.getByText('/usr/bin/j')
     fireEvent.click(valueElement)
 
-    // Input should appear with the value pre-filled
+    // 应出现已预填当前值的输入框
     const input = screen.getByDisplayValue('/usr/bin/j')
     expect(input).toBeInTheDocument()
 
-    // Change the value
+    // 修改值
     fireEvent.change(input, { target: { value: '/usr/local/bin/j' } })
 
-    // Click save button
+    // 点击保存按钮
     const saveButton = screen.getByTitle('保存')
     fireEvent.click(saveButton)
 
-    // Verify setConfig was called with correct args
+    // 验证 setConfig 以正确参数调用
     expect(ipc.setConfig).toHaveBeenCalledWith('path', 'j', '/usr/local/bin/j')
   })
 
@@ -107,18 +107,18 @@ describe('YamlConfigSettings', () => {
       expect(screen.getByText('j')).toBeInTheDocument()
     })
 
-    // Click the value to start editing
+    // 点击值以开始编辑
     const valueElement = screen.getByText('/usr/bin/j')
     fireEvent.click(valueElement)
 
-    // Input should appear
+    // 应出现输入框
     const input = screen.getByDisplayValue('/usr/bin/j')
     expect(input).toBeInTheDocument()
 
-    // Press Escape
+    // 按下 Escape
     fireEvent.keyDown(input, { key: 'Escape', code: 'Escape' })
 
-    // Original value should be back
+    // 原始值应恢复显示
     expect(screen.getByText('/usr/bin/j')).toBeInTheDocument()
     expect(ipc.setConfig).not.toHaveBeenCalled()
   })

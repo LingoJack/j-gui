@@ -49,7 +49,7 @@ interface ConversationItemProps {
   active: boolean
   hovered: boolean
   streaming: boolean
-  /** 是否在标题旁显示 Pin 图标 */
+  /** 是否在标题旁显示置顶图标 */
   showPinIcon: boolean
   onSelect: () => void
   onRequestDelete: () => void
@@ -491,7 +491,7 @@ export interface SessionListItemsProps {
   archivedConversationCount: number
   streamingIds: Set<string>
 
-  // Agent Working 数据
+  // Agent 工作中数据
   hasWorkingSessions: boolean
   workingGroups: { todo: AgentSessionMeta[]; running: AgentSessionMeta[]; done: AgentSessionMeta[] }
   workingSessionIds: Set<string>
@@ -594,17 +594,17 @@ export function SessionListItems(props: SessionListItemsProps): React.ReactEleme
         </div>
       )}
 
-      {/* Agent 模式 active 视图：可拖拽双区（上 置顶+Working + 下 最近会话） */}
+      {/* Agent 模式活跃视图：可拖拽双区（上 置顶+Working，下 最近会话） */}
       {mode === 'agent' && viewMode === 'active' ? (
         <div className="flex-1 flex flex-col min-h-0">
           {(pinnedAgentSessions.length > 0 || hasWorkingSessions) && (
             <>
-              {/* 上区：工作中 / 置顶 Tab 切换（高度可拖拽） */}
+              {/* 上区：工作中 / 置顶标签切换（高度可拖拽） */}
               <div
                 style={{ height: agentTopHeight > 0 ? agentTopHeight : undefined }}
                 className="flex flex-col min-h-0 flex-shrink-0 overflow-hidden"
               >
-                {/* Tab 切换按钮 */}
+                {/* 标签切换按钮 */}
                 <div className="pt-2 px-3 flex-shrink-0">
                   <div className="flex items-center gap-1 mb-0.5">
                     <button
@@ -652,7 +652,7 @@ export function SessionListItems(props: SessionListItemsProps): React.ReactEleme
                   </div>
                 </div>
 
-                {/* Tab 内容 */}
+                {/* 标签内容 */}
                 <div className="flex-1 overflow-y-auto scrollbar-none px-3 pb-1 min-h-0">
                   {agentSubTab === 'working' && (
                     <div className="pt-0.5 pb-0.5">

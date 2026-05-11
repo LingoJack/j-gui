@@ -1,5 +1,5 @@
 /**
- * TabSwitcher — Ctrl+Tab 标签快速切换器
+ * TabSwitcher — Ctrl+Tab 标签页快速切换器
  *
  * Chrome 风格的 Ctrl+Tab 行为：
  * 1. 快速按放 Ctrl+Tab → 切换到上一个标签（MRU 顺序）
@@ -48,7 +48,7 @@ export function TabSwitcher(): React.ReactElement | null {
   const [isOpen, setIsOpen] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
 
-  // Refs 用于事件回调中读取最新值（避免闭包过期）
+  // Refs 用于在事件回调中读取最新值（避免闭包过期）
   const isOpenRef = useRef(false)
   const selectedIndexRef = useRef(0)
   const mruOrderRef = useRef<string[]>([])

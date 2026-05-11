@@ -19,10 +19,10 @@ export interface SDKUserMessageInput {
 }
 
 /**
- * Agent 查询输入（Provider 无关）
+ * Agent 查询输入（与供应商实现无关）
  *
- * 包含所有 Provider 都需要的通用字段。
- * SDK 特定配置通过 Adapter 的扩展输入类型传入。
+ * 包含所有供应商实现都需要的通用字段。
+ * SDK 特定配置通过适配器的扩展输入类型传入。
  */
 export interface AgentQueryInput {
   /** 会话 ID */
@@ -38,7 +38,7 @@ export interface AgentQueryInput {
 }
 
 /**
- * Agent Provider 适配器接口
+ * Agent 供应商适配器接口
  *
  * 职责：接收查询输入，返回 SDKMessage 异步迭代流。
  * SDK 返回完整 JSON 对象（includePartialMessages: false），外部直接透传。
@@ -49,16 +49,16 @@ export interface AgentProviderAdapter {
   /** 中止指定会话的执行 */
   abort(sessionId: string): void
   /**
-   * 软中断当前 turn，但保留活跃 Query/Channel 以便继续注入下一条用户消息。
+   * 软中断当前轮次，但保留活跃查询/通道，以便继续注入下一条用户消息。
    * 与 abort() 的区别：不杀子进程，允许立即续跑新消息。
    */
   interruptQuery?(sessionId: string): Promise<void>
   /** 释放资源 */
   dispose(): void
-  /** 向活跃查询注入队列消息（可选，仅支持队列的 Provider 实现） */
+  /** 向活跃查询注入队列消息（可选，仅支持队列能力的供应商实现） */
   sendQueuedMessage?(sessionId: string, message: SDKUserMessageInput): Promise<void>
   /** 取消队列中的待发送消息（可选） */
   cancelQueuedMessage?(sessionId: string, messageUuid: string): Promise<void>
-  /** 动态切换活跃查询的权限模式（可选，仅支持 SDK 原生 setPermissionMode 的 Provider） */
+  /** 动态切换活跃查询的权限模式（可选，仅支持 SDK 原生 setPermissionMode 的供应商） */
   setPermissionMode?(sessionId: string, mode: string): Promise<void>
 }

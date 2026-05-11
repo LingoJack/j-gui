@@ -7,10 +7,24 @@
  */
 
 import { invoke, Channel } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import type { AppSettings, UserProfile, ThemeMode, ThemeStyle } from '@/types'
+import { decodeAgentStreamEvent, decodeChatStreamEvent } from '@/lib/ipc-stream-protocol'
+import { CHAT_IPC_CHANNELS } from '@jgui/shared'
+import type { ChatRequestInput } from '@jgui/shared'
+import type {
+  AgentSendInput,
+  AgentStreamCompletePayload,
+  MessageSearchResult,
+  AgentMessageSearchResult,
+  SDKMessage,
+  SDKAssistantMessage,
+  SDKUserMessage,
+  ChatToolInfo,
+} from '@jgui/shared'
 
 // ============================================================
-// Utils
+// 工具函数
 // ============================================================
 
 const warned = new Set<string>()
@@ -26,6 +40,43 @@ function warnOnce(name: string, userVisible?: boolean): void {
   }
 }
 
+function extractInvokeErrorMessage(error: unknown): string {
+  const UNKNOWN_ERROR = 'Unknown error'
+
+  const visit = (value: unknown, seen: Set<unknown>): string | null => {
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      return trimmed.length > 0 ? trimmed : null
+    }
+    if (!value || typeof value !== 'object') return null
+    if (seen.has(value)) return null
+    seen.add(value)
+
+    const record = value as Record<string, unknown>
+    const priorityKeys = ['cause', 'error', 'details', 'message']
+    for (const key of priorityKeys) {
+      const nested = visit(record[key], seen)
+      if (nested && nested !== UNKNOWN_ERROR) {
+        return nested
+      }
+    }
+
+    const fallbackMessage = visit(record.message, seen)
+    if (fallbackMessage) return fallbackMessage
+
+    for (const nested of Object.values(record)) {
+      const resolved = visit(nested, seen)
+      if (resolved && resolved !== UNKNOWN_ERROR) {
+        return resolved
+      }
+    }
+
+    return null
+  }
+
+  return visit(error, new Set()) ?? (error instanceof Error ? error.message : String(error))
+}
+
 async function tryInvoke<T>(cmd: string, args?: unknown, fallback?: T, opts?: { userVisible?: boolean }): Promise<T> {
   try {
     return await invoke<T>(cmd, args as any)
@@ -39,14 +90,41 @@ async function tryInvoke<T>(cmd: string, args?: unknown, fallback?: T, opts?: { 
   }
 }
 
-function stubEvent(name: string) {
-  return (callback: (...args: any[]) => void): (() => void) => {
-    warnOnce(`event:${name}`)
-    return () => {}
+function unsupportedCommand(name: string): never {
+  throw new Error(`Tauri command '${name}' is not implemented in j-gui backend`)
+}
+
+function unsupportedSubscription(name: string): never {
+  throw new Error(`Tauri event '${name}' is not implemented in j-gui backend`)
+}
+
+function listenToTauriEvent<T>(eventName: string, mapPayload?: (payload: unknown) => T): (callback: (payload: T) => void) => (() => void) {
+  return (callback) => {
+    let active = true
+    let unlisten: (() => void) | null = null
+
+    listen(eventName, (event) => {
+      if (!active) return
+      const payload = mapPayload ? mapPayload(event.payload) : event.payload as T
+      callback(payload)
+    }).then((cleanup) => {
+      if (active) {
+        unlisten = cleanup
+      } else {
+        cleanup()
+      }
+    }).catch((error) => {
+      console.error(`[j-gui ipc] failed to listen event '${eventName}':`, error)
+    })
+
+    return () => {
+      active = false
+      unlisten?.()
+    }
   }
 }
 
-// Event bus for internal events (e.g. stream events that backend pushes)
+// 内部事件总线（例如后端推送的流式事件）
 type Handler = (...args: any[]) => void
 const bus = new Map<string, Set<Handler>>()
 function emit(name: string, ...args: any[]): void { bus.get(name)?.forEach(h => h(...args)) }
@@ -57,7 +135,7 @@ function onEvt(name: string, cb: Handler): () => void {
 }
 
 // ============================================================
-// Runtime
+// 运行时
 // ============================================================
 
 export const getRuntimeStatus = () => tryInvoke('get_runtime_status', undefined, null)
@@ -82,10 +160,16 @@ export interface AppUpdateInfo {
   downloadUrl: string | null
   updateAvailable: boolean
 }
+
+export interface ConnectionTestResult {
+  success: boolean
+  message: string
+}
+
 export const checkAppUpdate = () => invoke<AppUpdateInfo>('check_app_update')
 
 // ============================================================
-// Settings
+// 设置
 // ============================================================
 
 let settingsCache: AppSettings | null = null
@@ -149,15 +233,44 @@ export function onSystemThemeChanged(callback: (isDark: boolean) => void): () =>
   return () => mq.removeEventListener('change', handler)
 }
 
-export const onThemeSettingsChanged = stubEvent('themeSettingsChanged')
+export const onThemeSettingsChanged = listenToTauriEvent<{ themeMode: ThemeMode; themeStyle?: ThemeStyle }>(
+  'theme-changed',
+  (payload) => {
+    if (payload && typeof payload === 'object') {
+      const themeMode = (payload as { themeMode?: unknown }).themeMode
+      const themeStyle = (payload as { themeStyle?: unknown }).themeStyle
+      return {
+        themeMode:
+          themeMode === 'light' || themeMode === 'dark' || themeMode === 'system' || themeMode === 'special'
+            ? themeMode
+            : 'dark',
+        themeStyle:
+          themeStyle === 'default' ||
+          themeStyle === 'ocean-light' ||
+          themeStyle === 'ocean-dark' ||
+          themeStyle === 'forest-light' ||
+          themeStyle === 'forest-dark' ||
+          themeStyle === 'slate-light' ||
+          themeStyle === 'slate-dark'
+            ? themeStyle
+            : undefined,
+      }
+    }
+    const themeValue = typeof payload === 'string' ? payload : ''
+    if (themeValue === 'light' || themeValue === 'dark' || themeValue === 'system' || themeValue === 'special') {
+      return { themeMode: themeValue }
+    }
+    return { themeMode: 'dark' }
+  },
+)
 
 // ============================================================
-// Channel Management
+// 渠道管理
 // ============================================================
 
-/** List all configured channels (includes enabled/disabled state and model list) */
+/** 列出所有已配置渠道（包含启用状态和模型列表） */
 export async function listChannels(): Promise<any[]> { try { return await invoke<any[]>('list_channels') } catch { warnOnce('list_channels'); return [] } }
-/** Create a new channel, returns the created channel metadata */
+/** 创建新渠道，并返回创建后的渠道元数据 */
 export async function createChannel(input: any): Promise<{id: string, name: string}> { return invoke<any>('create_channel', { input }) }
 export async function updateChannel(id: string, input: any) { return invoke<any>('update_channel', { id, input }) }
 export async function deleteChannel(id: string) { return invoke('delete_channel', { id }) }
@@ -168,7 +281,7 @@ export async function testSavedChannel(id: string, input?: any) { try { return a
 export async function fetchModels(input: any) { try { return await invoke<any>('fetch_models', { apiBase: input.apiBase || input.baseUrl, apiKey: input.apiKey }) } catch { return { success: false, message: '获取模型列表失败', models: [] } } }
 
 // ============================================================
-// Conversations — mapped to Rust chat commands (j-cli backend)
+// 对话 - 映射到 Rust chat 命令（j-cli 后端）
 // ============================================================
 
 export async function listConversations(): Promise<any[]> {
@@ -198,39 +311,256 @@ export const updateConversationTitle = (id: string, title: string) => tryInvoke<
 export const updateConversationModel = (id: string, modelId: string, channelId: string) =>
   tryInvoke<any>('update_conversation_model', { id, modelId, channelId })
 export const deleteConversation = (id: string) => tryInvoke('delete_session', { sessionId: id })
-export const togglePinConversation = (id: string) => tryInvoke<any>('toggle_pin_conversation', { id })
-export const toggleArchiveConversation = (id: string) => tryInvoke<any>('toggle_archive_conversation', { id })
-export const searchConversationMessages = (query: string) => tryInvoke<any[]>('search_conversation_messages', { query }, [])
+export const togglePinConversation = (id: string) => tryInvoke<any>('toggle_pin_conversation', { sessionId: id })
+export const toggleArchiveConversation = (id: string) => tryInvoke<any>('toggle_archive_conversation', { sessionId: id })
+type TimelineItem = {
+  id: string
+  kind: string
+  content?: string | null
+  toolCall?: {
+    toolId: string
+    toolName: string
+    toolInput: string
+    toolOutput?: string | null
+  } | null
+  createdAt?: number
+}
+
+function safeParseJsonObject(input: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(input)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {}
+  } catch {
+    return {}
+  }
+}
+
+function buildChatRenderMessageId(message: any, index: number): string {
+  return typeof message?.id === 'string' && message.id.length > 0
+    ? message.id
+    : `chat-index-${index}`
+}
+
+function buildSnippet(content: string, query: string): { snippet: string; matchStart: number; matchLength: number } {
+  const lower = content.toLowerCase()
+  const matchIndex = lower.indexOf(query.toLowerCase())
+  if (matchIndex < 0) {
+    return {
+      snippet: content.slice(0, 80),
+      matchStart: -1,
+      matchLength: query.length,
+    }
+  }
+  const start = Math.max(0, matchIndex - 30)
+  const end = Math.min(content.length, matchIndex + query.length + 50)
+  return {
+    snippet: content.slice(start, end),
+    matchStart: matchIndex - start,
+    matchLength: query.length,
+  }
+}
+
+function extractSearchableTextFromSdkMessage(message: SDKMessage): string {
+  if (message.type === 'user') {
+    return ((message as SDKUserMessage).message?.content ?? [])
+      .map((block) => {
+        if (block.type === 'text' && typeof block.text === 'string') return block.text
+        if (block.type === 'tool_result') {
+          if (typeof block.content === 'string') return block.content
+          if (Array.isArray(block.content)) {
+            return block.content
+              .map((entry) => typeof entry === 'object' && entry && 'text' in entry ? String((entry as { text?: unknown }).text ?? '') : '')
+              .join('\n')
+          }
+        }
+        return ''
+      })
+      .filter(Boolean)
+      .join('\n')
+  }
+  if (message.type === 'assistant') {
+    return ((message as SDKAssistantMessage).message?.content ?? [])
+      .map((block) => {
+        if (block.type === 'text' && typeof block.text === 'string') return block.text
+        if (block.type === 'tool_use') {
+          return `${block.name} ${JSON.stringify(block.input)}`
+        }
+        return ''
+      })
+      .filter(Boolean)
+      .join('\n')
+  }
+  return ''
+}
+
+function timelineToSdkMessages(timeline: TimelineItem[], sessionId: string): SDKMessage[] {
+  const messages: SDKMessage[] = []
+
+  for (const item of timeline) {
+    const createdAt = item.createdAt ?? Date.now()
+    if (item.kind === 'user_message' && item.content) {
+      messages.push({
+        type: 'user',
+        session_id: sessionId,
+        uuid: item.id,
+        parent_tool_use_id: null,
+        message: {
+          content: [{ type: 'text', text: item.content }],
+        },
+        _createdAt: createdAt,
+      } as SDKMessage)
+      continue
+    }
+
+    if (item.kind === 'assistant_content' && item.content) {
+      messages.push({
+        type: 'assistant',
+        session_id: sessionId,
+        uuid: item.id,
+        parent_tool_use_id: null,
+        message: {
+          content: [{ type: 'text', text: item.content }],
+        },
+        _createdAt: createdAt,
+      } as SDKMessage)
+      continue
+    }
+
+    if (item.kind === 'tool_call' && item.toolCall) {
+      messages.push({
+        type: 'assistant',
+        session_id: sessionId,
+        uuid: item.id,
+        parent_tool_use_id: null,
+        message: {
+          content: [{
+            type: 'tool_use',
+            id: item.toolCall.toolId,
+            name: item.toolCall.toolName,
+            input: safeParseJsonObject(item.toolCall.toolInput),
+          }],
+        },
+        _createdAt: createdAt,
+      } as SDKMessage)
+
+      if (item.toolCall.toolOutput) {
+        messages.push({
+          type: 'user',
+          session_id: sessionId,
+          uuid: `${item.id}-result`,
+          parent_tool_use_id: null,
+          message: {
+            content: [{
+              type: 'tool_result',
+              tool_use_id: item.toolCall.toolId,
+              content: item.toolCall.toolOutput,
+            }],
+          },
+          _createdAt: createdAt,
+        } as SDKMessage)
+      }
+    }
+  }
+
+  return messages
+}
+
+export async function searchConversationMessages(query: string): Promise<MessageSearchResult[]> {
+  try {
+    return await invoke<MessageSearchResult[]>('search_conversation_messages', { query })
+  } catch {
+    warnOnce('search_conversation_messages')
+    const conversations = await listConversations()
+    const results: MessageSearchResult[] = []
+    for (const conversation of conversations) {
+      const messages = await getConversationMessages(conversation.id)
+      messages.forEach((message, index) => {
+        const content = typeof message?.content === 'string' ? message.content : ''
+        if (!content.toLowerCase().includes(query.toLowerCase())) return
+        const snippet = buildSnippet(content, query)
+        results.push({
+          conversationId: conversation.id,
+          conversationTitle: conversation.title,
+          messageId: buildChatRenderMessageId(message, index),
+          role: message.role ?? 'assistant',
+          snippet: snippet.snippet,
+          matchStart: snippet.matchStart,
+          matchLength: snippet.matchLength,
+          archived: conversation.archived,
+        })
+      })
+    }
+    return results
+  }
+}
 export const generateTitle = (input: any) => tryInvoke<string>('generate_title', { input }, null)
 export const createWelcomeConversation = () => tryInvoke<any>('create_welcome_conversation', undefined, null)
-// Removed: tutorial not supported in j-gui v1
+// 已移除：j-gui v1 不支持 tutorial
 
 // ============================================================
-// Chat Messaging — Tauri Channel streaming via j-cli
+// Chat 消息 - 通过 j-cli 使用 Tauri Channel 流式传输
 // ============================================================
 
 export async function sendMessage(input: any): Promise<void> {
+  let sawStreamError = false
+  const request: ChatRequestInput = {
+    sessionId: input.sessionId || input.conversationId || '',
+    content: input.content || input.userMessage || input.message || '',
+    channelId: input.channelId,
+    modelId: input.modelId,
+    systemMessage: input.systemMessage ?? null,
+    contextLength: input.contextLength !== 'infinite' ? input.contextLength : undefined,
+    contextDividers: Array.isArray(input.contextDividers) && input.contextDividers.length > 0
+      ? input.contextDividers
+      : undefined,
+    attachments: Array.isArray(input.attachments) && input.attachments.length > 0
+      ? input.attachments
+      : undefined,
+    thinkingEnabled:
+      typeof input.thinkingEnabled === 'boolean' ? input.thinkingEnabled : undefined,
+    enabledToolIds: Array.isArray(input.enabledToolIds) && input.enabledToolIds.length > 0
+      ? input.enabledToolIds
+      : undefined,
+    protocolHint: input.protocolHint && input.protocolHint !== 'auto'
+      ? input.protocolHint
+      : undefined,
+  }
   const channel = new Channel<any>()
   channel.onmessage = (event: any) => {
-    if (event?.event === 'chunk' || event?.Chunk) {
-      const data = event.Chunk || event.data
-      emit('stream:chunk', { conversationId: input.conversationId || input.sessionId, content: data?.content || event?.content, index: data?.index })
-    } else if (event?.event === 'done' || event?.Done) {
-      emit('stream:complete', { conversationId: input.conversationId || input.sessionId, totalTokens: event?.Done?.total_tokens || event?.totalTokens })
-    } else if (event?.event === 'error' || event?.Error) {
-      emit('stream:error', { conversationId: input.conversationId || input.sessionId, error: event?.Error?.message || event?.message || 'Unknown error' })
-    } else if (typeof event === 'string') {
-      emit('stream:chunk', { conversationId: input.conversationId || input.sessionId, content: event, index: 0 })
+    const decoded = decodeChatStreamEvent(event, input.conversationId || input.sessionId)
+    if (decoded?.kind === 'chunk') {
+      emit(CHAT_IPC_CHANNELS.STREAM_CHUNK, {
+        conversationId: decoded.conversationId,
+        delta: decoded.delta,
+        index: decoded.index,
+      })
+    } else if (decoded?.kind === 'reasoning') {
+      emit(CHAT_IPC_CHANNELS.STREAM_REASONING, {
+        conversationId: decoded.conversationId,
+        delta: decoded.delta,
+        index: decoded.index,
+      })
+    } else if (decoded?.kind === 'complete') {
+      emit(CHAT_IPC_CHANNELS.STREAM_COMPLETE, { conversationId: decoded.conversationId, totalTokens: decoded.totalTokens })
+    } else if (decoded?.kind === 'error') {
+      sawStreamError = true
+      emit(CHAT_IPC_CHANNELS.STREAM_ERROR, { conversationId: decoded.conversationId, error: decoded.error })
     }
   }
   try {
     await invoke('send_message', {
-      sessionId: input.conversationId || input.sessionId || '',
-      content: input.content || input.message || '',
+      request,
       onEvent: channel,
     })
   } catch (e: any) {
-    emit('stream:error', { conversationId: input.conversationId || input.sessionId, error: e?.message || String(e) })
+    if (!sawStreamError) {
+      emit(CHAT_IPC_CHANNELS.STREAM_ERROR, {
+        conversationId: input.conversationId || input.sessionId,
+        error: extractInvokeErrorMessage(e),
+      })
+    }
   }
 }
 
@@ -243,17 +573,17 @@ export const updateContextDividers = (conversationId: string, dividers: string[]
   tryInvoke<any>('update_context_dividers', { conversationId, dividers })
 
 // ============================================================
-// Stream Events (Chat)
+// 流式事件（Chat）
 // ============================================================
 
-export const onStreamChunk = (cb: Handler) => onEvt('stream:chunk', cb)
-export const onStreamReasoning = (cb: Handler) => onEvt('stream:reasoning', cb)
-export const onStreamComplete = (cb: Handler) => onEvt('stream:complete', cb)
-export const onStreamError = (cb: Handler) => onEvt('stream:error', cb)
-export const onStreamToolActivity = (cb: Handler) => onEvt('stream:tool-activity', cb)
+export const onStreamChunk = (cb: Handler) => onEvt(CHAT_IPC_CHANNELS.STREAM_CHUNK, cb)
+export const onStreamReasoning = (cb: Handler) => onEvt(CHAT_IPC_CHANNELS.STREAM_REASONING, cb)
+export const onStreamComplete = (cb: Handler) => onEvt(CHAT_IPC_CHANNELS.STREAM_COMPLETE, cb)
+export const onStreamError = (cb: Handler) => onEvt(CHAT_IPC_CHANNELS.STREAM_ERROR, cb)
+export const onStreamToolActivity = (cb: Handler) => onEvt(CHAT_IPC_CHANNELS.STREAM_TOOL_ACTIVITY, cb)
 
 // ============================================================
-// Agent Sessions
+// Agent 会话
 // ============================================================
 
 export async function listAgentSessions(): Promise<any[]> {
@@ -265,103 +595,181 @@ export async function listAgentSessions(): Promise<any[]> {
   return agentSessionsInFlight
 }
 export async function createAgentSession(title?: string, channelId?: string, workspaceId?: string): Promise<any> {
-  const result = await tryInvoke<any>('create_agent_session', { title, channelId, workspaceId })
-  if (typeof result === 'string') {
-    return {
-      id: result,
-      title: title || '新 Agent 会话',
-      workspaceId: workspaceId ?? null,
-      channelId: channelId ?? null,
-      updatedAt: Date.now(),
-      pinned: false,
-      archived: false,
-      manualWorking: false,
-    }
-  }
-  return result
+  return tryInvoke<any>('create_agent_session', {
+    input: {
+      title,
+      channelId,
+      workspaceId,
+    },
+  })
 }
-export const getAgentSessionSDKMessages = (id: string) => tryInvoke<any[]>('get_agent_session_sdk_messages', { id }, [])
+export async function getAgentSessionSDKMessages(id: string): Promise<SDKMessage[]> {
+  return invoke<SDKMessage[]>('get_agent_session_sdk_messages', { id })
+}
 export async function updateAgentSessionTitle(id: string, title: string) { return invoke<any>('update_agent_session_title', { sessionId: id, title }) }
 export const deleteAgentSession = (id: string) => tryInvoke('delete_agent_session', { id })
 export const migrateChatToAgent = (conversationId: string, agentSessionId: string) =>
   tryInvoke('migrate_chat_to_agent', { conversationId, agentSessionId })
 export const togglePinAgentSession = (id: string) => tryInvoke<any>('toggle_pin_agent_session', { sessionId: id })
-export const toggleManualWorkingAgentSession = (_id: string) => { warnOnce('toggle_manual_working_agent_session'); return Promise.resolve(false) } // TODO: backend command not yet registered
+export const toggleManualWorkingAgentSession = (id: string) =>
+  tryInvoke<any>('toggle_manual_working_agent_session', { sessionId: id })
 export const toggleArchiveAgentSession = (id: string) => tryInvoke<any>('toggle_archive_agent_session', { sessionId: id })
-export const searchAgentSessionMessages = (query: string) =>
-  tryInvoke<any[]>('search_agent_session_messages', { query }, [])
+export async function searchAgentSessionMessages(query: string): Promise<AgentMessageSearchResult[]> {
+  try {
+    return await invoke<AgentMessageSearchResult[]>('search_agent_session_messages', { query })
+  } catch {
+    warnOnce('search_agent_session_messages')
+    const sessions = await listAgentSessions()
+    const results: AgentMessageSearchResult[] = []
+    for (const session of sessions) {
+      const messages = await getAgentSessionSDKMessages(session.id)
+      messages.forEach((message) => {
+        const content = extractSearchableTextFromSdkMessage(message)
+        if (!content || !content.toLowerCase().includes(query.toLowerCase())) return
+        const snippet = buildSnippet(content, query)
+        results.push({
+          sessionId: session.id,
+          sessionTitle: session.title ?? '新 Agent 会话',
+          messageId: (message as { uuid?: string }).uuid ?? '',
+          role: message.type === 'assistant' ? 'assistant' : 'user',
+          snippet: snippet.snippet,
+          matchStart: snippet.matchStart,
+          matchLength: snippet.matchLength,
+          archived: session.archived,
+        })
+      })
+    }
+    return results.filter((result) => result.messageId)
+  }
+}
 export const moveAgentSessionToWorkspace = (input: any) =>
   tryInvoke<any>('move_agent_session_to_workspace', { input })
 export const forkAgentSession = (input: any) => tryInvoke<any>('fork_agent_session', { input })
 export const rewindSession = (input: any) => tryInvoke<any>('rewind_session', { input })
 export async function generateAgentTitle(sessionId: string) { try { return await invoke<string>('generate_agent_title', { sessionId }) } catch { return null } }
-// Agent active channels — one per session
-const agentChannels = new Map<string, Channel<any>>()
+// Agent 活跃通道 - 每个会话一个
+type AgentRuntimeChannel = Channel<any> & {
+  __agentRunState?: AgentRunState
+}
 
-export async function sendAgentMessage(input: any): Promise<void> {
-  const sessionId = input.sessionId || input.conversationId
-  const content = input.content || input.message || ''
-  const permissionMode = input.permissionMode || 'bypassPermissions'
+const agentChannels = new Map<string, AgentRuntimeChannel>()
+let nextAgentRunId = 1
+type AgentRunState = {
+  runId: number
+  startedAt?: number
+  stoppedByUser: boolean
+}
 
-  // If no active channel for this session, start the agent first
+function buildAgentStartRequest(input: AgentSendInput): {
+  sessionId: string
+  channelId: string
+  modelId?: string
+  permissionModeOverride?: string
+} {
+  return {
+    sessionId: input.sessionId,
+    channelId: input.channelId,
+    modelId: input.modelId,
+    permissionModeOverride: input.permissionModeOverride,
+  }
+}
+
+function buildAgentMessageRequest(input: AgentSendInput): {
+  sessionId: string
+  userMessage: string
+} {
+  return {
+    sessionId: input.sessionId,
+    userMessage: input.userMessage,
+  }
+}
+
+export async function sendAgentMessage(input: AgentSendInput): Promise<void> {
+  const sessionId = input.sessionId
+  const content = input.userMessage
+  const permissionMode = input.permissionModeOverride || 'bypassPermissions'
+  const runState: AgentRunState = {
+    runId: nextAgentRunId++,
+    startedAt: input.startedAt,
+    stoppedByUser: false,
+  }
+
+  // 如果当前会话没有活跃通道，则先启动 agent
   if (!agentChannels.has(sessionId)) {
-    const channel = new Channel<any>()
+    const channel = new Channel<any>() as AgentRuntimeChannel
+    channel.__agentRunState = runState
     agentChannels.set(sessionId, channel)
 
     channel.onmessage = (event: any) => {
-      // Route Claude CLI events to EventBus
-      if (event?.AssistantContent || event?.assistantContent) {
-        const data = event.AssistantContent || event.assistantContent
-        emit('agent:stream-event', { sessionId, kind: 'text', text: data?.text || event?.text, content: data?.text || event?.text })
-      } else if (event?.ToolUse || event?.toolUse) {
-        const data = event.ToolUse || event.toolUse
-        emit('agent:stream-event', { sessionId, kind: 'tool_use', toolId: data?.tool_id, toolName: data?.tool_name, toolInput: data?.tool_input })
-      } else if (event?.Interrupt || event?.interrupt) {
-        const data = event.Interrupt || event.interrupt
-        emit('agent:stream-event', { sessionId, kind: 'interrupt', interruptId: data?.interrupt_id, interruptKind: data?.kind, toolName: data?.tool_name, toolInput: data?.tool_input })
-      } else if (event?.ToolResult || event?.toolResult) {
-        const data = event.ToolResult || event.toolResult
-        emit('agent:stream-event', { sessionId, kind: 'tool_result', toolId: data?.tool_id, content: data?.content })
-      } else if (event?.Done || event?.done) {
-        const data = event.Done || event.done
-        emit('agent:stream-complete', { sessionId, totalTokens: data?.total_tokens })
-        agentChannels.delete(sessionId)
-      } else if (event?.Error || event?.error) {
-        const data = event.Error || event.error
-        emit('agent:stream-error', { sessionId, error: data?.message || JSON.stringify(data) })
-        agentChannels.delete(sessionId)
-      } else if (typeof event === 'object' && event !== null) {
-        // Passthrough unknown events
-        emit('agent:stream-event', { sessionId, ...event })
+      const decoded = decodeAgentStreamEvent(event, sessionId)
+      if (decoded?.kind === 'payload') {
+        emit('agent:stream-event', { sessionId, payload: decoded.payload })
+      } else if (decoded?.kind === 'complete') {
+        const activeRun = channel.__agentRunState
+        const payload: AgentStreamCompletePayload = {
+          sessionId,
+          startedAt: activeRun?.startedAt,
+          stoppedByUser: activeRun?.stoppedByUser,
+          resultSubtype: decoded.resultSubtype,
+        }
+        emit('agent:stream-complete', payload)
+        const currentChannel = agentChannels.get(sessionId)
+        if (currentChannel === channel) {
+          agentChannels.delete(sessionId)
+        }
+      } else if (decoded?.kind === 'error') {
+        emit('agent:stream-error', { sessionId, error: decoded.error })
+        const currentChannel = agentChannels.get(sessionId)
+        if (currentChannel === channel) {
+          agentChannels.delete(sessionId)
+        }
       }
     }
 
     try {
-      await invoke('start_agent', { sessionId, permissionMode, onEvent: channel })
+      await invoke('start_agent', {
+        input: buildAgentStartRequest({
+          ...input,
+          permissionModeOverride: permissionMode,
+        }),
+        onEvent: channel,
+      })
     } catch (e: any) {
-      agentChannels.delete(sessionId)
+      const currentChannel = agentChannels.get(sessionId)
+      if (currentChannel === channel) {
+        agentChannels.delete(sessionId)
+      }
       emit('agent:stream-error', { sessionId, error: e?.message || String(e) })
       return
     }
   }
 
-  // Send the actual message to the running agent
+  // 将实际消息发送给正在运行的 agent
   try {
-    await invoke('send_agent_message', { sessionId, content })
+    await invoke('send_agent_message', {
+      input: buildAgentMessageRequest({
+        ...input,
+        userMessage: content,
+      }),
+    })
   } catch (e: any) {
     emit('agent:stream-error', { sessionId, error: e?.message || String(e) })
   }
 }
 
 export async function stopAgent(sessionId: string): Promise<void> {
-  try { await invoke('stop_agent', { sessionId }) } catch { /* ignore */ }
+  const channel = agentChannels.get(sessionId)
+  if (channel?.__agentRunState) {
+    channel.__agentRunState.stoppedByUser = true
+  }
+  await invoke('stop_agent', { sessionId })
   agentChannels.delete(sessionId)
 }
 
 export const queueAgentMessage = (input: any) => tryInvoke<string>('queue_agent_message', { input }, '')
 
 // ============================================================
-// Agent Stream Events
+// Agent 流式事件
 // ============================================================
 
 export const onAgentStreamEvent = (cb: Handler) => onEvt('agent:stream-event', cb)
@@ -370,16 +778,19 @@ export const onAgentStreamError = (cb: Handler) => onEvt('agent:stream-error', c
 export const onAgentTitleUpdated = (cb: Handler) => onEvt('agent:title-updated', cb)
 
 // ============================================================
-// Agent Permissions
+// Agent 权限
 // ============================================================
 
 export async function respondPermission(response: any) {
   return invoke('respond_agent_interrupt', {
-    interruptId: response.requestId,
-    kind: 'permission',
-    response: {
-      allowed: response.behavior === 'allow',
-      alwaysAllow: !!response.alwaysAllow,
+    input: {
+      sessionId: response.sessionId,
+      interruptId: response.requestId,
+      kind: 'permission',
+      response: {
+        allowed: response.behavior === 'allow',
+        alwaysAllow: !!response.alwaysAllow,
+      },
     },
   })
 }
@@ -393,10 +804,13 @@ export async function respondAskUser(response: any) {
           selectedOptions: [value as string],
         }))
   return invoke('respond_agent_interrupt', {
-    interruptId: response.requestId,
-    kind: 'ask_user',
-    response: {
-      answers,
+    input: {
+      sessionId: response.sessionId,
+      interruptId: response.requestId,
+      kind: 'ask_user',
+      response: {
+        answers,
+      },
     },
   })
 }
@@ -407,11 +821,14 @@ export const respondExitPlanMode = (response: any) => {
       ? 'approve_with_permissions'
       : 'reject'
   return tryInvoke('respond_agent_interrupt', {
-    interruptId: response.requestId,
-    kind: 'plan',
-    response: {
-      decision,
-      feedback: response.feedback,
+    input: {
+      sessionId: response.sessionId,
+      interruptId: response.requestId,
+      kind: 'plan',
+      response: {
+        decision,
+        feedback: response.feedback,
+      },
     },
   })
 }
@@ -423,7 +840,7 @@ export const onAskUserRequest = (cb: Handler) => onEvt('agent:ask-user-request',
 export const onExitPlanModeRequest = (cb: Handler) => onEvt('agent:exit-plan-mode', cb)
 
 // ============================================================
-// Agent Workspaces
+// Agent 工作区
 // ============================================================
 
 export const listAgentWorkspaces = () => tryInvoke<any[]>('list_agent_workspaces', undefined, [])
@@ -435,10 +852,10 @@ export const reorderAgentWorkspaces = (orderedIds: string[]) =>
   tryInvoke<any[]>('reorder_agent_workspaces', { orderedIds }, [])
 
 // ============================================================
-// Workspace Capabilities (MCP + Skills)
+// 工作区能力（MCP + 技能）
 // ============================================================
 
-/** List j-cli MCP servers from ~/.jdata/agent/mcp_config.json (read-only source) */
+/** 从 ~/.jdata/agent/mcp_config.json 列出 j-cli MCP 服务器（只读数据源） */
 export const listMcpServers = () =>
   tryInvoke<Array<{ name: string; transport: string; command?: string; args?: string[]; url?: string; env?: Record<string, string>; disabled: boolean }>>('list_mcp_servers', undefined, [])
 
@@ -449,7 +866,7 @@ export const getWorkspaceMcpConfig = (workspaceSlug: string) =>
 export const saveWorkspaceMcpConfig = (workspaceSlug: string, config: any) =>
   tryInvoke('save_workspace_mcp_config', { workspaceSlug, config })
 export const testMcpServer = (name: string, entry: any) =>
-  tryInvoke('test_mcp_server', { name, entry }, { success: false, message: 'Not implemented' })
+  tryInvoke<ConnectionTestResult>('test_mcp_server', { name, entry })
 export const getWorkspaceSkills = (workspaceSlug: string) =>
   tryInvoke<any[]>('get_workspace_skills', { workspaceSlug }, [])
 export const getWorkspaceSkillsDir = (workspaceSlug: string) =>
@@ -470,14 +887,14 @@ export const writeSkillContent = (workspaceSlug: string, skillSlug: string, cont
   tryInvoke('write_skill_content', { workspaceSlug, skillSlug, content })
 
 // ============================================================
-// Events
+// 事件
 // ============================================================
 
 export const onCapabilitiesChanged = (cb: Handler) => onEvt('workspace:capabilities-changed', cb)
 export const onWorkspaceFilesChanged = (cb: Handler) => onEvt('workspace:files-changed', cb)
 
 // ============================================================
-// Background Tasks
+// 后台任务
 // ============================================================
 
 export const getTaskOutput = (input: any) =>
@@ -485,7 +902,7 @@ export const getTaskOutput = (input: any) =>
 export const stopTask = (input: any) => tryInvoke('stop_task', { input })
 
 // ============================================================
-// Attachments
+// 附件
 // ============================================================
 
 export const saveAttachment = (input: any) =>
@@ -501,7 +918,7 @@ export const extractAttachmentText = (localPath: string) =>
   tryInvoke<string>('extract_attachment_text', { localPath }, '')
 
 // ============================================================
-// User Profile
+// 用户档案
 // ============================================================
 
 export const getUserProfile = () => tryInvoke<UserProfile>('get_user_profile', undefined, { userName: 'User', avatar: '🧑‍💻' })
@@ -509,14 +926,14 @@ export const updateUserProfile = (updates: Partial<UserProfile>) =>
   tryInvoke<UserProfile>('update_user_profile', { updates }, { userName: 'User', avatar: '🧑‍💻' })
 
 // ============================================================
-// Online
+// 在线状态
 // ============================================================
 
 export const getOnlineStatus = () => Promise.resolve(navigator.onLine)
-// Removed: updater not supported in j-gui v1
+// 已移除：j-gui v1 不支持 updater
 
 // ============================================================
-// System Prompts
+// 系统提示词
 // ============================================================
 
 export const getSystemPrompts = () => tryInvoke<any[]>('get_system_prompts', undefined, [])
@@ -532,45 +949,89 @@ export const setDefaultPrompt = (prompt_id: string) => tryInvoke('set_default_pr
 export const updateAppendSetting = (enabled: boolean) => tryInvoke('update_append_setting', { append_date_time_and_user_name: enabled })
 
 // ============================================================
-// Chat Tools
+// Chat 工具
 // ============================================================
 
-export const getChatTools = () => tryInvoke<any[]>('get_chat_tools', undefined, [])
+function toChatToolInfo(tool: { name: string; description: string; enabled: boolean }): ChatToolInfo {
+  const iconByName: Record<string, string> = {
+    Bash: 'Terminal',
+    Read: 'FileText',
+    Write: 'Pencil',
+    Edit: 'Pencil',
+    Glob: 'FolderSearch',
+    Grep: 'Search',
+    WebFetch: 'Globe',
+    WebSearch: 'Globe',
+    Browser: 'Monitor',
+    Ask: 'MessageSquare',
+    TaskOutput: 'ScrollText',
+    Task: 'ListTodo',
+    TodoWrite: 'ListTodo',
+    TodoRead: 'ListTodo',
+    Compact: 'Package2',
+    RegisterHook: 'Plug',
+    EnterPlanMode: 'Map',
+    ExitPlanMode: 'Map',
+    EnterWorktree: 'FolderGit2',
+    ExitWorktree: 'FolderGit2',
+    LoadSkill: 'Sparkles',
+  }
 
-/** List built-in chat tools with enabled/disabled state (from AgentConfig.disabled_tools) */
+  return {
+    meta: {
+      id: tool.name,
+      name: tool.name,
+      description: tool.description,
+      params: [],
+      icon: iconByName[tool.name],
+      category: 'builtin',
+      executorType: 'builtin',
+    },
+    enabled: tool.enabled,
+    available: true,
+  }
+}
+
+export const getChatTools = async (): Promise<ChatToolInfo[]> =>
+  (await listChatTools()).map(toChatToolInfo)
+
+/** 列出内置 chat 工具及其启用状态（来自 AgentConfig.disabled_tools） */
 export const listChatTools = () =>
   invoke<Array<{ name: string; description: string; enabled: boolean }>>('list_chat_tools')
 
-/** List skills from j-cli (both user and project sources) */
+/** 列出来自 j-cli 的技能（包含 user 与 project 来源） */
 export const listSkills = () =>
   invoke<Array<{ name: string; description: string; source: string; dirPath: string }>>('list_skills')
 
-/** Scan global skills directories (~/.claude/agents/skills/ and ~/.agent/skills/) */
+/** 扫描全局技能目录（~/.claude/agents/skills/ 与 ~/.agent/skills/） */
 export const scanGlobalSkills = () =>
   invoke<Array<{ name: string; description: string; source: string; dirPath: string }>>('scan_global_skills')
 
-/** Copy a skill from a source directory to a workspace */
+/** 将 skill 从源目录复制到当前工作区 */
 export const copySkillToWorkspace = (sourceDir: string, workspaceSlug: string, skillSlug: string) =>
   invoke<void>('copy_skill_to_workspace', { sourceDir, workspaceSlug, skillSlug })
 
-/** Enable or disable a built-in chat tool by name */
+/** 按名称启用或禁用内置 chat 工具 */
 export const setToolEnabled = (name: string, enabled: boolean) =>
   invoke<void>('set_tool_enabled', { name, enabled })
-export const onCustomToolChanged = stubEvent('customToolChanged')
-export const updateChatToolState = (id: string, state: any) =>
-  tryInvoke('update_chat_tool_state', { id, state })
-export const addCustomTool = (meta: any) => tryInvoke<any>('add_custom_tool', { meta })
-export const removeCustomTool = (id: string) => tryInvoke('remove_custom_tool', { id })
-export const deleteCustomChatTool = (id: string) => tryInvoke('delete_custom_chat_tool', { id }, false) // TODO: backend command not yet registered
-export const getChatToolCredentials = (id: string) =>
-  tryInvoke<any>('get_chat_tool_credentials', { id }, {})
-export const updateChatToolCredentials = (id: string, creds: any) =>
-  tryInvoke('update_chat_tool_credentials', { id, creds })
-export const testChatTool = (id: string, creds: any) =>
-  tryInvoke('test_chat_tool', { id, creds }, { success: false, message: 'Not implemented' })
+export const onCustomToolChanged = (_callback: Handler): (() => void) =>
+  unsupportedSubscription('customToolChanged')
+export const updateChatToolState = (id: string, state: { enabled?: boolean }) => {
+  if (typeof state?.enabled !== 'boolean') {
+    throw new Error('updateChatToolState currently only supports toggling enabled')
+  }
+  return setToolEnabled(id, state.enabled)
+}
+export const addCustomTool = (_meta: any) => unsupportedCommand('add_custom_tool')
+export const removeCustomTool = (_id: string) => unsupportedCommand('remove_custom_tool')
+export const deleteCustomChatTool = (_id: string) => unsupportedCommand('delete_custom_chat_tool')
+export const getChatToolCredentials = (_id: string) => unsupportedCommand('get_chat_tool_credentials')
+export const updateChatToolCredentials = (_id: string, _creds: any) =>
+  unsupportedCommand('update_chat_tool_credentials')
+export const testChatTool = (_id: string, _creds: any) => unsupportedCommand('test_chat_tool')
 
 // ============================================================
-// Agent Files
+// Agent 文件
 // ============================================================
 
 export const saveAgentWorkspaceFiles = (input: any) => tryInvoke<any[]>('save_agent_workspace_files', { input }, [])
@@ -592,7 +1053,7 @@ export const searchAgentWorkspaceFiles = (workspaceSlug: string, query: string) 
 export const searchWorkspaceFiles = (params: any) => tryInvoke<any[]>('search_workspace_files', params, [])
 export const readAgentFile = (filePath: string) => tryInvoke<string>('read_agent_file', { filePath }, '')
 
-// File browser ops
+// 文件浏览器操作
 export const listDirectory = (dirPath: string) => tryInvoke<any[]>('list_directory', { dirPath }, [])
 export const moveFile = (src: string, dest: string) => tryInvoke('move_file', { src, dest })
 export const deleteFile = (filePath: string) => tryInvoke('delete_file', { filePath })
@@ -605,8 +1066,10 @@ export const readAttachedFile = (filePath: string) => tryInvoke<string>('read_at
 export const previewFile = (filePath: string) => tryInvoke('preview_file', { filePath })
 export const showInFolder = (filePath: string) => tryInvoke('show_in_folder', { filePath })
 export const showAttachedInFolder = (filePath: string) => tryInvoke('show_attached_in_folder', { filePath })
-export const openFolderDialog = () => tryInvoke<any>('open_folder_dialog', undefined, { canceled: true, filePaths: [] })
-export const getWorkspaceDirectories = () => tryInvoke<string[]>('get_workspace_directories', undefined, [])
+export const openFolderDialog = () =>
+  tryInvoke<any>('open_folder_dialog', undefined, { canceled: true, filePaths: [], path: undefined })
+export const getWorkspaceDirectories = (workspaceSlug: string) =>
+  tryInvoke<string[]>('get_workspace_directories', { workspaceSlug }, [])
 export const getWorkspaceFilesPath = (workspaceSlug: string) =>
   tryInvoke<string>('get_workspace_files_path', { workspaceSlug }, '')
 export const getAgentSessionPath = (sessionId: string) =>
@@ -616,25 +1079,25 @@ export const checkPathsType = (paths: string[]) => tryInvoke<any>('check_paths_t
 export const getFilePath = (file: File) => URL.createObjectURL(file)
 
 // ============================================================
-// Memory
+// 记忆
 // ============================================================
 
 export const getMemoryConfig = () => tryInvoke<any>('get_memory_config', undefined, { enabled: false, memories: [] })
 export const saveMemoryConfig = (config: any) => tryInvoke('save_memory_config', { config })
 export const setMemoryConfig = (config: any) => tryInvoke('set_memory_config', { config })
 export const testMemoryConnection = (config: any) =>
-  tryInvoke('test_memory_connection', { config }, { success: false, message: 'Not implemented' })
+  tryInvoke<ConnectionTestResult>('test_memory_connection', { config })
 
 // ============================================================
-// Agent Team
+// Agent 团队
 // ============================================================
 
 export const getAgentTeamData = () => tryInvoke<any>('get_agent_team_data', undefined, null)
 
-// Removed: installer & proxy not supported in j-gui v1
+// 已移除：j-gui v1 不支持 installer 与 proxy
 
 // ============================================================
-// Hooks
+// Hook 配置
 // ============================================================
 
 export interface HookInfo {
@@ -655,35 +1118,31 @@ export const toggleHook = (uniqueId: string, enabled: boolean) =>
   tryInvoke('toggle_hook', { uniqueId, enabled })
 
 // ============================================================
-// Yaml Config
+// Yaml 配置
 // ============================================================
 
 export const getConfig = () => tryInvoke<{ sections: Record<string, Record<string, string>> }>('get_config', undefined, { sections: {} })
 export const setConfig = (section: string, key: string, value: string) => tryInvoke('set_config', { section, key, value })
 
 // ============================================================
-// Aliases
+// 别名
 // ============================================================
 
 export const listAliases = () => tryInvoke<Array<{ section: string; name: string; value: string }>>('list_aliases', undefined, [])
 export const setAlias = (section: string, name: string, value: string) => tryInvoke('set_alias', { section, name, value })
 export const removeAlias = (section: string, name: string) => tryInvoke('remove_alias', { section, name })
 
-// Removed: quick_task not supported in j-gui v1
-export const onMenuCloseTab = stubEvent('menuCloseTab')
-export const onTrayCreateSession = stubEvent('trayCreateSession')
-export const onTrayOpenAgentSession = stubEvent('trayOpenAgentSession')
+// 已移除：j-gui v1 不支持 quick_task
+// 已移除：j-gui v1 不支持 feishu
 
-// Removed: feishu not supported in j-gui v1
+// 已移除：j-gui v1 不支持 dingtalk
 
-// Removed: dingtalk not supported in j-gui v1
+// 已移除：j-gui v1 不支持 voice_dictation
 
-// Removed: voice_dictation not supported in j-gui v1
-
-// Removed: migration not supported in j-gui v1
+// 已移除：j-gui v1 不支持 migration
 
 // ============================================================
-// Misc
+// 杂项
 // ============================================================
 
 export const openExternal = async (url: string) => {
@@ -703,10 +1162,10 @@ export const saveTaskPendingFilesState = (sessionId: string, state: unknown) =>
 export const getTaskPendingFilesState = (sessionId: string) =>
   tryInvoke<unknown>('get_task_pending_files_state', { sessionId }, null)
 
-// Removed: tray event duplicates (onTrayCreateSession/onTrayOpenAgentSession exist above)
+// 已移除：托盘事件重复项（onTrayCreateSession/onTrayOpenAgentSession 已在上方定义）
 
 // ============================================================
-// Export emit/onEvt for stream events (called by Rust backend via Tauri events)
+// 导出 emit/onEvt 供流式事件使用（由 Rust 后端通过 Tauri events 调用）
 // ============================================================
 
 export { emit, onEvt }

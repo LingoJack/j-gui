@@ -1,9 +1,9 @@
 /**
- * Provider 适配器类型定义
+ * 供应商适配器类型定义
  *
  * 定义所有 AI 供应商适配器需要实现的接口，
  * 以及流式事件、请求配置等核心类型。
- * core 层不依赖 Electron / Node fs，通过注入函数访问平台能力。
+ * core 层不依赖 Electron / Node 文件系统，通过注入函数访问平台能力。
  */
 
 import type { ChatMessage, FileAttachment, ProviderType } from '@jgui/shared'
@@ -26,7 +26,7 @@ export interface ImageAttachmentData {
  */
 export type ImageAttachmentReader = (attachments?: FileAttachment[]) => ImageAttachmentData[]
 
-// ===== Tool Use（Function Calling）=====
+// ===== 工具调用（Function Calling）=====
 
 /** 工具参数属性定义 */
 export interface ToolParameterProperty {
@@ -94,7 +94,7 @@ export interface ThinkingBlock {
  * 供应商无关格式，各适配器负责转换为供应商特定格式。
  *
  * `thinkingBlocks` 在思考+工具场景下必须回传（保留签名和块结构）；
- * `reasoning` 是向后兼容的扁平字段，当 `thinkingBlocks` 缺失时作为 fallback。
+ * `reasoning` 是向后兼容的扁平字段，当 `thinkingBlocks` 缺失时作为兜底。
  */
 export type ContinuationMessage =
   | {
@@ -196,7 +196,7 @@ export interface ProviderRequest {
 
 /** 流式请求的输入参数 */
 export interface StreamRequestInput {
-  /** 供应商 API Base URL */
+  /** 供应商 API 基础 URL */
   baseUrl: string
   /** 明文 API Key */
   apiKey: string
@@ -222,7 +222,7 @@ export interface StreamRequestInput {
 
 /** 标题生成请求的输入参数 */
 export interface TitleRequestInput {
-  /** 供应商 API Base URL */
+  /** 供应商 API 基础 URL */
   baseUrl: string
   /** 明文 API Key */
   apiKey: string

@@ -1,5 +1,5 @@
 /**
- * ToolSettings - BuiltinToolsSection 测试
+ * ToolSettings 中 BuiltinToolsSection 的测试
  *
  * 验证 BuiltinToolsSection 能正确使用 list_chat_tools / set_tool_enabled
  * 后端命令渲染工具列表、切换开关、处理加载与错误状态。
@@ -11,13 +11,13 @@ import { BuiltinToolsSection } from '@/components/settings/ToolSettings'
 import * as ipc from '@/lib/ipc'
 import { toast } from 'sonner'
 
-// Mock the IPC module used by BuiltinToolsSection
+// 模拟 BuiltinToolsSection 使用的 IPC 模块
 vi.mock('@/lib/ipc', () => ({
   listChatTools: vi.fn(),
   setToolEnabled: vi.fn(),
 }))
 
-// Mock sonner toast for #21 error-toast verification
+// 为 #21 的错误提示验证模拟 sonner toast
 vi.mock('sonner', () => ({
   toast: {
     error: vi.fn(),
@@ -44,7 +44,7 @@ describe('BuiltinToolsSection', () => {
 
     render(<BuiltinToolsSection />)
 
-    // Wait for tool names to render
+    // 等待工具名称渲染
     await waitFor(() => {
       expect(screen.getByText('Bash')).toBeInTheDocument()
     })
@@ -65,19 +65,19 @@ describe('BuiltinToolsSection', () => {
       expect(screen.getByText('Bash')).toBeInTheDocument()
     })
 
-    // Descriptions should be visible
+    // 描述应可见
     expect(screen.getByText('Execute shell commands.')).toBeInTheDocument()
     expect(screen.getByText('Read the contents of a file.')).toBeInTheDocument()
 
-    // Switches should be rendered (role="switch" from Radix)
+    // 应渲染开关（role="switch"，来自 Radix）
     const switches = screen.getAllByRole('switch')
     expect(switches.length).toBe(mockTools.length)
 
-    // Enabled tools should be checked
+    // 已启用工具应为选中状态
     expect(switches[0]).toBeChecked() // Bash: enabled
     expect(switches[1]).toBeChecked() // Read: enabled
 
-    // Disabled tools should not be checked
+    // 已禁用工具不应为选中状态
     expect(switches[2]).not.toBeChecked() // Write: disabled
   })
 
@@ -91,27 +91,27 @@ describe('BuiltinToolsSection', () => {
       expect(screen.getByText('Bash')).toBeInTheDocument()
     })
 
-    // Toggle Bash (currently enabled -> disabled)
+    // 切换 Bash（当前为启用 -> 禁用）
     const switches = screen.getAllByRole('switch')
     fireEvent.click(switches[0])
 
     expect(ipc.setToolEnabled).toHaveBeenCalledWith('Bash', false)
 
-    // Toggle Write (currently disabled -> enabled)
+    // 切换 Write（当前为禁用 -> 启用）
     fireEvent.click(switches[2])
 
     expect(ipc.setToolEnabled).toHaveBeenCalledWith('Write', true)
   })
 
   it('shows loading state while fetching', async () => {
-    // Return a promise that never resolves to keep loading state
+    // 返回永不 resolve 的 promise，以维持加载态
     ;(ipc.listChatTools as any).mockImplementation(
       () => new Promise(() => {})
     )
 
     render(<BuiltinToolsSection />)
 
-    // Loading indicator should be visible immediately
+    // 加载指示器应立即可见
     expect(screen.getByText('加载工具列表...')).toBeInTheDocument()
   })
 
@@ -140,11 +140,11 @@ describe('BuiltinToolsSection', () => {
       expect(screen.getByText('Bash')).toBeInTheDocument()
     })
 
-    // Toggle a tool to trigger the error path
+    // 切换工具以触发错误分支
     const switches = screen.getAllByRole('switch')
     fireEvent.click(switches[0])
 
-    // Wait for the toast.error to be called
+    // 等待 toast.error 被调用
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalled()
     })

@@ -35,6 +35,7 @@ import {
 } from '@jgui/shared'
 import type {
   Channel,
+  ChatProtocolHint,
   ChannelCreateInput,
   ChannelModel,
   ChannelTestResult,
@@ -76,6 +77,13 @@ const PROVIDER_SELECT_OPTIONS = PROVIDER_OPTIONS.map((p) => ({
   value: p,
   label: PROVIDER_LABELS[p],
 }))
+
+const PROTOCOL_HINT_OPTIONS: Array<{ value: ChatProtocolHint; label: string }> = [
+  { value: 'auto', label: '自动' },
+  { value: 'openai-chat-completions', label: 'OpenAI Chat Completions' },
+  { value: 'openai-responses', label: 'OpenAI Responses' },
+  { value: 'anthropic-messages', label: 'Anthropic Messages' },
+]
 
 /** 各供应商的 Chat 端点路径，用于 Base URL 预览 */
 const PROVIDER_CHAT_PATHS: Record<ProviderType, string> = {
@@ -138,6 +146,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
   // 表单状态
   const [name, setName] = React.useState(channel?.name ?? '')
   const [provider, setProvider] = React.useState<ProviderType>(channel?.provider ?? 'anthropic')
+  const [protocolHint, setProtocolHint] = React.useState<ChatProtocolHint>(channel?.protocolHint ?? 'auto')
   const [baseUrl, setBaseUrl] = React.useState(channel?.baseUrl ?? PROVIDER_DEFAULT_URLS.anthropic)
   const [apiKey, setApiKey] = React.useState(channel?.apiKey ?? '')
   const [showApiKey, setShowApiKey] = React.useState(false)
@@ -172,6 +181,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     currentModels: ChannelModel[],
     currentName: string,
     currentProvider: ProviderType,
+    currentProtocolHint: ChatProtocolHint,
     currentBaseUrl: string,
     currentApiKey: string,
     currentEnabled: boolean,
@@ -181,6 +191,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
       await ipc.updateChannel(channel.id, {
         name: currentName,
         provider: currentProvider,
+        protocolHint: currentProtocolHint,
         baseUrl: currentBaseUrl,
         apiKey: currentApiKey || undefined,
         models: currentModels,
@@ -198,6 +209,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     nextModels: ChannelModel[],
     nextName: string,
     nextProvider: ProviderType,
+    nextProtocolHint: ChatProtocolHint,
     nextBaseUrl: string,
     nextApiKey: string,
     nextEnabled: boolean,
@@ -205,7 +217,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     if (!isEdit || !initializedRef.current) return
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
     autoSaveTimerRef.current = setTimeout(() => {
-      doAutoSave(nextModels, nextName, nextProvider, nextBaseUrl, nextApiKey, nextEnabled)
+      doAutoSave(nextModels, nextName, nextProvider, nextProtocolHint, nextBaseUrl, nextApiKey, nextEnabled)
     }, AUTO_SAVE_DELAY)
   }, [isEdit, doAutoSave])
 
@@ -221,9 +233,9 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
 
   // 监听字段变化触发 auto-save
   React.useEffect(() => {
-    scheduleAutoSave(models, name, provider, baseUrl, apiKey, enabled)
+    scheduleAutoSave(models, name, provider, protocolHint, baseUrl, apiKey, enabled)
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current) }
-  }, [models, name, provider, baseUrl, apiKey, enabled, scheduleAutoSave])
+  }, [models, name, provider, protocolHint, baseUrl, apiKey, enabled, scheduleAutoSave])
 
   // 切换供应商时自动更新 Base URL，DeepSeek / Kimi 自动添加预设模型
   const handleProviderChange = (newProvider: string): void => {
@@ -344,11 +356,13 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
       const result = isEdit && channel && isMaskedApiKey(apiKey)
         ? await ipc.testSavedChannel(channel.id, {
             provider,
+            protocolHint,
             baseUrl,
             model: models.find((m) => m.enabled)?.id ?? models[0]?.id,
           })
         : await ipc.testChannelDirect({
             provider,
+            protocolHint,
             apiBase: baseUrl,
             apiKey,
           })
@@ -391,6 +405,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
       await ipc.createChannel({
         name,
         provider,
+        protocolHint,
         apiBase: baseUrl,
         apiKey,
         models,
@@ -521,6 +536,14 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
             onValueChange={handleProviderChange}
             options={PROVIDER_SELECT_OPTIONS}
             placeholder="选择供应商"
+          />
+          <SettingsSelect
+            label="聊天协议"
+            value={protocolHint}
+            onValueChange={(value) => setProtocolHint(value as ChatProtocolHint)}
+            options={PROTOCOL_HINT_OPTIONS}
+            placeholder="选择聊天协议"
+            description="用于让测试连接和真实聊天走同一条协议路由；OpenAI Responses 需要在这里显式选择。"
           />
           <SettingsInput
             label="Base URL"

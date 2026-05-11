@@ -33,6 +33,15 @@ export const conversationsAtom: PrimitiveAtom<ConversationMeta[]> = atom<Convers
 /** 当前对话 ID */
 export const currentConversationIdAtom = atom(null) as PrimitiveAtom<string | null>
 
+/** 搜索/导航后需要定位到的消息锚点 */
+export interface ChatMessageTarget {
+  conversationId: string
+  messageId: string
+  nonce: number
+}
+
+export const chatMessageTargetAtom = atom(null) as PrimitiveAtom<ChatMessageTarget | null>
+
 /** 当前对话的消息列表 */
 export const currentMessagesAtom: PrimitiveAtom<ChatMessage[]> = atom<ChatMessage[]>([])
 
@@ -249,7 +258,7 @@ export interface AgentRecommendation {
 /** 待处理的 Agent 模式推荐（工具结果写入，用户操作/关闭/切换对话时清除） */
 export const pendingAgentRecommendationAtom = atom(null) as PrimitiveAtom<AgentRecommendation | null>
 
-// ===== Per-conversation 设置 Map =====
+// ===== 按对话隔离的设置映射 =====
 // 分屏时每个 ChatView 实例独立控制，缺省时使用全局默认值
 
 /** 每个对话的模型选择 */

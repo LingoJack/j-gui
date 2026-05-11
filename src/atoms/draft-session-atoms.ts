@@ -1,5 +1,5 @@
 /**
- * Draft Session Atoms
+ * 草稿会话 Atoms
  *
  * 追踪"草稿"会话 ID。草稿会话是真实的会话（拥有有效 ID），
  * 但尚未发送任何消息，因此不在侧边栏中显示。
@@ -8,5 +8,5 @@
 
 import { atom } from 'jotai'
 
-/** 草稿会话 ID 集合（Chat + Agent 共用） */
+/** 草稿会话 ID 集合（Chat 和 Agent 共用） */
 export const draftSessionIdsAtom = atom<Set<string>>(new Set<string>())

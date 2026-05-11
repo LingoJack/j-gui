@@ -50,21 +50,21 @@ import { toast } from 'sonner'
 import type { AgentStreamEvent, AgentStreamCompletePayload, AgentEvent, AgentStreamPayload, SDKAssistantMessage, SDKUserMessage, SDKSystemMessage, SDKContentBlock, SDKUserContentBlock } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 
-// React 19 移除了 unstable_batchedUpdates，自动批处理已是默认行为
+// React 19 移除了 unstable_batchedUpdates，自动批处理已经是默认行为
 const unstable_batchedUpdates = (fn: () => void) => fn()
 
 /** 触发右侧文件浏览器自动定位的写入类工具集合 */
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Update'])
 
 // ============================================================================
-// Phase 1 临时兼容层：将 AgentStreamPayload 转换为旧 AgentEvent
-// Phase 2 将移除此转换，直接使用 SDKMessage 渲染
+// 阶段 1 临时兼容层：将 AgentStreamPayload 转换为旧 AgentEvent
+// 阶段 2 将移除此转换，直接使用 SDKMessage 渲染
 // ============================================================================
 
 /**
  * 按模型名推断 contextWindow。SDK 流式过程中不返回此字段，
  * 只有 result 消息的 modelUsage 才带（且部分渠道不返回）。
- * 这里提供一个按模型家族的 fallback，保证进度环永远有分母可用。
+ * 这里提供一个按模型家族划分的兜底值，保证进度环永远有分母可用。
  */
 function inferContextWindow(model?: string): number | undefined {
   if (!model) return undefined
@@ -124,7 +124,7 @@ function payloadToLegacyEvents(payload: AgentStreamPayload): AgentEvent[] {
     }
   }
 
-  // sdk_message → 转换为对应的 AgentEvent
+  // sdk_message -> 转换为对应的 AgentEvent
   const msg = payload.message
 
   switch (msg.type) {
@@ -132,7 +132,7 @@ function payloadToLegacyEvents(payload: AgentStreamPayload): AgentEvent[] {
       const aMsg = msg as SDKAssistantMessage
       if (aMsg.isReplay) return []
       if (aMsg.error) {
-        // 错误已在主进程处理，这里仅作为 typed_error 透传
+        // 错误已在主进程处理，这里仅作为 typed_error 继续透传
         return [{ type: 'error', message: aMsg.error.message }]
       }
       const events: AgentEvent[] = []
@@ -154,11 +154,11 @@ function payloadToLegacyEvents(payload: AgentStreamPayload): AgentEvent[] {
           })
         }
       }
-      // Usage（保留完整字段用于详细展示）
+      // 用量信息（保留完整字段用于详细展示）
       if (!aMsg.parent_tool_use_id && aMsg.message.usage) {
         const u = aMsg.message.usage
         const inputTokens = u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
-        // 流式过程中 SDK 不返回 contextWindow，按模型名推断一个默认值作为 fallback
+        // 流式过程中 SDK 不返回 contextWindow，按模型名推断一个默认兜底值
         const modelName = aMsg.message.model ?? aMsg._channelModelId
         const fallbackWindow = inferContextWindow(modelName)
         events.push({
@@ -284,7 +284,7 @@ export function useGlobalAgentListeners(): void {
   const store = useStore()
 
   useEffect(() => {
-    /** 构建导航到指定会话的回调 */
+    /** 构建跳转到指定会话的回调 */
     const makeNavigateToSession = (sessionId: string, sessionTitle: string) => () => {
       const tabs = store.get(tabsAtom)
       const result = openTab(tabs, { type: 'agent', sessionId, title: sessionTitle })
@@ -299,13 +299,13 @@ export function useGlobalAgentListeners(): void {
       }
     }
 
-    /** 获取会话标题 */
+    /** 读取会话标题 */
     const getSessionTitle = (sessionId: string): string => {
       const sessions = store.get(agentSessionsAtom)
       return sessions.find((s) => s.id === sessionId)?.title ?? '未命名会话'
     }
 
-    /** 发送阻塞通知（带提示音 + 会话导航） */
+    /** 发送阻塞通知（带提示音和会话跳转） */
     const sendBlockingNotification = (sessionId: string, title: string, body: string, soundType: NotificationSoundType) => {
       const enabled = store.get(notificationsEnabledAtom)
       const soundEnabled = store.get(notificationSoundEnabledAtom)
@@ -335,13 +335,13 @@ export function useGlobalAgentListeners(): void {
     }).catch(console.error)
 
     // ===== 1. 流式事件 =====
-    const cleanupEvent = ipc.onAgentStreamEvent((payload: AgentStreamPayload) => {
-        if (!('sessionId' in payload)) {
+    const cleanupEvent = ipc.onAgentStreamEvent((payload: AgentStreamEvent) => {
+        if (!('sessionId' in payload) || !('payload' in payload)) {
           return
         }
-        const sessionId = (payload as { sessionId: string }).sessionId
-        // Phase 1 兼容：将新 AgentStreamPayload 转换为旧 AgentEvent[]
-        const legacyEvents = payloadToLegacyEvents(payload)
+        const { sessionId, payload: streamPayload } = payload
+        // 规范化的 AgentStreamPayload 转换为旧 AgentEvent[]
+        const legacyEvents = payloadToLegacyEvents(streamPayload)
 
       unstable_batchedUpdates(() => {
         for (const event of legacyEvents) {
@@ -400,7 +400,7 @@ export function useGlobalAgentListeners(): void {
             if (typeof targetPath === 'string' && targetPath.length > 0) {
               const now = Date.now()
               store.set(fileBrowserAutoRevealAtom, { sessionId, path: targetPath, ts: now })
-              // 同时记入「最近修改」状态，用于 60s 内左侧竖条标记
+              // 同时记入「最近修改」状态，用于 60 秒内左侧竖条标记
               store.set(recentlyModifiedPathsAtom, (prev) => {
                 const map = new Map(prev)
                 const inner = new Map(map.get(sessionId) ?? new Map())
@@ -471,7 +471,7 @@ export function useGlobalAgentListeners(): void {
               map.set(sessionId, [...current, event.request])
               return map
             })
-            // 桌面通知（带提示音 + 会话导航）
+            // 桌面通知（带提示音和会话跳转）
             sendBlockingNotification(
               sessionId,
               '需要权限确认',
@@ -488,7 +488,7 @@ export function useGlobalAgentListeners(): void {
               map.set(sessionId, [...current, event.request])
               return map
             })
-            // 桌面通知（带提示音 + 会话导航）
+            // 桌面通知（带提示音和会话跳转）
             sendBlockingNotification(
               sessionId,
               'Agent 需要你的输入',
@@ -510,7 +510,7 @@ export function useGlobalAgentListeners(): void {
               next.delete(sessionId)
               return next
             })
-            // 桌面通知（带提示音 + 会话导航）
+            // 桌面通知（带提示音和会话跳转）
             sendBlockingNotification(
               sessionId,
               'Agent 计划待审批',
@@ -525,7 +525,7 @@ export function useGlobalAgentListeners(): void {
               next.add(sessionId)
               return next
             })
-            // 同步更新权限模式选择器（per-session）
+            // 同步更新按会话隔离的权限模式选择器
             store.set(agentPermissionModeMapAtom, (prev: Map<string, import('@jgui/shared').JguiPermissionMode>) => {
               const next = new Map(prev)
               next.set(sessionId, 'plan')
@@ -567,8 +567,8 @@ export function useGlobalAgentListeners(): void {
           }
         )
 
-        // STREAM_COMPLETE 表示后端已完全结束 — 立即标记 running: false
-        // 同时将所有未完成的工具活动标记为已完成，防止 subagent spinner 继续转动
+        // STREAM_COMPLETE 表示后端已完全结束，立即标记 running: false
+        // 同时将所有未完成的工具活动标记为已完成，防止子代理加载指示继续转动
         // （complete 事件只清除 retrying，保持 running: true 以防竞态）
         // 竞态保护：通过 startedAt 区分新旧流，防止旧流的 complete 事件重置新流的 running 状态
         store.set(agentStreamingStatesAtom, (prev) => {
@@ -634,7 +634,7 @@ export function useGlobalAgentListeners(): void {
           return next
         })
 
-        /** 竞态保护：检查该会话是否已有新的流式请求正在运行 */
+        /** 竞态保护：检查该会话是否已有新的流式请求在运行 */
         const isNewStreamRunning = (): boolean => {
           const state = store.get(agentStreamingStatesAtom).get(data.sessionId)
           return state?.running === true

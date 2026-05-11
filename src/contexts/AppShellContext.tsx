@@ -1,8 +1,9 @@
 import * as React from 'react'
 
 export interface AppShellContextType {
-  // Placeholder - context values will be added as needed
 }
+
+export const APP_SHELL_CONTEXT_VALUE: AppShellContextType = {}
 
 const AppShellContext = React.createContext<AppShellContextType | undefined>(undefined)
 

@@ -1,17 +1,17 @@
 /**
- * PanelHeader - Header component for panels
- * Displays title and optional action buttons
+ * PanelHeader - 面板头部组件
+ * 展示标题和可选操作按钮
  */
 
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 
 export interface PanelHeaderProps {
-  /** Panel title */
+  /** 面板标题 */
   title: string
-  /** Optional action buttons */
+  /** 可选操作按钮 */
   actions?: React.ReactNode
-  /** Optional className */
+  /** 可选 className */
   className?: string
 }
 

@@ -1,32 +1,41 @@
-//! JcliAdapter — implements all kernel traits by delegating to existing jcli calls.
-//! This is the ONLY file allowed to contain `j_cli::` imports.
+//! JcliAdapter：通过委托既有 jcli 调用来实现全部 kernel trait。
+//! 这是项目里唯一允许包含 `j_cli::` 导入的文件。
 
-use async_trait::async_trait;
-use std::collections::{HashMap, HashSet};
+use base64::Engine;
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
-use super::chat::ChatKernel;
+use super::chat::{
+    ChatKernel, KernelAppendMessage, KernelChatStreamCallbacks, KernelChatStreamRequest,
+};
 use super::config::ConfigKernel;
 use super::error::KernelError;
 use super::governance::GovernanceKernel;
 use super::types::*;
+use crate::commands::files::resolve_attachment_path;
 
-// ===== jcli imports — ONLY place in project =====
-use j_cli::command::chat::agent::api::call_llm_stream_async;
+// ===== jcli 导入 —— 项目内唯一允许位置 =====
 use j_cli::command::chat::agent::config::{AgentLoopConfig, AgentLoopSharedState};
 use j_cli::command::chat::agent::{run_main_agent_loop, MainAgentLoopParams};
-use j_cli::command::chat::app::types::{AskRequest, StreamMsg, ToolResultMsg};
+use j_cli::command::chat::app::types::StreamMsg;
+use j_cli::command::chat::app::types::{AskRequest, ToolResultMsg};
 use j_cli::command::chat::context::compact::new_invoked_skills_map;
+#[cfg(test)]
+use j_cli::command::chat::error::ChatError;
 use j_cli::command::chat::infra::hook::manager::HookManager;
 use j_cli::command::chat::infra::hook::types::OnError;
 use j_cli::command::chat::infra::skill::load_all_skills;
 use j_cli::command::chat::permission::JcliConfig;
-use j_cli::command::chat::storage::session::{list_sessions, SessionPaths};
+use j_cli::command::chat::storage::session::list_sessions;
+#[cfg(test)]
+use j_cli::command::chat::storage::session::sessions_dir;
+use j_cli::command::chat::storage::session::SessionPaths;
+#[cfg(test)]
+use j_cli::command::chat::storage::ToolCallItem;
 use j_cli::command::chat::storage::{
     self, load_agent_config, load_system_prompt as jcli_load_system_prompt, save_agent_config,
     save_system_prompt as jcli_save_system_prompt, ChatMessage as JcliChatMessage, DisplayHint,
-    MessageRole, ModelProvider,
+    ImageData, MessageRole, ModelProvider, SessionEvent,
 };
 use j_cli::command::chat::tools::background::BackgroundManager;
 use j_cli::command::chat::tools::definition::ToolRegistry;
@@ -34,30 +43,61 @@ use j_cli::command::chat::tools::derived_shared::SubAgentMetrics;
 use j_cli::command::chat::tools::task::TaskManager;
 use j_cli::command::chat::tools::todo::TodoManager;
 use j_cli::config::YamlConfig;
+use j_cli::constants::ALL_SECTIONS;
+use j_cli::llm::{ChatRequest, Content, LlmClient, Message, Role};
 use j_cli::theme::ThemeName;
+
+#[path = "adapter_chat.rs"]
+mod adapter_chat;
+#[path = "adapter_config.rs"]
+mod adapter_config;
+#[path = "adapter_governance.rs"]
+mod adapter_governance;
+#[path = "adapter_session.rs"]
+mod adapter_session;
+#[path = "adapter_transport.rs"]
+mod adapter_transport;
+
+use self::adapter_session::{stream_msg_to_json_string, toggle_session_bool_field};
+#[cfg(test)]
+use self::adapter_transport::{build_anthropic_stream_request, build_openai_responses_request};
+use self::adapter_transport::{
+    build_chat_request_extra, stream_anthropic_messages, stream_openai_responses,
+};
+use async_trait::async_trait;
+use futures_util::StreamExt;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use tokio_util::sync::CancellationToken;
+
+const JCLI_VERSION: &str = j_cli::constants::VERSION;
+type JcliAgentConfig = j_cli::command::chat::storage::AgentConfig;
+type InvokedSkillsMap = Arc<
+    Mutex<std::collections::HashMap<String, j_cli::command::chat::context::compact::InvokedSkill>>,
+>;
 
 // ===== JcliAdapter =====
 
-/// Adapter that implements all kernel traits by delegating to jcli calls.
+/// 通过委托 jcli 调用来实现全部 kernel trait 的适配器。
 pub struct JcliAdapter;
 
 impl JcliAdapter {
-    /// Create a new adapter instance.
+    /// 创建新的适配器实例。
     pub fn new() -> Self {
         Self
     }
 
-    /// Return a reference to the [`ConfigKernel`] implementation.
+    /// 返回 [`ConfigKernel`] 视图。
     pub fn config(&self) -> &dyn ConfigKernel {
         self
     }
-    /// Return a reference to the [`ChatKernel`] implementation.
+    /// 返回 [`ChatKernel`] 视图。
     #[allow(dead_code)]
+    /// 暴露 ChatKernel 视图，供需要聊天能力的上层代码复用。
     pub fn chat(&self) -> &dyn ChatKernel {
         self
     }
-    /// Return a reference to the [`GovernanceKernel`] implementation.
+    /// 返回 [`GovernanceKernel`] 视图。
     pub fn governance(&self) -> &dyn GovernanceKernel {
         self
     }
@@ -81,9 +121,9 @@ impl JcliAdapter {
     }
 }
 
-// ===== Helpers =====
+// ===== 辅助函数 =====
 
-/// Path to agent_config.json (jcli data directory).
+/// agent_config.json 的路径（位于 jcli 数据目录下）。
 fn agent_config_path() -> PathBuf {
     YamlConfig::data_dir()
         .join("agent")
@@ -91,7 +131,7 @@ fn agent_config_path() -> PathBuf {
         .join("agent_config.json")
 }
 
-/// Load agent_config.json as a generic JSON value returns Ok(None) if file missing.
+/// 以通用 JSON 值形式读取 agent_config.json；文件不存在时返回 `Ok(None)`。
 fn read_agent_config_value() -> Result<Option<serde_json::Value>, KernelError> {
     let path = agent_config_path();
     if !path.exists() {
@@ -103,7 +143,7 @@ fn read_agent_config_value() -> Result<Option<serde_json::Value>, KernelError> {
         .map_err(|e| KernelError::Config(format!("解析 agent_config.json 失败: {e}")))
 }
 
-/// Detect whether the stored config uses the new format (V1) or old format (V0).
+/// 判断当前保存的配置是新格式（V1）还是旧格式（V0）。
 fn is_v1_format(config: &serde_json::Value) -> bool {
     if let Some(version) = config.get("version").and_then(|v| v.as_u64()) {
         if version >= 1 {
@@ -120,7 +160,7 @@ fn is_v1_format(config: &serde_json::Value) -> bool {
     false
 }
 
-/// Migrate a single old-format KernelProvider (empty id) to new format.
+/// 把单个旧格式的 `KernelProvider`（空 id）迁移为新格式。
 fn migrate_provider(p: &mut KernelProvider) {
     if p.id.is_empty() {
         p.id = uuid::Uuid::new_v4().to_string();
@@ -151,6 +191,7 @@ fn from_jcli_provider(p: &ModelProvider) -> KernelProvider {
         id: String::new(),
         name: p.name.clone(),
         provider: String::new(),
+        protocol_hint: None,
         api_base: p.api_base.clone(),
         api_key: p.api_key.clone(),
         models: vec![KernelChannelModel {
@@ -179,7 +220,7 @@ fn to_jcli_messages(msgs: &[KernelChatMessage]) -> Vec<JcliChatMessage> {
             tool_calls: None,
             tool_call_id: None,
             images: None,
-            reasoning_content: None,
+            reasoning_content: m.reasoning.clone(),
             sender_name: None,
             recipient_name: None,
             display_hint: DisplayHint::Normal,
@@ -187,559 +228,122 @@ fn to_jcli_messages(msgs: &[KernelChatMessage]) -> Vec<JcliChatMessage> {
         .collect()
 }
 
-// ===== ConfigKernel impl =====
-
-impl ConfigKernel for JcliAdapter {
-    fn load_providers(&self) -> Result<Vec<KernelProvider>, KernelError> {
-        let config_val = read_agent_config_value()?;
-
-        let providers: Vec<KernelProvider> = match config_val {
-            Some(ref val) if is_v1_format(val) => serde_json::from_value(val["providers"].clone())
-                .map_err(|e| KernelError::Config(format!("反序列化 providers 失败: {e}")))?,
-            Some(_) => {
-                // V0 format: use jcli to load, then migrate
-                let jcli_config = load_agent_config();
-                let mut providers: Vec<KernelProvider> = jcli_config
-                    .providers
-                    .iter()
-                    .map(from_jcli_provider)
-                    .collect();
-                for p in &mut providers {
-                    migrate_provider(p);
-                }
-                // Save migrated format
-                self.save_providers(&providers)?;
-                providers
-            }
-            None => vec![],
-        };
-
-        Ok(providers)
-    }
-
-    fn save_providers(&self, providers: &[KernelProvider]) -> Result<(), KernelError> {
-        // Read existing config to preserve non-provider fields (active_index, theme, etc.)
-        let mut config: serde_json::Value = match read_agent_config_value()? {
-            Some(val) => val,
-            None => {
-                // New file: start with jcli defaults
-                let jcli_config = load_agent_config();
-                serde_json::to_value(&jcli_config)
-                    .map_err(|e| KernelError::Config(format!("序列化默认配置失败: {e}")))?
-            }
-        };
-
-        // Serialize providers with our format
-        let mut providers_val = serde_json::to_value(providers)
-            .map_err(|e| KernelError::Config(format!("序列化 providers 失败: {e}")))?;
-        // Backward compatibility: j-cli's load_agent_config() expects `model: String`
-        // per provider. Synthesize from the first model's ID.
-        if let Some(arr) = providers_val.as_array_mut() {
-            for p in arr {
-                if p.get("model").is_none() {
-                    if let Some(first_id) = p["models"]
-                        .as_array()
-                        .and_then(|m| m.first())
-                        .and_then(|m| m["id"].as_str())
-                    {
-                        p["model"] = serde_json::json!(first_id);
-                    }
-                }
-            }
-        }
-        config["providers"] = providers_val;
-        config["version"] = serde_json::json!(1);
-
-        let path = agent_config_path();
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let json = serde_json::to_string_pretty(&config)
-            .map_err(|e| KernelError::Config(format!("序列化配置失败: {e}")))?;
-        std::fs::write(&path, json)?;
-        Ok(())
-    }
-
-    fn create_channel(
-        &self,
-        input: KernelCreateChannelInput,
-    ) -> Result<KernelProvider, KernelError> {
-        let mut providers = self.load_providers()?;
-        let provider = KernelProvider {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: input.name,
-            provider: if input.provider.is_empty() {
-                infer_provider(&input.api_base)
-            } else {
-                input.provider
-            },
-            api_base: input.api_base,
-            api_key: input.api_key,
-            models: input.models,
-            enabled: input.enabled,
-            supports_vision: false,
-            created_at: current_timestamp(),
-            updated_at: current_timestamp(),
-        };
-        providers.push(provider.clone());
-        self.save_providers(&providers)?;
-        Ok(provider)
-    }
-
-    fn update_channel(
-        &self,
-        id: &str,
-        input: KernelUpdateChannelInput,
-    ) -> Result<KernelProvider, KernelError> {
-        let mut providers = self.load_providers()?;
-        let provider = providers
-            .iter_mut()
-            .find(|p| p.id == id)
-            .ok_or_else(|| KernelError::Config(format!("渠道 ID 不存在: {id}")))?;
-
-        // Apply partial updates (only non-None fields)
-        if let Some(name) = input.name {
-            provider.name = name;
-        }
-        if let Some(ref p) = input.provider {
-            provider.provider = p.clone();
-        }
-        if let Some(ref api_base) = input.api_base {
-            provider.api_base = api_base.clone();
-        }
-        if let Some(ref api_key) = input.api_key {
-            // If the incoming api_key is masked (contains "..."), preserve the old key
-            if !api_key.contains("...") {
-                provider.api_key = api_key.clone();
-            }
-        }
-        if let Some(ref models) = input.models {
-            provider.models = models.clone();
-        }
-        if let Some(enabled) = input.enabled {
-            provider.enabled = enabled;
-        }
-        provider.updated_at = current_timestamp();
-
-        let result = provider.clone();
-        self.save_providers(&providers)?;
-        Ok(result)
-    }
-
-    fn delete_channel(&self, id: &str) -> Result<(), KernelError> {
-        let mut providers = self.load_providers()?;
-        let len_before = providers.len();
-        providers.retain(|p| p.id != id);
-        if providers.len() == len_before {
-            return Err(KernelError::Config(format!("渠道 ID 不存在: {id}")));
-        }
-        self.save_providers(&providers)?;
-        Ok(())
-    }
-
-    fn list_aliases(&self) -> Result<Vec<KernelAliasEntry>, KernelError> {
-        let config = YamlConfig::load();
-        let sections = &["path", "inner_url", "outer_url", "script"];
-        let mut entries = Vec::new();
-        for section in sections {
-            if let Some(props) = config.get_section(section) {
-                for (name, value) in props {
-                    entries.push(KernelAliasEntry {
-                        section: section.to_string(),
-                        name: name.clone(),
-                        value: value.clone(),
-                    });
-                }
-            }
-        }
-        Ok(entries)
-    }
-
-    fn set_alias(&self, section: &str, name: &str, value: &str) -> Result<(), KernelError> {
-        let mut config = YamlConfig::load();
-        config
-            .set_property(section, name, value)
-            .map_err(|e| KernelError::Config(format!("设置别名失败: {}", e)))
-    }
-
-    fn remove_alias(&self, section: &str, name: &str) -> Result<(), KernelError> {
-        let mut config = YamlConfig::load();
-        config
-            .remove_property(section, name)
-            .map_err(|e| KernelError::Config(format!("删除别名失败: {}", e)))
-    }
-
-    fn load_system_prompt(&self) -> Result<Option<String>, KernelError> {
-        Ok(jcli_load_system_prompt())
-    }
-
-    fn save_system_prompt(&self, prompt: &str) -> Result<(), KernelError> {
-        jcli_save_system_prompt(prompt);
-        Ok(())
-    }
-
-    fn get_yaml_sections(&self) -> Result<HashMap<String, HashMap<String, String>>, KernelError> {
-        use j_cli::constants::ALL_SECTIONS;
-        let config = YamlConfig::load();
-        let mut result = HashMap::new();
-        for section in ALL_SECTIONS {
-            if let Some(props) = config.get_section(section) {
-                result.insert(section.to_string(), props.clone().into_iter().collect());
-            } else {
-                result.insert(section.to_string(), HashMap::new());
-            }
-        }
-        Ok(result)
-    }
-
-    fn set_yaml_property(&self, section: &str, key: &str, value: &str) -> Result<(), KernelError> {
-        let mut config = YamlConfig::load();
-        if value.is_empty() {
-            config
-                .remove_property(section, key)
-                .map_err(|e| KernelError::Config(format!("删除属性失败: {}", e)))
-        } else {
-            config
-                .set_property(section, key, value)
-                .map_err(|e| KernelError::Config(format!("设置属性失败: {}", e)))
-        }
-    }
-
-    fn load_active_index(&self) -> Result<usize, KernelError> {
-        let config = load_agent_config();
-        Ok(config.active_index)
-    }
-
-    fn set_active_index(&self, index: usize) -> Result<(), KernelError> {
-        let mut config = load_agent_config();
-        config.active_index = index;
-        if save_agent_config(&config) {
-            Ok(())
-        } else {
-            Err(KernelError::Config("保存 active_index 失败".into()))
-        }
-    }
-
-    fn load_theme_name(&self) -> Result<String, KernelError> {
-        let config = load_agent_config();
-        Ok(config.theme.to_str().to_string())
-    }
-
-    fn version(&self) -> String {
-        j_cli::constants::VERSION.to_string()
-    }
-
-    fn data_dir(&self) -> PathBuf {
-        YamlConfig::data_dir()
-    }
-
-    fn set_theme(&self, theme: &str) -> Result<(), KernelError> {
-        let mut config = load_agent_config();
-        config.theme = ThemeName::parse(theme);
-        if !save_agent_config(&config) {
-            return Err(KernelError::Config("保存主题配置失败".into()));
-        }
-        Ok(())
-    }
+fn load_attachment_images(
+    attachments: &[KernelFileAttachment],
+) -> Result<Vec<ImageData>, KernelError> {
+    attachments
+        .iter()
+        .map(|attachment| {
+            let path =
+                resolve_attachment_path(&attachment.local_path).map_err(KernelError::Config)?;
+            let bytes = std::fs::read(&path)?;
+            Ok(ImageData {
+                base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+                media_type: attachment.media_type.clone(),
+            })
+        })
+        .collect()
 }
 
-// ===== ChatKernel impl =====
+fn build_user_content(message: &KernelChatMessage) -> Result<Option<Content>, KernelError> {
+    let Some(attachments) = message
+        .attachments
+        .as_ref()
+        .filter(|items| !items.is_empty())
+    else {
+        return Ok((!message.content.is_empty()).then(|| Content::Text(message.content.clone())));
+    };
 
-#[async_trait(?Send)]
-impl ChatKernel for JcliAdapter {
-    async fn stream_chat(
-        &self,
-        provider: &KernelProvider,
-        messages: &[KernelChatMessage],
-        system_prompt: Option<&str>,
-        on_chunk: &mut dyn for<'a> FnMut(&'a str),
-    ) -> Result<String, KernelError> {
-        let jcli_provider = to_jcli_provider(provider);
-        let jcli_messages = to_jcli_messages(messages);
-
-        call_llm_stream_async(&jcli_provider, &jcli_messages, system_prompt, on_chunk)
-            .await
-            .map_err(|e| KernelError::Chat(Box::new(std::io::Error::other(e.to_string()))))
-    }
-
-    async fn run_agent_loop(&self, params: KernelAgentParams) -> Result<(), KernelError> {
-        // 1. Load provider and config
-        let agent_config = load_agent_config();
-        let provider = agent_config
-            .providers
-            .get(agent_config.active_index)
-            .cloned()
-            .ok_or_else(|| KernelError::Config("No active provider configured".into()))?;
-
-        // 2. Build Arc shared infrastructure
-        let streaming_content: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
-        let streaming_reasoning_content: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
-        let pending_user_messages: Arc<Mutex<Vec<JcliChatMessage>>> =
-            Arc::new(Mutex::new(Vec::new()));
-        let background_manager = Arc::new(BackgroundManager::new());
-        let display_messages: Arc<Mutex<Vec<JcliChatMessage>>> = Arc::new(Mutex::new(Vec::new()));
-        let context_messages: Arc<Mutex<Vec<JcliChatMessage>>> = Arc::new(Mutex::new(Vec::new()));
-        let estimated_context_tokens = Arc::new(Mutex::new(0usize));
-        let invoked_skills = new_invoked_skills_map();
-        let derived_system_prompt = Arc::new(Mutex::new(params.system_prompt.clone()));
-        let deferred_tools_vec = agent_config.deferred_tools.clone();
-        let deferred_tools = Arc::new(Mutex::new(deferred_tools_vec));
-        let session_loaded_deferred: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let sub_agent_metrics = Arc::new(Mutex::new(SubAgentMetrics::default()));
-
-        // 3. Build ToolRegistry (requires skills + infrastructure)
-        let skills = load_all_skills();
-        let (ask_tx, ask_rx) = std::sync::mpsc::channel::<AskRequest>();
-        let task_manager = Arc::new(TaskManager::new());
-        let hook_manager_for_tools = Arc::new(Mutex::new(HookManager::load()));
-
-        // todos file path — mirrors TodoManager::new() internal logic
-        let todos_file_path = {
-            let config_dir = JcliConfig::find_config_dir().or_else(JcliConfig::ensure_config_dir);
-            match config_dir {
-                Some(dir) => {
-                    let _ = std::fs::create_dir_all(&dir);
-                    dir.join("todos.json")
-                }
-                None => {
-                    let data_dir = YamlConfig::data_dir();
-                    let dir = data_dir.join("agent").join("data");
-                    let _ = std::fs::create_dir_all(&dir);
-                    dir.join("todos.json")
-                }
-            }
-        };
-
-        let tool_registry = Arc::new(ToolRegistry::new(
-            skills,
-            ask_tx,
-            Arc::clone(&background_manager),
-            Arc::clone(&task_manager),
-            Arc::clone(&hook_manager_for_tools),
-            Arc::clone(&invoked_skills),
-            todos_file_path,
-        ));
-
-        // 4. Discard AskTool requests in background (no TUI in GUI mode)
-        std::thread::spawn(move || {
-            while let Ok(req) = ask_rx.recv() {
-                let _ = req
-                    .response_tx
-                    .send("Ask tool not available in GUI agent mode".to_string());
-            }
+    let images = load_attachment_images(attachments)?;
+    let mut parts = Vec::with_capacity(images.len() + usize::from(!message.content.is_empty()));
+    if !message.content.is_empty() {
+        parts.push(j_cli::llm::ContentPart::Text {
+            text: message.content.clone(),
         });
-
-        // 5. Build AgentLoopConfig
-        let hook_manager = HookManager::load();
-        let agent_config_for_loop = AgentLoopConfig {
-            provider,
-            max_llm_rounds: agent_config.max_tool_rounds,
-            compact_config: agent_config.compact.clone(),
-            hook_manager,
-            disabled_hooks: agent_config.disabled_hooks.clone(),
-            cancel_token: CancellationToken::new(),
-        };
-
-        // 6. Build AgentLoopSharedState
-        let todo_manager = Arc::new(TodoManager::new());
-        let agent_shared = AgentLoopSharedState {
-            streaming_content: Arc::clone(&streaming_content),
-            streaming_reasoning_content: Arc::clone(&streaming_reasoning_content),
-            pending_user_messages: Arc::clone(&pending_user_messages),
-            background_manager: Arc::clone(&background_manager),
-            todo_manager,
-            display_messages: Arc::clone(&display_messages),
-            context_messages: Arc::clone(&context_messages),
-            estimated_context_tokens: Arc::clone(&estimated_context_tokens),
-            invoked_skills: Arc::clone(&invoked_skills),
-            session_id: params.session_id.clone(),
-            derived_system_prompt: Arc::clone(&derived_system_prompt),
-            tool_registry: Arc::clone(&tool_registry),
-            disabled_tools: agent_config.disabled_tools.clone(),
-            deferred_tools: Arc::clone(&deferred_tools),
-            session_loaded_deferred,
-            tools_enabled: agent_config.tools_enabled,
-            sub_agent_metrics: Arc::clone(&sub_agent_metrics),
-        };
-
-        // 7. Convert chat messages to jcli format
-        let jcli_messages = to_jcli_messages(&params.messages);
-
-        // 8. Build system_prompt_fn (fixed prompt from params)
-        let system_prompt_value = params.system_prompt.clone();
-        let system_prompt_fn: Arc<dyn Fn() -> Option<String> + Send + Sync> =
-            Arc::new(move || system_prompt_value.clone());
-
-        // 9. Create mpsc channels + spawn bridge thread
-        let (tx, rx) = std::sync::mpsc::channel::<StreamMsg>();
-        let (_tool_result_tx, tool_result_rx) = std::sync::mpsc::channel::<ToolResultMsg>();
-
-        Self::spawn_bridge_thread(rx, params.event_interceptor, params.on_event);
-
-        // 10. Run the agent loop
-        let loop_params = MainAgentLoopParams {
-            config: agent_config_for_loop,
-            shared: agent_shared,
-            messages: jcli_messages,
-            system_prompt_fn,
-            tx,
-            tool_result_rx,
-        };
-
-        run_main_agent_loop(loop_params).await;
-
-        Ok(())
     }
-
-    fn append_message(
-        &self,
-        session_id: &str,
-        role: &str,
-        content: &str,
-    ) -> Result<(), KernelError> {
-        use j_cli::command::chat::storage::SessionEvent;
-        let role_enum = match role {
-            "user" => MessageRole::User,
-            "assistant" => MessageRole::Assistant,
-            "system" => MessageRole::System,
-            "tool" => MessageRole::Tool,
-            _ => MessageRole::User,
-        };
-        let msg = JcliChatMessage::text(role_enum, content);
-        if !storage::append_session_event(session_id, &SessionEvent::msg(msg)) {
-            return Err(KernelError::Config("写入会话记录失败".into()));
-        }
-        Ok(())
+    for image in images {
+        parts.push(j_cli::llm::ContentPart::ImageUrl {
+            image_url: j_cli::llm::ImageUrl {
+                url: format!("data:{};base64,{}", image.media_type, image.base64),
+                detail: None,
+            },
+        });
     }
+    Ok(Some(Content::Parts(parts)))
+}
 
-    fn list_sessions(&self) -> Result<Vec<KernelSessionSummary>, KernelError> {
-        let sessions = list_sessions();
-        Ok(sessions
-            .into_iter()
-            .map(|s| {
-                // Read pinned/archived from session.json metadata
-                let meta_path = SessionPaths::new(&s.id).meta_file();
-                let (pinned, archived) = if meta_path.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&meta_path) {
-                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                            (
-                                val.get("pinned").and_then(|v| v.as_bool()).unwrap_or(false),
-                                val.get("archived")
-                                    .and_then(|v| v.as_bool())
-                                    .unwrap_or(false),
-                            )
-                        } else {
-                            (false, false)
-                        }
-                    } else {
-                        (false, false)
-                    }
+fn to_llm_messages(msgs: &[KernelChatMessage]) -> Result<Vec<Message>, KernelError> {
+    msgs.iter()
+        .map(|m| {
+            Ok(Message {
+                role: match m.role.as_str() {
+                    "assistant" => Role::Assistant,
+                    "system" => Role::System,
+                    "tool" => Role::Tool,
+                    _ => Role::User,
+                },
+                content: if m.role == "user" {
+                    build_user_content(m)?
                 } else {
-                    (false, false)
-                };
-
-                KernelSessionSummary {
-                    id: s.id,
-                    title: s.title,
-                    message_count: s.message_count,
-                    updated_at: s.updated_at,
-                    pinned,
-                    archived,
-                }
+                    (!m.content.is_empty()).then(|| Content::Text(m.content.clone()))
+                },
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+                reasoning_content: m.reasoning.clone(),
             })
-            .collect())
-    }
+        })
+        .collect()
+}
 
-    fn get_session(&self, session_id: &str) -> Result<Vec<KernelSessionEvent>, KernelError> {
-        let messages = storage::load_session(session_id);
-        Ok(messages
-            .into_iter()
-            .map(|m| KernelSessionEvent {
-                role: m.role.to_string(),
-                content: m.content,
-                timestamp: 0,
-            })
-            .collect())
-    }
+fn chat_attachment_sidecar_path(session_id: &str) -> PathBuf {
+    SessionPaths::new(session_id)
+        .dir()
+        .join("chat_attachments.json")
+}
 
-    fn create_session(&self) -> Result<String, KernelError> {
-        let id = uuid::Uuid::new_v4().to_string();
-        let paths = SessionPaths::new(&id);
-        if let Some(parent) = paths.transcript().parent() {
-            std::fs::create_dir_all(parent)?;
+fn load_chat_attachment_sidecar(session_id: &str) -> HashMap<usize, Vec<KernelFileAttachment>> {
+    let path = chat_attachment_sidecar_path(session_id);
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return HashMap::new();
+    };
+    serde_json::from_str(&content).unwrap_or_default()
+}
+
+fn save_chat_attachment_sidecar(
+    session_id: &str,
+    attachments: &HashMap<usize, Vec<KernelFileAttachment>>,
+) -> Result<(), KernelError> {
+    let path = chat_attachment_sidecar_path(session_id);
+    if attachments.is_empty() {
+        if path.exists() {
+            let _ = std::fs::remove_file(path);
         }
-        std::fs::write(paths.transcript(), "")?;
-        Ok(id)
+        return Ok(());
     }
+    let json = serde_json::to_string_pretty(attachments)
+        .map_err(|e| KernelError::Config(format!("序列化附件元数据失败: {e}")))?;
+    std::fs::write(path, json)?;
+    Ok(())
+}
 
-    fn delete_session(&self, session_id: &str) -> Result<(), KernelError> {
-        let paths = SessionPaths::new(session_id);
-        let _ = std::fs::remove_file(paths.transcript());
-        let _ = std::fs::remove_file(paths.meta_file());
-        Ok(())
-    }
-
-    fn delete_message(&self, session_id: &str, pair_index: usize) -> Result<(), KernelError> {
-        let paths = SessionPaths::new(session_id);
-        let transcript_path = paths.transcript();
-        if !transcript_path.exists() {
-            return Err(KernelError::Config("会话记录不存在".into()));
+fn remove_attachment_files(attachments: &[KernelFileAttachment]) {
+    for attachment in attachments {
+        if let Ok(path) = resolve_attachment_path(&attachment.local_path) {
+            let _ = std::fs::remove_file(path);
         }
-        let content = std::fs::read_to_string(&transcript_path)?;
-
-        // Count message events (skip non-message events like Clear)
-        let mut msg_event_indices: Vec<usize> = Vec::new();
-        for (i, line) in content.lines().enumerate() {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-                if v.get("msg").is_some() {
-                    msg_event_indices.push(i);
-                }
-            }
-        }
-
-        let user_idx = pair_index * 2;
-        let assistant_idx = user_idx + 1;
-        if assistant_idx >= msg_event_indices.len() {
-            return Err(KernelError::Config("消息索引超出范围".into()));
-        }
-
-        let remove_lines: HashSet<usize> = [
-            msg_event_indices[user_idx],
-            msg_event_indices[assistant_idx],
-        ]
-        .into_iter()
-        .collect();
-
-        let new_content: String = content
-            .lines()
-            .enumerate()
-            .filter(|(i, _)| !remove_lines.contains(i))
-            .map(|(_, line)| line.to_string() + "\n")
-            .collect();
-
-        std::fs::write(&transcript_path, new_content)?;
-
-        Ok(())
-    }
-
-    fn clear_session(&self, session_id: &str) -> Result<(), KernelError> {
-        use j_cli::command::chat::storage::SessionEvent;
-        if !storage::append_session_event(session_id, &SessionEvent::Clear) {
-            return Err(KernelError::Config("清除会话失败".into()));
-        }
-        Ok(())
-    }
-
-    fn toggle_pin(&self, session_id: &str) -> Result<KernelSessionSummary, KernelError> {
-        toggle_session_bool_field(session_id, "pinned")
-    }
-
-    fn toggle_archive(&self, session_id: &str) -> Result<KernelSessionSummary, KernelError> {
-        toggle_session_bool_field(session_id, "archived")
     }
 }
 
-// ===== Workspace helpers =====
+fn model_id(provider: &KernelProvider) -> &str {
+    provider
+        .models
+        .first()
+        .map(|m| m.id.as_str())
+        .unwrap_or_default()
+}
+
+// ===== Workspace 辅助函数 =====
 
 fn workspace_dir(slug: &str) -> PathBuf {
     super::home_dir()
@@ -819,666 +423,12 @@ fn scan_workspace_skills_dir(skills_dir: &std::path::Path) -> Vec<KernelSkillInf
     skills
 }
 
-// ===== Session metadata helpers =====
+// ===== 会话元数据辅助函数 =====
 
-/// Toggle a boolean field in session.json metadata.
-/// Reads the current value, flips it, writes back, and returns the updated summary.
-fn toggle_session_bool_field(
-    session_id: &str,
-    field: &str,
-) -> Result<KernelSessionSummary, KernelError> {
-    let paths = SessionPaths::new(session_id);
-
-    // Guard: don't create phantom meta for non-existent sessions
-    if !paths.transcript().exists() {
-        return Err(KernelError::Chat("session not found".into()));
-    }
-
-    let meta_path = paths.meta_file();
-
-    // Read existing meta or create default
-    let mut meta: serde_json::Value = if meta_path.exists() {
-        let content = std::fs::read_to_string(&meta_path)?;
-        serde_json::from_str(&content).unwrap_or_else(|_| {
-            serde_json::json!({
-                "id": session_id,
-                "title": "",
-                "message_count": 0,
-                "created_at": 0,
-                "updated_at": 0,
-            })
-        })
-    } else {
-        serde_json::json!({
-            "id": session_id,
-            "title": "",
-            "message_count": 0,
-            "created_at": 0,
-            "updated_at": 0,
-        })
-    };
-
-    // Toggle the field
-    let current = meta.get(field).and_then(|v| v.as_bool()).unwrap_or(false);
-    meta[field] = serde_json::json!(!current);
-
-    // Update timestamp
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    meta["updated_at"] = serde_json::json!(now);
-
-    // Write back
-    if let Some(parent) = meta_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let json =
-        serde_json::to_string_pretty(&meta).map_err(|e| KernelError::Config(e.to_string()))?;
-    std::fs::write(&meta_path, json)?;
-
-    // Build summary
-    let pinned = meta
-        .get("pinned")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let archived = meta
-        .get("archived")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let title = meta
-        .get("title")
-        .and_then(|v| v.as_str())
-        .map(|s| {
-            if s.is_empty() {
-                None
-            } else {
-                Some(s.to_string())
-            }
-        })
-        .unwrap_or(None);
-
-    Ok(KernelSessionSummary {
-        id: session_id.to_string(),
-        title,
-        message_count: meta
-            .get("message_count")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize,
-        updated_at: now,
-        pinned,
-        archived,
-    })
-}
-
-// ===== GovernanceKernel impl =====
-
-impl GovernanceKernel for JcliAdapter {
-    fn list_skills(&self) -> Result<Vec<KernelSkillInfo>, KernelError> {
-        let skills = load_all_skills();
-        Ok(skills
-            .into_iter()
-            .map(|s| KernelSkillInfo {
-                name: s.frontmatter.name,
-                description: s.frontmatter.description,
-                source: format!("{:?}", s.source).to_lowercase(),
-                dir_path: s.dir_path.to_string_lossy().to_string(),
-            })
-            .collect())
-    }
-
-    fn scan_global_skills(&self) -> Result<Vec<KernelSkillInfo>, KernelError> {
-        // Delegates to governance command which does pure fs I/O
-        crate::commands::governance::scan_global_skills()
-            .map(|skills| {
-                skills
-                    .into_iter()
-                    .map(|s| KernelSkillInfo {
-                        name: s.name,
-                        description: s.description,
-                        source: s.source,
-                        dir_path: s.dir_path,
-                    })
-                    .collect()
-            })
-            .map_err(KernelError::Governance)
-    }
-
-    fn copy_skill_to_workspace(
-        &self,
-        source_dir: &str,
-        workspace_slug: &str,
-        skill_slug: &str,
-    ) -> Result<(), KernelError> {
-        crate::commands::governance::copy_skill_to_workspace(
-            source_dir.to_string(),
-            workspace_slug.to_string(),
-            skill_slug.to_string(),
-        )
-        .map_err(KernelError::Governance)
-    }
-
-    fn list_hooks(&self) -> Result<Vec<KernelHookInfo>, KernelError> {
-        let manager = HookManager::load();
-        let entries = manager.list_hooks();
-        let config = load_agent_config();
-        Ok(entries
-            .into_iter()
-            .map(|h| KernelHookInfo {
-                name: h.name,
-                event: format!("{:?}", h.event),
-                source: h.source.to_string(),
-                hook_type: h.hook_type.to_string(),
-                label: h.label,
-                timeout: h.timeout,
-                on_error: h.on_error.map(|e| match e {
-                    OnError::Skip => "skip".into(),
-                    OnError::Stop => "stop".into(),
-                }),
-                unique_id: h.unique_id.clone(),
-                enabled: !config.disabled_hooks.iter().any(|d| d == &h.unique_id),
-            })
-            .collect())
-    }
-
-    fn toggle_hook(&self, unique_id: &str, enabled: bool) -> Result<(), KernelError> {
-        let mut config = load_agent_config();
-        if enabled {
-            config.disabled_hooks.retain(|d| d != unique_id);
-        } else if !config.disabled_hooks.iter().any(|d| d == unique_id) {
-            config.disabled_hooks.push(unique_id.to_string());
-        }
-        if save_agent_config(&config) {
-            Ok(())
-        } else {
-            Err(KernelError::Config("保存 agent_config 失败".into()))
-        }
-    }
-
-    fn read_skill_content(
-        &self,
-        workspace_slug: &str,
-        skill_slug: &str,
-    ) -> Result<String, KernelError> {
-        let path = workspace_skills_dir(workspace_slug)
-            .join(skill_slug)
-            .join("SKILL.md");
-        if !path.exists() {
-            return Err(KernelError::Governance(format!(
-                "SKILL.md not found: {}",
-                path.display()
-            )));
-        }
-        Ok(std::fs::read_to_string(&path)?)
-    }
-
-    fn write_skill_content(
-        &self,
-        workspace_slug: &str,
-        skill_slug: &str,
-        content: &str,
-    ) -> Result<(), KernelError> {
-        let path = workspace_skills_dir(workspace_slug)
-            .join(skill_slug)
-            .join("SKILL.md");
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        Ok(std::fs::write(&path, content)?)
-    }
-
-    fn toggle_workspace_skill(
-        &self,
-        _workspace_slug: &str,
-        skill_slug: &str,
-        enabled: bool,
-    ) -> Result<(), KernelError> {
-        let mut config = load_agent_config();
-        if enabled {
-            config.disabled_skills.retain(|d| d != skill_slug);
-        } else if !config.disabled_skills.iter().any(|d| d == skill_slug) {
-            config.disabled_skills.push(skill_slug.to_string());
-        }
-        if save_agent_config(&config) {
-            Ok(())
-        } else {
-            Err(KernelError::Config("保存 agent_config 失败".into()))
-        }
-    }
-
-    fn delete_workspace_skill(
-        &self,
-        workspace_slug: &str,
-        skill_slug: &str,
-    ) -> Result<(), KernelError> {
-        let path = workspace_skills_dir(workspace_slug).join(skill_slug);
-        if path.exists() {
-            std::fs::remove_dir_all(&path)?;
-        }
-        Ok(())
-    }
-
-    fn get_workspace_skills(
-        &self,
-        workspace_slug: &str,
-    ) -> Result<Vec<KernelSkillInfo>, KernelError> {
-        let skills_dir = workspace_skills_dir(workspace_slug);
-        Ok(scan_workspace_skills_dir(&skills_dir))
-    }
-
-    fn get_workspace_skills_dir(&self, workspace_slug: &str) -> Result<String, KernelError> {
-        let dir = workspace_skills_dir(workspace_slug);
-        std::fs::create_dir_all(&dir)?;
-        Ok(dir.to_string_lossy().to_string())
-    }
-
-    fn get_other_workspace_skills(
-        &self,
-        workspace_slug: &str,
-    ) -> Result<Vec<KernelSkillInfo>, KernelError> {
-        let base = super::home_dir().join(".jgui").join("agent-workspaces");
-        if !base.is_dir() {
-            return Ok(Vec::new());
-        }
-        let mut skills = Vec::new();
-        let entries = match std::fs::read_dir(&base) {
-            Ok(e) => e,
-            Err(_) => return Ok(skills),
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            let slug = path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            if slug == workspace_slug {
-                continue;
-            }
-            let skills_dir = path.join("skills");
-            skills.extend(scan_workspace_skills_dir(&skills_dir));
-        }
-        Ok(skills)
-    }
-
-    fn import_skill_from_workspace(
-        &self,
-        from_slug: &str,
-        to_slug: &str,
-        skill_slug: &str,
-    ) -> Result<(), KernelError> {
-        let from = workspace_skills_dir(from_slug)
-            .join(skill_slug)
-            .join("SKILL.md");
-        if !from.exists() {
-            return Err(KernelError::Governance(format!(
-                "源 SKILL.md 不存在: {}",
-                from.display()
-            )));
-        }
-        let to = workspace_skills_dir(to_slug)
-            .join(skill_slug)
-            .join("SKILL.md");
-        if let Some(parent) = to.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::copy(&from, &to)?;
-        Ok(())
-    }
-
-    fn get_workspace_mcp_config(
-        &self,
-        workspace_slug: &str,
-    ) -> Result<KernelMcpWorkspaceConfig, KernelError> {
-        let path = workspace_mcp_config_path(workspace_slug);
-        if !path.exists() {
-            return Ok(KernelMcpWorkspaceConfig {
-                servers: Vec::new(),
-            });
-        }
-        let content = std::fs::read_to_string(&path)?;
-        let servers: Vec<KernelMcpServerConfig> = serde_json::from_str(&content)
-            .map_err(|e| KernelError::Governance(format!("解析 MCP 配置失败: {}", e)))?;
-        Ok(KernelMcpWorkspaceConfig { servers })
-    }
-
-    fn save_workspace_mcp_config(
-        &self,
-        workspace_slug: &str,
-        config: &KernelMcpWorkspaceConfig,
-    ) -> Result<(), KernelError> {
-        let path = workspace_mcp_config_path(workspace_slug);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let content = serde_json::to_string_pretty(&config.servers)
-            .map_err(|e| KernelError::Governance(format!("序列化 MCP 配置失败: {}", e)))?;
-        Ok(std::fs::write(&path, content)?)
-    }
-
-    fn import_cc_sdk_hooks(&self) -> Result<Vec<KernelHookInfo>, KernelError> {
-        let hooks_dir = sdk_config_dir().join("hooks");
-        if !hooks_dir.is_dir() {
-            return Ok(Vec::new());
-        }
-        let mut hooks = Vec::new();
-        let entries = match std::fs::read_dir(&hooks_dir) {
-            Ok(e) => e,
-            Err(_) => return Ok(hooks),
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().map(|e| e != "json").unwrap_or(true) {
-                continue;
-            }
-            let content = match std::fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-            if let Ok(hook) = serde_json::from_str::<KernelHookInfo>(&content) {
-                hooks.push(hook);
-            }
-        }
-        Ok(hooks)
-    }
-
-    fn import_cc_sdk_mcp(
-        &self,
-        _workspace_slug: &str,
-    ) -> Result<Vec<KernelMcpServerConfig>, KernelError> {
-        let path = sdk_config_dir().join("mcp_config.json");
-        if !path.exists() {
-            return Ok(Vec::new());
-        }
-        let content = std::fs::read_to_string(&path)?;
-        let servers: Vec<KernelMcpServerConfig> = serde_json::from_str(&content)
-            .map_err(|e| KernelError::Governance(format!("解析 SDK MCP 配置失败: {}", e)))?;
-        Ok(servers)
-    }
-
-    fn list_mcp_servers(&self) -> Result<Vec<KernelMcpServerConfig>, KernelError> {
-        crate::commands::governance::list_mcp_servers()
-            .map(|servers| {
-                servers
-                    .into_iter()
-                    .map(|s| KernelMcpServerConfig {
-                        name: s.name,
-                        transport: s.transport,
-                        command: s.command,
-                        args: s.args,
-                        url: s.url,
-                        env: s.env,
-                        disabled: s.disabled,
-                    })
-                    .collect()
-            })
-            .map_err(KernelError::Governance)
-    }
-
-    fn save_mcp_servers(&self, servers: &[KernelMcpServerConfig]) -> Result<(), KernelError> {
-        crate::commands::governance::save_mcp_servers(
-            servers
-                .iter()
-                .map(|s| crate::commands::governance::McpServerConfig {
-                    name: s.name.clone(),
-                    transport: s.transport.clone(),
-                    command: s.command.clone(),
-                    args: s.args.clone(),
-                    url: s.url.clone(),
-                    env: s.env.clone(),
-                    disabled: s.disabled,
-                })
-                .collect(),
-        )
-        .map_err(KernelError::Governance)
-    }
-
-    fn list_chat_tools(&self) -> Result<Vec<KernelToolInfo>, KernelError> {
-        let config = load_agent_config();
-        let disabled = &config.disabled_tools;
-        let builtin: &[(&str, &str)] = &[
-            ("Bash", "Execute shell commands"),
-            ("Read", "Read files"),
-            ("Write", "Write files"),
-            ("Edit", "Edit files"),
-            ("Glob", "Find files by pattern"),
-            ("Grep", "Search with regex"),
-            ("WebFetch", "Fetch URL"),
-            ("WebSearch", "Search web"),
-            ("Browser", "Browse pages"),
-            ("Ask", "Ask user"),
-            ("TaskOutput", "Get task output"),
-            ("Task", "Create task"),
-            ("TodoWrite", "Write todos"),
-            ("TodoRead", "Read todos"),
-            ("Compact", "Compact context"),
-            ("RegisterHook", "Register hook"),
-            ("EnterPlanMode", "Enter plan mode"),
-            ("ExitPlanMode", "Exit plan mode"),
-            ("EnterWorktree", "Enter worktree"),
-            ("ExitWorktree", "Exit worktree"),
-            ("LoadSkill", "Load skill"),
-        ];
-        Ok(builtin
-            .iter()
-            .map(|&(name, desc)| KernelToolInfo {
-                name: name.to_string(),
-                description: desc.to_string(),
-                enabled: !disabled.iter().any(|d| d == name),
-            })
-            .collect())
-    }
-
-    fn set_tool_enabled(&self, name: &str, enabled: bool) -> Result<(), KernelError> {
-        crate::commands::governance::set_tool_enabled(name.to_string(), enabled)
-            .map_err(KernelError::Governance)
-    }
-}
-
-// ===== Agent loop channel bridge =====
-
-/// Convert a jcli `StreamMsg` to a JSON string for the frontend `Channel<String>`.
-fn stream_msg_to_json_string(msg: &StreamMsg) -> String {
-    let value = match msg {
-        StreamMsg::Chunk => serde_json::json!({"type": "chunk"}),
-        StreamMsg::ToolCallRequest(tools) => serde_json::json!({
-            "type": "toolCallRequest",
-            "tools": tools.iter().map(|t| serde_json::json!({
-                "id": t.id,
-                "name": t.name,
-                "arguments": t.arguments,
-            })).collect::<Vec<_>>(),
-        }),
-        StreamMsg::Done => serde_json::json!({"type": "done"}),
-        StreamMsg::Error(err) => serde_json::json!({
-            "type": "error",
-            "message": err.to_string(),
-        }),
-        StreamMsg::Cancelled => serde_json::json!({"type": "cancelled"}),
-        StreamMsg::Retrying {
-            attempt,
-            max_attempts,
-            delay_ms,
-            error,
-        } => serde_json::json!({
-            "type": "retrying",
-            "attempt": attempt,
-            "maxAttempts": max_attempts,
-            "delayMs": delay_ms,
-            "error": error,
-        }),
-        StreamMsg::Compacting => serde_json::json!({"type": "compacting"}),
-        StreamMsg::Compacted { messages_before } => serde_json::json!({
-            "type": "compacted",
-            "messagesBefore": messages_before,
-        }),
-    };
-    value.to_string()
-}
-
-// ===== Tests =====
+/// 切换 session.json 元数据中的布尔字段。
+/// 会读取当前值、翻转后写回，并返回更新后的摘要。
+// ===== 测试 =====
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use j_cli::command::chat::storage::session::sessions_dir;
-    use std::fs;
-
-    // ── stream_msg_to_json_string tests ──
-
-    #[test]
-    fn stream_msg_chunk_serialization() {
-        let json = stream_msg_to_json_string(&StreamMsg::Chunk);
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["type"], "chunk");
-    }
-
-    #[test]
-    fn stream_msg_done_serialization() {
-        let json = stream_msg_to_json_string(&StreamMsg::Done);
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["type"], "done");
-    }
-
-    #[test]
-    fn stream_msg_error_serialization() {
-        let err = j_cli::command::chat::error::ChatError::Other("test error".into());
-        let json = stream_msg_to_json_string(&StreamMsg::Error(err));
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["type"], "error");
-        assert!(v["message"].as_str().unwrap().contains("test error"));
-    }
-
-    #[test]
-    fn stream_msg_tool_call_request_serialization() {
-        let tools = vec![j_cli::command::chat::storage::ToolCallItem {
-            id: "tool1".into(),
-            name: "Bash".into(),
-            arguments: r#"{"command":"ls"}"#.into(),
-        }];
-        let json = stream_msg_to_json_string(&StreamMsg::ToolCallRequest(tools));
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["type"], "toolCallRequest");
-        assert_eq!(v["tools"][0]["id"], "tool1");
-        assert_eq!(v["tools"][0]["name"], "Bash");
-    }
-
-    #[test]
-    fn stream_msg_cancelled_serialization() {
-        let json = stream_msg_to_json_string(&StreamMsg::Cancelled);
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["type"], "cancelled");
-    }
-
-    #[test]
-    fn stream_msg_retrying_serialization() {
-        let json = stream_msg_to_json_string(&StreamMsg::Retrying {
-            attempt: 2,
-            max_attempts: 3,
-            delay_ms: 1000,
-            error: "timeout".into(),
-        });
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["type"], "retrying");
-        assert_eq!(v["attempt"], 2);
-        assert_eq!(v["maxAttempts"], 3);
-        assert_eq!(v["delayMs"], 1000);
-        assert_eq!(v["error"], "timeout");
-    }
-
-    #[test]
-    fn stream_msg_compacting_serialization() {
-        let json = stream_msg_to_json_string(&StreamMsg::Compacting);
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["type"], "compacting");
-    }
-
-    #[test]
-    fn stream_msg_compacted_serialization() {
-        let json = stream_msg_to_json_string(&StreamMsg::Compacted {
-            messages_before: 42,
-        });
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["type"], "compacted");
-        assert_eq!(v["messagesBefore"], 42);
-    }
-
-    // ── Existing tests ──
-
-    /// toggle_session_bool_field returns error when transcript is missing
-    /// (should not create phantom meta file for non-existent session)
-    #[test]
-    fn test_toggle_session_bool_field_ghost_session_rejected() {
-        let session_id = "toggle-ghost-test-no-transcript";
-        let session_dir = sessions_dir().join(session_id);
-        let _ = fs::remove_dir_all(&session_dir);
-        fs::create_dir_all(&session_dir).unwrap();
-
-        // Create meta file but NO transcript — this is the ghost session scenario
-        let meta = serde_json::json!({
-            "id": session_id,
-            "title": "ghost",
-            "message_count": 0,
-            "created_at": 0,
-            "updated_at": 0,
-            "archived": false,
-        });
-        fs::write(
-            session_dir.join("session.json"),
-            serde_json::to_string_pretty(&meta).unwrap(),
-        )
-        .unwrap();
-
-        // Toggle should fail because transcript.jsonl doesn't exist
-        let result = toggle_session_bool_field(session_id, "archived");
-        assert!(
-            result.is_err(),
-            "should reject toggle when transcript is missing"
-        );
-        let err = result.unwrap_err();
-        assert!(
-            err.to_string().contains("session not found"),
-            "expected 'session not found', got: {}",
-            err
-        );
-
-        // Clean up
-        let _ = fs::remove_dir_all(&session_dir);
-    }
-
-    /// toggle_session_bool_field succeeds when transcript exists
-    #[test]
-    fn test_toggle_session_bool_field_with_transcript() {
-        let session_id = "toggle-transcript-test-valid";
-        let session_dir = sessions_dir().join(session_id);
-        let _ = fs::remove_dir_all(&session_dir);
-        fs::create_dir_all(&session_dir).unwrap();
-
-        // Create transcript file (empty content is fine — existence is what matters)
-        fs::write(session_dir.join("transcript.jsonl"), "").unwrap();
-
-        // Toggle should succeed and create meta with toggled field
-        let result = toggle_session_bool_field(session_id, "archived");
-        assert!(
-            result.is_ok(),
-            "toggle should succeed when transcript exists"
-        );
-
-        let summary = result.unwrap();
-        assert!(summary.archived, "archived should be toggled to true");
-
-        // Toggle again — should flip back
-        let result = toggle_session_bool_field(session_id, "archived");
-        assert!(result.is_ok());
-        let summary = result.unwrap();
-        assert!(
-            !summary.archived,
-            "archived should be toggled back to false"
-        );
-
-        // Clean up
-        let _ = fs::remove_dir_all(&session_dir);
-    }
-}
+#[path = "../tests/kernel_adapter.rs"]
+mod tests;

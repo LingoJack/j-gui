@@ -1,7 +1,7 @@
 /**
- * SkillListPanel - Master-detail left panel showing grouped skill items
+ * SkillListPanel - 在主从布局左侧展示分组后的 Skill 列表
  *
- * Extracted from AgentSettings.tsx to reduce component size.
+ * 从 AgentSettings.tsx 中拆出，以缩小组件体积。
  */
 
 import * as React from 'react'
@@ -13,7 +13,7 @@ import { groupSkillsByPrefix, shortName, getSkillSourceBadge } from './skill-hel
 import type { SkillMeta } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 
-// ===== Props =====
+// ===== 属性 =====
 
 export interface SkillListPanelProps {
   skills: SkillMeta[]
@@ -24,7 +24,7 @@ export interface SkillListPanelProps {
   skillsDir: string
 }
 
-// ===== Component =====
+// ===== 组件 =====
 
 export function SkillListPanel({ skills, selectedSlug, onSelect, onDelete, onToggle, skillsDir }: SkillListPanelProps): React.ReactElement {
   const groups = React.useMemo(() => groupSkillsByPrefix(skills), [skills])
@@ -92,7 +92,7 @@ export function SkillListPanel({ skills, selectedSlug, onSelect, onDelete, onTog
   )
 }
 
-// ===== Skill Compact Item =====
+// ===== Skill 紧凑列表项 =====
 
 interface SkillCompactItemProps {
   skill: SkillMeta

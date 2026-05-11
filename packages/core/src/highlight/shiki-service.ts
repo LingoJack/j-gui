@@ -64,7 +64,7 @@ export interface HighlightOptions {
 export interface HighlightResult {
   /** Shiki 渲染的 HTML 字符串 */
   html: string
-  /** 实际使用的语言（经过别名解析和 fallback） */
+  /** 实际使用的语言（经过别名解析和回退） */
   language: string
 }
 
@@ -124,7 +124,7 @@ function resolveLanguage(lang: string): string {
   return 'text'
 }
 
-/** 解析已加载的语言，未加载的 fallback 到 text */
+/** 解析已加载的语言，未加载时回退到 text */
 function resolveLoadedLanguage(highlighter: ShikiHighlighter, lang: string): string {
   const resolved = resolveLanguage(lang)
   if (resolved === 'text') return 'text'
@@ -133,7 +133,7 @@ function resolveLoadedLanguage(highlighter: ShikiHighlighter, lang: string): str
 
 /**
  * 解析语言别名并按需加载，返回可直接使用的语言标识
- * 未知语言自动 fallback 到 'text'
+ * 未知语言自动回退到 `text`
  */
 async function resolveAndLoadLanguage(highlighter: ShikiHighlighter, lang: string): Promise<string> {
   const resolved = resolveLanguage(lang)

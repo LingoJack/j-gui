@@ -309,21 +309,21 @@ function YamlConfigSection({
 }
 
 // ============================================================
-// YamlConfigSettings (main)
+// YamlConfigSettings 主组件
 // ============================================================
 
 export function YamlConfigSettings(): React.ReactElement {
   const [config, setConfig] = React.useState<Record<string, Record<string, string>>>({})
   const [loading, setLoading] = React.useState(true)
 
-  // Collapsible state
+  // 折叠状态
   const [expandedSections, setExpandedSections] = React.useState<Set<string>>(new Set())
 
-  // Editing state
+  // 编辑状态
   const [editing, setEditing] = React.useState<EditingState | null>(null)
   const [editValue, setEditValue] = React.useState('')
 
-  // Adding state
+  // 新增状态
   const [addingSection, setAddingSection] = React.useState<string | null>(null)
   const [newKey, setNewKey] = React.useState('')
   const [newValue, setNewValue] = React.useState('')
@@ -333,7 +333,7 @@ export function YamlConfigSettings(): React.ReactElement {
       const result = await ipc.getConfig()
       const sections = result.sections
       setConfig(sections)
-      // Auto-expand all sections on load
+      // 加载后自动展开所有 section
       setExpandedSections(new Set(Object.keys(sections)))
     } catch (err) {
       console.error('[YAML配置] 加载失败:', err)
@@ -346,7 +346,7 @@ export function YamlConfigSettings(): React.ReactElement {
     loadConfig()
   }, [loadConfig])
 
-  // --- Editing handlers ---
+  // --- 编辑处理函数 ---
 
   const handleStartEdit = (section: string, key: string, value: string): void => {
     setEditing({ section, key, originalValue: value })
@@ -371,7 +371,7 @@ export function YamlConfigSettings(): React.ReactElement {
     setEditValue('')
   }
 
-  // --- Adding handlers ---
+  // --- 新增处理函数 ---
 
   const handleAdd = async (section: string): Promise<void> => {
     if (!newKey.trim() || !newValue.trim()) return
@@ -399,7 +399,7 @@ export function YamlConfigSettings(): React.ReactElement {
     setNewValue('')
   }
 
-  // --- Delete handler ---
+  // --- 删除处理函数 ---
 
   const handleDelete = async (section: string, key: string): Promise<void> => {
     if (!window.confirm(`确定要删除「${section}.${key}」吗？`)) return
@@ -412,7 +412,7 @@ export function YamlConfigSettings(): React.ReactElement {
     }
   }
 
-  // --- Toggle handler ---
+  // --- 开关处理函数 ---
 
   const toggleSection = (section: string): void => {
     setExpandedSections((prev) => {

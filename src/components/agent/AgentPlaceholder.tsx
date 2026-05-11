@@ -1,7 +1,5 @@
 /**
- * AgentPlaceholder - Agent 模式占位符组件
- *
- * 临时占位组件，后续将替换为完整的 Agent/Flow 组件
+ * AgentPlaceholder - 未启用 Agent 视图时的静态说明卡片
  */
 
 import * as React from 'react'
@@ -19,8 +17,8 @@ export function AgentPlaceholder(): React.ReactElement {
           使用 AI Agent 处理复杂任务，支持多步骤推理和工具调用
         </p>
       </div>
-      <div className="mt-4 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium">
-        即将推出
+      <div className="mt-4 px-3 py-1.5 rounded-full bg-muted text-muted-foreground text-xs font-medium">
+        当前视图未接入
       </div>
     </div>
   )

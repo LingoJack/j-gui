@@ -1,5 +1,5 @@
 /**
- * SettingsDialog - 设置浮窗 (with ErrorBoundary for debugging)
+ * SettingsDialog - 设置浮窗（带 ErrorBoundary 便于调试）
  */
 
 import * as React from 'react'

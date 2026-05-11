@@ -4,6 +4,13 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
+#[path = "agent_session_meta.rs"]
+mod agent_session_meta;
+#[path = "agent_session_replay.rs"]
+mod agent_session_replay;
+use agent_session_meta::AgentSessionMetaRecord;
+pub(crate) use agent_session_meta::CreateSessionMetaInput;
+pub use agent_session_replay::{search_agent_session_messages, timeline_to_sdk_messages};
 
 static AGENT_SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
 static AGENT_TRANSCRIPT_LOCK: Mutex<()> = Mutex::new(());
@@ -44,6 +51,12 @@ pub struct InterruptSnapshot {
 pub struct AgentSessionInfo {
     pub id: String,
     pub title: Option<String>,
+    #[serde(default)]
+    pub channel_id: Option<String>,
+    #[serde(default)]
+    pub sdk_session_id: Option<String>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub message_count: usize,
     pub updated_at: u64,
     #[serde(default)]
@@ -51,7 +64,30 @@ pub struct AgentSessionInfo {
     #[serde(default)]
     pub archived: bool,
     #[serde(default)]
+    pub manual_working: bool,
+    #[serde(default)]
+    pub stopped_by_user: bool,
+    #[serde(default)]
     pub permission_mode: Option<String>,
+    #[serde(default)]
+    pub fork_source_dir: Option<String>,
+    #[serde(default)]
+    pub fork_source_sdk_session_id: Option<String>,
+    #[serde(default)]
+    pub resume_at_message_uuid: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageSearchResult {
+    pub session_id: String,
+    pub session_title: String,
+    pub message_id: String,
+    pub role: String,
+    pub snippet: String,
+    pub match_start: usize,
+    pub match_length: usize,
+    pub archived: bool,
 }
 
 fn validate_session_id(id: &str) -> Result<(), String> {
@@ -66,10 +102,46 @@ fn data_dir() -> PathBuf {
     crate::kernel::home_dir().join(".jdata")
 }
 
+/// 返回 Agent 会话目录根路径。
 pub fn agent_sessions_dir() -> PathBuf {
     data_dir().join("agent").join("sessions")
 }
 
+fn session_dir(session_id: &str) -> PathBuf {
+    agent_sessions_dir().join(session_id)
+}
+
+fn session_meta_path(session_id: &str) -> PathBuf {
+    session_dir(session_id).join("meta.json")
+}
+
+fn read_session_meta(session_id: &str) -> Result<AgentSessionMetaRecord, String> {
+    validate_session_id(session_id)?;
+    let path = session_meta_path(session_id);
+    let content = std::fs::read_to_string(&path).map_err(|e| format!("读取 meta 失败: {}", e))?;
+    serde_json::from_str(&content).map_err(|e| format!("解析 meta 失败: {}", e))
+}
+
+fn write_session_meta(session_id: &str, meta: &AgentSessionMetaRecord) -> Result<(), String> {
+    validate_session_id(session_id)?;
+    let dir = session_dir(session_id);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建会话目录失败: {}", e))?;
+    let meta_str = serde_json::to_string(meta).map_err(|e| format!("序列化 meta 失败: {}", e))?;
+    std::fs::write(session_meta_path(session_id), meta_str)
+        .map_err(|e| format!("写入 meta 失败: {}", e))
+}
+
+fn update_session_meta(
+    session_id: &str,
+    update: impl FnOnce(&mut AgentSessionMetaRecord),
+) -> Result<AgentSessionMetaRecord, String> {
+    let mut meta = read_session_meta(session_id)?;
+    update(&mut meta);
+    write_session_meta(session_id, &meta)?;
+    Ok(meta)
+}
+
+/// 返回当前 Unix 毫秒时间戳。
 pub fn now_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -87,6 +159,7 @@ fn generate_session_id() -> String {
     format!("{:x}-{:x}-{:x}", ts, pid, seq)
 }
 
+/// 为 transcript 条目生成近似唯一的字符串 ID。
 pub fn generate_item_id() -> String {
     format!(
         "{}",
@@ -97,23 +170,38 @@ pub fn generate_item_id() -> String {
     )
 }
 
+/// 创建一个新的 Agent 会话目录并初始化元数据。
 pub fn create_agent_session() -> Result<String, String> {
     let id = generate_session_id();
-    let dir = agent_sessions_dir().join(&id);
+    let dir = session_dir(&id);
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建会话目录失败: {}", e))?;
-    let meta = serde_json::json!({
-        "created_at": now_millis(),
-        "title": null,
-        "pinned": false,
-        "archived": false,
-        "permission_mode": "bypassPermissions"
-    });
-    let meta_str = serde_json::to_string(&meta).map_err(|e| format!("序列化 meta 失败: {}", e))?;
-    std::fs::write(dir.join("meta.json"), meta_str)
-        .map_err(|e| format!("写入 meta 失败: {}", e))?;
+    let meta = AgentSessionMetaRecord {
+        created_at: now_millis(),
+        permission_mode: Some("bypassPermissions".to_string()),
+        ..AgentSessionMetaRecord::default()
+    };
+    write_session_meta(&id, &meta)?;
     Ok(id)
 }
 
+/// 创建带指定元数据的 Agent 会话。
+pub fn create_agent_session_with_meta(input: CreateSessionMetaInput) -> Result<String, String> {
+    let id = create_agent_session()?;
+    update_session_meta(&id, |meta| {
+        meta.title = input.title;
+        meta.channel_id = input.channel_id;
+        meta.workspace_id = input.workspace_id;
+        if let Some(mode) = input.permission_mode {
+            meta.permission_mode = Some(mode);
+        }
+        meta.fork_source_dir = input.fork_source_dir;
+        meta.fork_source_sdk_session_id = input.fork_source_sdk_session_id;
+        meta.resume_at_message_uuid = input.resume_at_message_uuid;
+    })?;
+    Ok(id)
+}
+
+/// 向指定 Agent 会话的 transcript 追加一条时间线记录。
 pub fn append_timeline_item(session_id: &str, item: &AgentTimelineItem) -> Result<(), String> {
     validate_session_id(session_id)?;
     let _guard = AGENT_TRANSCRIPT_LOCK
@@ -134,9 +222,7 @@ pub fn append_timeline_item(session_id: &str, item: &AgentTimelineItem) -> Resul
 }
 
 fn transcript_path(session_id: &str) -> PathBuf {
-    agent_sessions_dir()
-        .join(session_id)
-        .join("transcript.jsonl")
+    session_dir(session_id).join("transcript.jsonl")
 }
 
 fn read_timeline(session_id: &str) -> Result<Vec<AgentTimelineItem>, String> {
@@ -162,6 +248,7 @@ fn write_timeline(session_id: &str, items: &[AgentTimelineItem]) -> Result<(), S
     std::fs::write(path, content).map_err(|e| e.to_string())
 }
 
+/// 回填最近一次匹配工具调用的输出和完成状态。
 pub fn update_tool_call_result(
     session_id: &str,
     tool_id: &str,
@@ -184,6 +271,7 @@ pub fn update_tool_call_result(
     Ok(())
 }
 
+/// 记录指定中断请求的用户响应内容。
 pub fn update_interrupt_response(
     session_id: &str,
     interrupt_id: &str,
@@ -205,6 +293,7 @@ pub fn update_interrupt_response(
     Ok(())
 }
 
+/// 列出本地所有 Agent 会话摘要，按最近更新时间倒序返回。
 pub fn list_agent_sessions() -> Result<Vec<AgentSessionInfo>, String> {
     let dir = agent_sessions_dir();
     if !dir.exists() {
@@ -218,22 +307,10 @@ pub fn list_agent_sessions() -> Result<Vec<AgentSessionInfo>, String> {
             continue;
         }
         let id = entry.file_name().to_string_lossy().to_string();
-        let meta_path = entry.path().join("meta.json");
-        let mut title = None;
-        let mut created_at = 0u64;
-        let mut pinned = false;
-        let mut archived = false;
-        let mut permission_mode = None;
-        if let Ok(content) = std::fs::read_to_string(&meta_path) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-                title = v["title"].as_str().map(|s| s.to_string());
-                created_at = v["created_at"].as_u64().unwrap_or(0);
-                pinned = v["pinned"].as_bool().unwrap_or(false);
-                archived = v["archived"].as_bool().unwrap_or(false);
-                permission_mode = v["permission_mode"].as_str().map(|s| s.to_string());
-            }
-        }
-        // Auto-derive title from first user message if meta has no title stored
+        let meta = read_session_meta(&id).unwrap_or_default();
+        let mut title = meta.title.clone();
+        let created_at = meta.created_at;
+        // 如果 meta 中还没有标题，则尝试从首条用户消息自动推导
         if title.is_none() {
             let ts_path = entry.path().join("transcript.jsonl");
             if ts_path.exists() {
@@ -271,20 +348,29 @@ pub fn list_agent_sessions() -> Result<Vec<AgentSessionInfo>, String> {
         sessions.push(AgentSessionInfo {
             id,
             title,
+            channel_id: meta.channel_id.clone(),
+            sdk_session_id: meta.sdk_session_id.clone(),
+            workspace_id: meta.workspace_id.clone(),
             message_count,
             updated_at,
-            pinned,
-            archived,
-            permission_mode,
+            pinned: meta.pinned,
+            archived: meta.archived,
+            manual_working: meta.manual_working,
+            stopped_by_user: meta.stopped_by_user,
+            permission_mode: meta.permission_mode.clone(),
+            fork_source_dir: meta.fork_source_dir.clone(),
+            fork_source_sdk_session_id: meta.fork_source_sdk_session_id.clone(),
+            resume_at_message_uuid: meta.resume_at_message_uuid.clone(),
         });
     }
     sessions.sort_by_key(|s| std::cmp::Reverse(s.updated_at));
     Ok(sessions)
 }
 
+/// 读取指定 Agent 会话的完整时间线。
 pub fn get_agent_session(session_id: &str) -> Result<Vec<AgentTimelineItem>, String> {
     validate_session_id(session_id)?;
-    let dir = agent_sessions_dir().join(session_id);
+    let dir = session_dir(session_id);
     if !dir.exists() {
         return Err("会话不存在".to_string());
     }
@@ -294,22 +380,18 @@ pub fn get_agent_session(session_id: &str) -> Result<Vec<AgentTimelineItem>, Str
     read_timeline(session_id)
 }
 
+/// 更新指定 Agent 会话的标题。
 pub fn update_session_title(session_id: &str, title: &str) -> Result<(), String> {
-    validate_session_id(session_id)?;
-    let dir = agent_sessions_dir().join(session_id);
-    let meta_path = dir.join("meta.json");
-    let content =
-        std::fs::read_to_string(&meta_path).map_err(|e| format!("读取 meta 失败: {}", e))?;
-    let mut v: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-    v["title"] = serde_json::Value::String(title.to_string());
-    let meta_str = serde_json::to_string(&v).map_err(|e| format!("序列化 meta 失败: {}", e))?;
-    std::fs::write(&meta_path, meta_str).map_err(|e| format!("写入 meta 失败: {}", e))?;
+    update_session_meta(session_id, |meta| {
+        meta.title = Some(title.to_string());
+    })?;
     Ok(())
 }
 
+/// 删除指定 Agent 会话目录及其持久化数据。
 pub fn delete_agent_session(session_id: &str) -> Result<(), String> {
     validate_session_id(session_id)?;
-    let dir = agent_sessions_dir().join(session_id);
+    let dir = session_dir(session_id);
     let _guard = AGENT_TRANSCRIPT_LOCK
         .lock()
         .map_err(|e| format!("锁定 Agent transcript 失败: {}", e))?;
@@ -320,20 +402,26 @@ pub fn delete_agent_session(session_id: &str) -> Result<(), String> {
 }
 
 fn toggle_meta_bool(session_id: &str, field: &str) -> Result<bool, String> {
-    validate_session_id(session_id)?;
-    let dir = agent_sessions_dir().join(session_id);
-    let meta_path = dir.join("meta.json");
-    let content =
-        std::fs::read_to_string(&meta_path).map_err(|e| format!("读取 meta 失败: {}", e))?;
-    let mut v: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-    let current = v[field].as_bool().unwrap_or(false);
+    let meta = read_session_meta(session_id)?;
+    let current = match field {
+        "pinned" => meta.pinned,
+        "archived" => meta.archived,
+        "manual_working" => meta.manual_working,
+        "stopped_by_user" => meta.stopped_by_user,
+        _ => false,
+    };
     let new_value = !current;
-    v[field] = serde_json::Value::Bool(new_value);
-    let meta_str = serde_json::to_string(&v).map_err(|e| format!("序列化 meta 失败: {}", e))?;
-    std::fs::write(&meta_path, meta_str).map_err(|e| format!("写入 meta 失败: {}", e))?;
+    update_session_meta(session_id, |meta| match field {
+        "pinned" => meta.pinned = new_value,
+        "archived" => meta.archived = new_value,
+        "manual_working" => meta.manual_working = new_value,
+        "stopped_by_user" => meta.stopped_by_user = new_value,
+        _ => {}
+    })?;
     Ok(new_value)
 }
 
+/// 切换指定 Agent 会话的置顶状态并返回最新摘要。
 pub fn toggle_pin_agent_session(session_id: &str) -> Result<AgentSessionInfo, String> {
     toggle_meta_bool(session_id, "pinned")?;
     let sessions = list_agent_sessions()?;
@@ -343,6 +431,7 @@ pub fn toggle_pin_agent_session(session_id: &str) -> Result<AgentSessionInfo, St
         .ok_or_else(|| "会话不存在".to_string())
 }
 
+/// 切换指定 Agent 会话的归档状态并返回最新摘要。
 pub fn toggle_archive_agent_session(session_id: &str) -> Result<AgentSessionInfo, String> {
     toggle_meta_bool(session_id, "archived")?;
     let sessions = list_agent_sessions()?;
@@ -352,15 +441,134 @@ pub fn toggle_archive_agent_session(session_id: &str) -> Result<AgentSessionInfo
         .ok_or_else(|| "会话不存在".to_string())
 }
 
+/// 切换指定 Agent 会话的手动工作中状态并返回最新摘要。
+pub fn toggle_manual_working_agent_session(session_id: &str) -> Result<AgentSessionInfo, String> {
+    toggle_meta_bool(session_id, "manual_working")?;
+    let sessions = list_agent_sessions()?;
+    sessions
+        .into_iter()
+        .find(|s| s.id == session_id)
+        .ok_or_else(|| "会话不存在".to_string())
+}
+
+/// 更新指定 Agent 会话的权限模式元数据。
 pub fn update_session_permission_mode(session_id: &str, mode: &str) -> Result<(), String> {
-    validate_session_id(session_id)?;
-    let dir = agent_sessions_dir().join(session_id);
-    let meta_path = dir.join("meta.json");
-    let content =
-        std::fs::read_to_string(&meta_path).map_err(|e| format!("读取 meta 失败: {}", e))?;
-    let mut v: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-    v["permission_mode"] = serde_json::Value::String(mode.to_string());
-    let meta_str = serde_json::to_string(&v).map_err(|e| format!("序列化 meta 失败: {}", e))?;
-    std::fs::write(&meta_path, meta_str).map_err(|e| format!("写入 meta 失败: {}", e))?;
+    update_session_meta(session_id, |meta| {
+        meta.permission_mode = Some(mode.to_string());
+    })?;
     Ok(())
+}
+
+/// 更新会话归属的工作区 ID。
+pub fn set_session_workspace(session_id: &str, workspace_id: Option<String>) -> Result<(), String> {
+    update_session_meta(session_id, |meta| {
+        meta.workspace_id = workspace_id;
+    })?;
+    Ok(())
+}
+
+/// 更新会话最后一次运行是否被用户主动中断。
+pub fn set_session_stopped_by_user(session_id: &str, stopped_by_user: bool) -> Result<(), String> {
+    update_session_meta(session_id, |meta| {
+        meta.stopped_by_user = stopped_by_user;
+    })?;
+    Ok(())
+}
+
+/// 更新会话绑定的 SDK session ID。
+pub fn set_session_sdk_session_id(
+    session_id: &str,
+    sdk_session_id: Option<String>,
+) -> Result<(), String> {
+    update_session_meta(session_id, |meta| {
+        meta.sdk_session_id = sdk_session_id;
+    })?;
+    Ok(())
+}
+
+/// 从指定历史锚点分叉出一个新会话。
+pub fn fork_agent_session(
+    session_id: &str,
+    up_to_message_uuid: Option<&str>,
+) -> Result<AgentSessionInfo, String> {
+    let source_meta = read_session_meta(session_id)?;
+    let timeline = get_agent_session(session_id)?;
+    let fork_index = match up_to_message_uuid {
+        Some(uuid) => timeline
+            .iter()
+            .position(|item| item.id == uuid)
+            .ok_or_else(|| format!("未找到 fork 锚点消息: {}", uuid))?,
+        None => timeline.len().saturating_sub(1),
+    };
+    let forked_timeline = if timeline.is_empty() {
+        Vec::new()
+    } else {
+        timeline[..=fork_index].to_vec()
+    };
+
+    let new_session_id = create_agent_session_with_meta(CreateSessionMetaInput {
+        title: source_meta.title.clone(),
+        channel_id: source_meta.channel_id.clone(),
+        workspace_id: source_meta.workspace_id.clone(),
+        permission_mode: source_meta.permission_mode.clone(),
+        fork_source_dir: Some(session_dir(session_id).to_string_lossy().to_string()),
+        fork_source_sdk_session_id: source_meta.sdk_session_id.clone(),
+        resume_at_message_uuid: None,
+    })?;
+
+    if !forked_timeline.is_empty() {
+        write_timeline(&new_session_id, &forked_timeline)?;
+    }
+
+    list_agent_sessions()?
+        .into_iter()
+        .find(|session| session.id == new_session_id)
+        .ok_or_else(|| "分叉会话创建后未找到".to_string())
+}
+
+/// 在同一会话内回退到指定 assistant 消息锚点。
+pub fn rewind_agent_session(
+    session_id: &str,
+    assistant_message_uuid: &str,
+) -> Result<usize, String> {
+    let _guard = AGENT_TRANSCRIPT_LOCK
+        .lock()
+        .map_err(|e| format!("锁定 Agent transcript 失败: {}", e))?;
+    let timeline = read_timeline(session_id)?;
+    let rewind_index = timeline
+        .iter()
+        .position(|item| item.id == assistant_message_uuid && item.kind == "assistant_content")
+        .ok_or_else(|| format!("未找到回退锚点消息: {}", assistant_message_uuid))?;
+    let remaining = timeline[..=rewind_index].to_vec();
+    write_timeline(session_id, &remaining)?;
+    update_session_meta(session_id, |meta| {
+        meta.resume_at_message_uuid = Some(assistant_message_uuid.to_string());
+        meta.stopped_by_user = false;
+    })?;
+    Ok(remaining.len())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toggle_manual_working_agent_session_persists_meta() {
+        let session_id = create_agent_session().expect("create session");
+
+        let first = toggle_manual_working_agent_session(&session_id).expect("toggle on");
+        assert!(first.manual_working);
+
+        let listed = list_agent_sessions().expect("list sessions");
+        let persisted = listed
+            .into_iter()
+            .find(|session| session.id == session_id)
+            .expect("session should exist");
+        assert!(persisted.manual_working);
+
+        let second = toggle_manual_working_agent_session(&session_id).expect("toggle off");
+        assert!(!second.manual_working);
+
+        delete_agent_session(&session_id).expect("cleanup session");
+    }
 }

@@ -1,5 +1,5 @@
 /**
- * Tab Atoms — 标签页状态管理
+ * 标签页原子 — 标签页状态管理
  *
  * 支持浏览器风格的多标签页。
  * 通过桥接 atom 与现有 currentConversationIdAtom / currentAgentSessionIdAtom 同步，
@@ -20,7 +20,7 @@ import type { SessionIndicatorStatus } from './agent-atoms'
 
 // ===== 类型定义 =====
 
-/** 标签页类型（Settings 不作为 Tab，保留独立视图） */
+/** 标签页类型（Settings 不作为标签页，保留独立视图） */
 export type TabType = 'chat' | 'agent'
 
 /** 标签页数据 */
@@ -35,7 +35,7 @@ export interface TabItem {
   title: string
 }
 
-/** Tab 持久化数据（保存到 settings.json） */
+/** 标签页持久化数据（保存到 settings.json） */
 export interface PersistedTabState {
   tabs: TabItem[]
   activeTabId: string | null
@@ -58,7 +58,7 @@ export const sidebarCollapsedAtom = atomWithStorage<boolean>(
   false,
 )
 
-/** Tab 迷你地图缓存（每个 Tab 的消息预览列表，在消息组件中填充） */
+/** 标签页迷你地图缓存（每个标签页的消息预览列表，在消息组件中填充） */
 export interface TabMinimapItem {
   id: string
   role: 'user' | 'assistant' | 'status'

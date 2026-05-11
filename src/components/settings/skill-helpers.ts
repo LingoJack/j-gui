@@ -1,13 +1,12 @@
 /**
- * skill-helpers - Shared types and utility functions for Skill UI components
+ * skill-helpers - Skill UI 组件共享的类型与工具函数
  *
- * Extracted from AgentSettings.tsx to avoid duplication and enable
- * direct imports from test files.
+ * 从 AgentSettings.tsx 中拆出，避免重复并支持测试文件直接导入。
  */
 
 import type { SkillMeta } from '@jgui/shared'
 
-// ===== Types =====
+// ===== 类型 =====
 
 export type SkillSourceType = 'workspace' | 'jcli' | 'global'
 
@@ -16,7 +15,7 @@ export interface SkillGroup {
   skills: SkillMeta[]
 }
 
-// ===== Source Badge Helpers =====
+// ===== 来源徽标辅助函数 =====
 
 export function getSkillSourceType(source: string): SkillSourceType {
   if (source === 'user' || source === 'project') return 'jcli'
@@ -39,7 +38,7 @@ export function externalSkillSlug(dirPath: string): string {
   return dirPath.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? 'unknown'
 }
 
-// ===== Skill Grouping =====
+// ===== Skill 分组 =====
 
 export function groupSkillsByPrefix(skills: SkillMeta[]): SkillGroup[] {
   const prefixMap = new Map<string, SkillMeta[]>()
@@ -76,7 +75,7 @@ export function shortName(slug: string, prefix: string): string {
   return slug.startsWith(prefix + '-') ? slug.slice(prefix.length + 1) : slug
 }
 
-// ===== Skill Content Helpers =====
+// ===== Skill 内容辅助函数 =====
 
 export function extractSkillBody(content: string): string {
   const match = content.match(/^---\s*\n[\s\S]*?\n---\s*\n([\s\S]*)$/)

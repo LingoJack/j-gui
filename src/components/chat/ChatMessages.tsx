@@ -13,7 +13,7 @@
  */
 
 import * as React from 'react'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { Loader2 } from 'lucide-react'
 import { WelcomeEmptyState } from '@/components/welcome/WelcomeEmptyState'
 import { ChatMessageItem, formatMessageTime } from './ChatMessageItem'
@@ -48,6 +48,7 @@ import { useConversationParallelMode } from '@/hooks/useConversationSettings'
 import { getModelLogo } from '@/lib/model-logo'
 import { userProfileAtom } from '@/atoms/user-profile'
 import { tabMinimapCacheAtom } from '@/atoms/tab-atoms'
+import { chatMessageTargetAtom } from '@/atoms/chat-atoms'
 import type { ChatMessage, ChatToolActivity } from '@jgui/shared'
 
 // ===== 滚动到顶部加载更多 =====
@@ -184,6 +185,7 @@ export function ChatMessages({
 }: ChatMessagesProps): React.ReactElement {
   const userProfile = useAtomValue(userProfileAtom)
   const setMinimapCache = useSetAtom(tabMinimapCacheAtom)
+  const [messageTarget, setMessageTarget] = useAtom(chatMessageTargetAtom)
 
   // 平滑流式输出：将高频更新转为逐字渲染
   const { displayedContent: rawSmoothContent } = useSmoothStream({
@@ -286,6 +288,36 @@ export function ChatMessages({
     }
   }, [parallelMode, hasMore, handleLoadMore])
 
+  React.useEffect(() => {
+    if (!messageTarget || messageTarget.conversationId !== conversationId) return
+
+    const selector = `[data-message-id="${messageTarget.messageId}"]`
+    let cancelled = false
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+    const scrollToTarget = (): void => {
+      const element = document.querySelector<HTMLElement>(selector)
+      if (!element || cancelled) return
+      element.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      element.classList.add('ring-2', 'ring-primary/30', 'rounded-xl')
+      timeoutId = setTimeout(() => {
+        element.classList.remove('ring-2', 'ring-primary/30', 'rounded-xl')
+        setMessageTarget((prev) =>
+          prev?.conversationId === conversationId && prev.messageId === messageTarget.messageId
+            ? null
+            : prev
+        )
+      }, 1800)
+    }
+
+    const rafId = requestAnimationFrame(scrollToTarget)
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(rafId)
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [messageTarget, conversationId, messages, setMessageTarget])
+
   // 迷你地图数据（必须在所有条件分支之前调用，遵守 hooks 规则）
   const minimapItems: MinimapItem[] = React.useMemo(
     () => messages.map((m) => ({
@@ -350,9 +382,11 @@ export function ChatMessages({
         ) : (
           <>
             {/* 已有消息 + 分隔线 */}
-            {messages.map((msg: ChatMessage) => (
-              <React.Fragment key={msg.id}>
-                <div data-message-id={msg.id}>
+            {messages.map((msg: ChatMessage, idx) => {
+              const renderMessageId = msg.id || `chat-index-${idx}`
+              return (
+              <React.Fragment key={renderMessageId}>
+                <div data-message-id={renderMessageId}>
                   <ChatMessageItem
                     message={msg}
                     conversationId={conversationId}
@@ -375,7 +409,7 @@ export function ChatMessages({
                   />
                 )}
               </React.Fragment>
-            ))}
+            )})}
 
             {/* 正在生成 / 停止后等待磁盘消息加载的临时 assistant 消息 */}
             {(streaming || smoothContent || smoothReasoning) && (

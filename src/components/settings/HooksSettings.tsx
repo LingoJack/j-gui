@@ -12,7 +12,7 @@ import * as ipc from '@/lib/ipc'
 import type { HookInfo } from '@/lib/ipc'
 
 // ============================================================
-// HookCard
+// Hook 卡片
 // ============================================================
 
 interface HookCardProps {
@@ -61,7 +61,7 @@ function HookCard({ hook, onToggle, toggling }: HookCardProps): React.ReactEleme
 }
 
 // ============================================================
-// FilterBar
+// 筛选栏
 // ============================================================
 
 interface FilterBarProps {
@@ -112,7 +112,7 @@ function FilterBar({
 }
 
 // ============================================================
-// EventGroup
+// 事件分组
 // ============================================================
 
 interface EventGroupProps {
@@ -143,7 +143,7 @@ function EventGroup({ event, hooks, onToggle, togglingSet }: EventGroupProps): R
 }
 
 // ============================================================
-// EmptyState
+// 空状态
 // ============================================================
 
 function EmptyState(): React.ReactElement {
@@ -158,7 +158,7 @@ function EmptyState(): React.ReactElement {
 }
 
 // ============================================================
-// HooksSettings (main)
+// HooksSettings 主组件
 // ============================================================
 
 export function HooksSettings(): React.ReactElement {

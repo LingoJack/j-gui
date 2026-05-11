@@ -5,8 +5,8 @@
  * 负责：
  * 1. 初始化快捷键注册表
  * 2. 从 settings 加载用户自定义配置
- * 3. 注册所有应用级快捷键的 handler
- * 4. 监听菜单 IPC 事件（Cmd+W 关闭标签）
+ * 3. 注册所有应用级快捷键处理器
+ * 4. 注册窗口内会真正生效的快捷键处理器
  */
 
 import { useEffect, useCallback } from 'react'
@@ -62,7 +62,7 @@ export function GlobalShortcuts(): null {
   const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
   const store = useStore()
 
-  // Tab 管理（用于关闭标签页）
+  // 标签页管理（用于关闭标签页）
   const activeTabId = useAtomValue(activeTabIdAtom)
 
   // 统一关闭逻辑：与 TabBar.handleClose 共用
@@ -109,13 +109,7 @@ export function GlobalShortcuts(): null {
     requestClose(activeTabId)
   }, [settingsOpen, setSettingsOpen, channelFormDirty, setSettingsCloseRequested, searchOpen, setSearchOpen, activeTabId, requestClose])
 
-  // 监听菜单 IPC 事件（Cmd+W 被 Electron 菜单拦截后通过 IPC 转发）
-  useEffect(() => {
-    const cleanup = ipc.onMenuCloseTab(handleCloseTab)
-    return cleanup
-  }, [handleCloseTab])
-
-  // 同时注册到快捷键系统（用于设置面板展示和自定义，实际触发走 IPC）
+  // 注册到快捷键系统，关闭逻辑统一走当前窗口内的快捷键处理。
   useShortcut('close-tab', handleCloseTab)
 
   const restoreModeSession = useCallback(async (targetMode: 'chat' | 'agent') => {
@@ -244,54 +238,5 @@ export function GlobalShortcuts(): null {
     }, []),
   )
 
-  // ===== 菜单栏 → 打开 / 创建会话 =====
-
-  useEffect(() => {
-    const cleanupOpen = ipc.onTrayOpenAgentSession(async (data) => {
-      try {
-        const sessions = await ipc.listAgentSessions()
-        const session = sessions.find((item) => item.id === data.sessionId)
-        if (!session) return
-
-        store.set(agentSessionsAtom, sessions)
-        store.set(appModeAtom, 'agent')
-        store.set(activeViewAtom, 'conversations')
-        store.set(currentAgentSessionIdAtom, session.id)
-
-        if (session.workspaceId) {
-          store.set(currentAgentWorkspaceIdAtom, session.workspaceId)
-          ipc.updateSettings({
-            agentWorkspaceId: session.workspaceId,
-          }).catch(console.error)
-        }
-
-        const currentTabs = store.get(tabsAtom)
-        const result = openTab(currentTabs, {
-          type: 'agent',
-          sessionId: session.id,
-          title: session.title || data.title,
-        })
-        store.set(tabsAtom, result.tabs)
-        store.set(activeTabIdAtom, result.activeTabId)
-      } catch (error) {
-        console.error('[菜单栏] 打开 Agent 会话失败:', error)
-      }
-    })
-
-    const cleanupCreate = ipc.onTrayCreateSession(async (data) => {
-      store.set(appModeAtom, data.mode)
-      store.set(activeViewAtom, 'conversations')
-      if (data.mode === 'agent') {
-        await createAgent()
-      } else {
-        await createChat()
-      }
-    })
-
-    return () => {
-      cleanupOpen()
-      cleanupCreate()
-    }
-  }, [store, createAgent, createChat])
   return null
 }

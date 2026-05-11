@@ -52,7 +52,7 @@ import type {
 import type { ToolActivity } from '@/atoms/agent-atoms'
 import * as ipc from '@/lib/ipc'
 
-// ===== SDKMessageRenderer Props =====
+// ===== SDKMessageRenderer 属性 =====
 
 export interface SDKMessageRendererProps {
   /** 要渲染的消息 */
@@ -887,7 +887,7 @@ function ErrorMessage({ message, onRetry, onRetryInNewSession, onCompact }: Erro
   const handleRecoveryAction = (action: RecoveryAction) => {
     switch (action.action) {
       case 'open_environment_check':
-        // Environment check dialog removed (excluded from roadmap)
+        // 环境检查对话框已移除（roadmap 已排除此项）
         break
       case 'open_channel_settings':
         setSettingsTab('channels')

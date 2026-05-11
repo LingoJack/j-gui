@@ -1,12 +1,12 @@
 /**
- * useAgentSendMessage — Agent 消息发送逻辑的 Hook 封装
+ * useAgentSendMessage — Agent 消息发送逻辑的钩子封装
  *
  * 从 AgentView 中提取的发送相关逻辑，包括：
- * - handleSend / handleSendUserMessage（自动发送 pending 消息）
- * - handleStop / handleCompact / handleRetry / handleRetryInNewSession
+ * - handleSend / handleSendUserMessage（自动发送待处理消息）
+ * - handleStop / handleCompact / handleRetry / handleRetryInNewSession 等处理逻辑
  * - 附件处理（addFilesAsAttachments / handleOpenFileDialog / handleAttachFolder 等）
  * - 拖放处理（handleDragOver / handleDragLeave / handleDrop）
- * - pendingMessage 状态及 isSending 守卫
+ * - 待处理消息状态及 isSending 守卫
  */
 
 import * as React from 'react'
@@ -134,7 +134,7 @@ export function useAgentSendMessage(sessionId: string) {
   const [messagesLoaded, setMessagesLoaded] = React.useState(false)
   const [errorCopied, setErrorCopied] = React.useState(false)
 
-  // pendingFiles ref
+  // pendingFiles 引用缓存
   const pendingFilesRef = React.useRef(pendingFiles)
   React.useEffect(() => {
     pendingFilesRef.current = pendingFiles
@@ -305,7 +305,7 @@ export function useAgentSendMessage(sessionId: string) {
     }
   }, [sessionId, addFilesAsAttachments, setAttachedDirsMap])
 
-  // ===== 自动发送 pending prompt（handleSendUserMessage）=====
+  // ===== 自动发送待处理提示词（handleSendUserMessage）=====
 
   React.useEffect(() => {
     if (!messagesLoaded) return
@@ -379,57 +379,10 @@ export function useAgentSendMessage(sessionId: string) {
     if ((!effectiveText && pendingFiles.length === 0) || !agentChannelId || !hasAvailableModel) return
 
     if (streaming) {
-      if (pendingFiles.length > 0) {
-        toast.info('Agent 运行中暂不支持追加发送附件', {
-          description: '请等待完成后再发送附件，或先撤除附件仅发送文本',
-        })
-        return
-      }
-
-      const localUuid = crypto.randomUUID()
-
-      const syntheticMsg: import('@jgui/shared').SDKMessage = {
-        type: 'user',
-        uuid: localUuid,
-        message: {
-          content: [{ type: 'text', text: effectiveText }],
-        },
-        parent_tool_use_id: null,
-        _createdAt: Date.now(),
-      } as unknown as import('@jgui/shared').SDKMessage
-
-      store.set(liveMessagesMapAtom, (prev) => {
-        const map = new Map(prev)
-        const current = map.get(sessionId) ?? []
-        map.set(sessionId, [...current, syntheticMsg])
-        return map
-      })
-
-      setInputContent('')
-      setInputHtmlContent('')
-      setPromptSuggestions((prev) => {
-        if (!prev.has(sessionId)) return prev
-        const map = new Map(prev)
-        map.delete(sessionId)
-        return map
-      })
-
-      ipc.queueAgentMessage({
-        sessionId,
-        userMessage: effectiveText,
-        uuid: localUuid,
-        interrupt: true,
-      }).catch((error) => {
-        console.error('[AgentView] 追加消息失败:', error)
-        toast.error('追加消息失败', { description: String(error) })
-        store.set(liveMessagesMapAtom, (prev) => {
-          const map = new Map(prev)
-          const current = (map.get(sessionId) ?? []).filter(
-            (m) => (m as unknown as { uuid?: string }).uuid !== localUuid
-          )
-          map.set(sessionId, current)
-          return map
-        })
+      toast.info('Agent 运行中暂不支持继续发送', {
+        description: pendingFiles.length > 0
+          ? '当前后端还不支持流中追加消息或附件，请等待本轮完成后再发送'
+          : '当前后端还不支持流中追加消息，请等待本轮完成后再发送',
       })
       return
     }
@@ -448,7 +401,7 @@ export function useAgentSendMessage(sessionId: string) {
       return map
     })
 
-    // 附件处理
+    // 处理附件
     let fileReferences = ''
     if (pendingFiles.length > 0) {
       const workspace = workspaces.find((w) => w.id === currentWorkspaceId)
@@ -574,7 +527,7 @@ export function useAgentSendMessage(sessionId: string) {
     ipc.stopAgent(sessionId).catch(console.error)
   }, [sessionId, setStreamingStates])
 
-  // ===== /compact 命令 =====
+  // ===== /compact 指令 =====
 
   const handleCompact = React.useCallback((): void => {
     if (!agentChannelId || streaming) return

@@ -4,7 +4,7 @@
 
 /** GitHub Release 资源（简化版） */
 export interface GitHubRelease {
-  /** Release ID */
+  /** Release 标识 */
   id: number
   /** 标签名（版本号） */
   tag_name: string
@@ -20,7 +20,7 @@ export interface GitHubRelease {
   created_at: string
   /** 发布时间 */
   published_at: string
-  /** Release HTML URL */
+  /** Release 页面 URL */
   html_url: string
 }
 

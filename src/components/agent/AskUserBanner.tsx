@@ -48,7 +48,7 @@ export function AskUserBanner({ sessionId }: AskUserBannerProps): React.ReactEle
   const questions = request?.questions ?? []
   const isLastTab = activeTab >= questions.length - 1
 
-  // ===== Refs：确保 keydown handler 始终读取最新值，消除闭包过期问题 =====
+  // ===== Refs：确保 keydown 处理器始终读取最新值，消除闭包过期问题 =====
   const activeTabRef = React.useRef(activeTab)
   activeTabRef.current = activeTab
   const questionsRef = React.useRef(questions)
@@ -204,18 +204,18 @@ export function AskUserBanner({ sessionId }: AskUserBannerProps): React.ReactEle
         const answer = getAnswer(i)
         if (answer.showCustom && answer.customText.trim()) {
           answersPayload.push({
-            questionId: q.header || q.question || String(i),
+            questionId: q.id || q.header || q.question || String(i),
             selectedOptions: [],
             customText: answer.customText.trim(),
           })
         } else if (answer.selected.length > 0) {
           answersPayload.push({
-            questionId: q.header || q.question || String(i),
+            questionId: q.id || q.header || q.question || String(i),
             selectedOptions: answer.selected,
           })
         }
       }
-      await ipc.respondAskUser({ requestId: request.requestId, answers: answersPayload })
+      await ipc.respondAskUser({ sessionId, requestId: request.requestId, answers: answersPayload })
       setAllRequests((prev) => {
         const map = new Map(prev)
         const current = map.get(sessionId) ?? []
@@ -247,7 +247,7 @@ export function AskUserBanner({ sessionId }: AskUserBannerProps): React.ReactEle
 
   return (
     <div className="mx-4 mb-3 rounded-xl bg-card shadow-lg overflow-hidden animate-in slide-in-from-bottom-2 duration-200">
-      {/* 头部 + Tab 栏 */}
+      {/* 头部 + 标签栏 */}
       <div className="px-4 pt-3 pb-2">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium text-foreground">j-gui Agent 需要你的输入</span>
@@ -266,7 +266,7 @@ export function AskUserBanner({ sessionId }: AskUserBannerProps): React.ReactEle
           </div>
         </div>
 
-        {/* Tab 栏（多问题时显示） */}
+        {/* 标签栏（多问题时显示） */}
         {questions.length > 1 && (
           <div className="flex gap-1">
             {questions.map((q, idx) => {
@@ -458,7 +458,7 @@ function QuestionCard({
         />
       )}
 
-      {/* 选项 Preview（聚焦或选中时展示） */}
+      {/* 选项预览（聚焦或选中时展示） */}
       {previewContent && (
         <div className="mt-2 rounded-lg bg-muted/40 p-3 text-xs prose prose-sm dark:prose-invert max-w-none prose-p:my-0 prose-headings:my-0.5 prose-li:my-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
           <Markdown remarkPlugins={PREVIEW_REMARK_PLUGINS} urlTransform={safeUrlTransform}>

@@ -1,5 +1,5 @@
 /**
- * SearchDialog - 全局搜索 Dialog
+ * SearchDialog - 全局搜索对话框
  *
  * 浮动搜索面板，支持：
  * - 即时标题匹配（纯前端过滤）
@@ -40,6 +40,7 @@ interface ContentResult {
   id: string
   title: string
   type: 'chat' | 'agent'
+  messageId: string
   snippet: string
   matchStart: number
   matchLength: number
@@ -215,6 +216,7 @@ export function SearchDialog(): React.ReactElement {
             id: r.conversationId,
             title: r.conversationTitle,
             type: 'chat' as const,
+            messageId: r.messageId,
             snippet: r.snippet,
             matchStart: r.matchStart,
             matchLength: r.matchLength,
@@ -227,6 +229,7 @@ export function SearchDialog(): React.ReactElement {
             id: r.sessionId,
             title: r.sessionTitle,
             type: 'agent' as const,
+            messageId: r.messageId,
             snippet: r.snippet,
             matchStart: r.matchStart,
             matchLength: r.matchLength,
@@ -264,11 +267,11 @@ export function SearchDialog(): React.ReactElement {
     if (result.type === 'chat') {
       const conv = conversations.find((c) => c.id === result.id)
       const title = conv?.title ?? result.title
-      openSession('chat', result.id, title)
+      openSession('chat', result.id, title, 'messageId' in result ? { messageId: result.messageId } : undefined)
     } else {
       const session = agentSessions.find((s) => s.id === result.id)
       const title = session?.title ?? result.title
-      openSession('agent', result.id, title)
+      openSession('agent', result.id, title, 'messageId' in result ? { messageId: result.messageId } : undefined)
     }
   }, [setOpen, setActiveView, openSession, conversations, agentSessions])
 

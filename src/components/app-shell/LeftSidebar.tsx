@@ -1,5 +1,5 @@
 /**
- * LeftSidebar - 左侧导航栏
+ * LeftSidebar - 左侧边栏
  *
  * 包含：
  * - Chat/Agent 模式切换器
@@ -59,7 +59,7 @@ import { searchDialogOpenAtom } from '@/atoms/search-atoms'
 import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
 import { workingSessionGroupsAtom, workingSessionIdsSetAtom } from '@/atoms/working-atoms'
 import { atom } from 'jotai'
-// hasEnvironmentIssues removed — environment check excluded from roadmap
+// hasEnvironmentIssues 已移除 - 环境检查已从 roadmap 中排除
 const hasEnvironmentIssuesAtom = atom(false)
 import { promptConfigAtom, selectedPromptIdAtom, conversationPromptIdAtom } from '@/atoms/system-prompt-atoms'
 import { useOpenSession } from '@/hooks/useOpenSession'
@@ -154,7 +154,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   const [moveTargetId, setMoveTargetId] = React.useState<string | null>(null)
   /** 置顶区域展开/收起 */
   const [pinnedExpanded, setPinnedExpanded] = React.useState(true)
-  /** Agent 上区子 Tab：'working' | 'pinned'，默认 working 在前 */
+  /** Agent 上区子标签：'working' | 'pinned'，默认 working 在前 */
   const [agentSubTab, setAgentSubTab] = React.useState<'working' | 'pinned'>('working')
   const [userProfile, setUserProfile] = useAtom(userProfileAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
@@ -178,11 +178,11 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
   const workspaces = useAtomValue(agentWorkspacesAtom)
 
-  // 工作区能力（MCP + Skill 计数）
+  // 工作区能力（MCP + 技能计数）
   const [capabilities, setCapabilities] = React.useState<WorkspaceCapabilities | null>(null)
   const capabilitiesVersion = useAtomValue(workspaceCapabilitiesVersionAtom)
 
-  // Tab 状态
+  // 标签页状态
   const [tabs, setTabs] = useAtom(tabsAtom)
   const [activeTabId, setActiveTabId] = useAtom(activeTabIdAtom)
   const [sidebarCollapsed, setSidebarCollapsed] = useAtom(sidebarCollapsedAtom)
@@ -193,7 +193,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   const [viewMode, setViewMode] = useAtom(sidebarViewModeAtom)
   const setSearchDialogOpen = useSetAtom(searchDialogOpenAtom)
 
-  // Agent 模式上区（Working/置顶）可拖拽高度
+  // Agent 模式上区（工作中/置顶）可拖拽高度
   /** -1 表示未初始化，首次渲染时按容器 40% 计算 */
   const [agentTopHeight, setAgentTopHeight] = useAtom(agentSidebarTopHeightAtom)
   const agentSplitContainerRef = React.useRef<HTMLDivElement>(null)
@@ -258,7 +258,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     })
   }, [activeTabId])
 
-  // per-conversation/session Map atoms（删除时清理）
+  // 按对话/会话隔离的映射 atom（删除时清理）
   const setConvModels = useSetAtom(conversationModelsAtom)
   const setConvContextLength = useSetAtom(conversationContextLengthAtom)
   const setConvThinking = useSetAtom(conversationThinkingEnabledAtom)
@@ -267,7 +267,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   const setAgentSidePanelOpen = useSetAtom(agentSidePanelOpenMapAtom)
   const setWorkingDone = useSetAtom(workingDoneSessionIdsAtom)
 
-  /** 清理 per-conversation/session Map atoms 条目 */
+  /** 清理按对话/会话隔离的映射 atom 条目 */
   const cleanupMapAtoms = React.useCallback((id: string) => {
     const deleteKey = <T,>(prev: Map<string, T>): Map<string, T> => {
       if (!prev.has(id)) return prev
@@ -344,7 +344,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
       .catch(console.error)
   }, [currentWorkspaceSlug, mode, activeView, capabilitiesVersion])
 
-  /** 置顶对话列表（仅活跃模式显示，排除 draft） */
+  /** 置顶对话列表（仅活跃模式显示，排除草稿） */
   const pinnedConversations = React.useMemo(
     () => viewMode === 'active' ? conversations.filter((c) => c.pinned && !draftSessionIds.has(c.id)) : [],
     [conversations, viewMode, draftSessionIds]
@@ -355,13 +355,13 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   const workingSessionIds = useAtomValue(workingSessionIdsSetAtom)
   const hasWorkingSessions = workingGroups.todo.length > 0 || workingGroups.running.length > 0 || workingGroups.done.length > 0
 
-  /** 置顶 Agent 会话列表（仅活跃模式显示，按当前工作区过滤，排除 draft 和 Working） */
+  /** 置顶 Agent 会话列表（仅活跃模式显示，按当前工作区过滤，排除草稿和工作中） */
   const pinnedAgentSessions = React.useMemo(
     () => viewMode === 'active' ? agentSessions.filter((s) => s.pinned && !draftSessionIds.has(s.id) && !workingSessionIds.has(s.id) && (!currentWorkspaceId || s.workspaceId === currentWorkspaceId)) : [],
     [agentSessions, viewMode, draftSessionIds, currentWorkspaceId, workingSessionIds]
   )
 
-  /** 顶部 TabBar 切换 tab 时，自动同步上区子 Tab 到对应分类 */
+  /** 顶部 TabBar 切换标签页时，自动同步上区子标签到对应分类 */
   const prevActiveTabIdForSubTab = React.useRef<string | null>(activeTabId)
   React.useEffect(() => {
     if (activeTabId === prevActiveTabIdForSubTab.current) return
@@ -374,7 +374,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     }
   }, [activeTabId, mode, viewMode, pinnedAgentSessions, workingSessionIds])
 
-  /** 对话按日期分组（根据 viewMode 过滤归档状态，排除 draft） */
+  /** 对话按日期分组（根据 viewMode 过滤归档状态，排除草稿） */
   const conversationGroups = React.useMemo(
     () => {
       const filtered = viewMode === 'archived'
@@ -811,7 +811,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     [filteredAgentSessions]
   )
 
-  // 删除确认弹窗（collapsed/expanded 共享）
+  // 删除确认弹窗（折叠/展开态共用）
   const deleteDialog = (
     <AlertDialog
       open={pendingDeleteId !== null}
@@ -844,7 +844,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     </AlertDialog>
   )
 
-  // 迁移会话对话框（collapsed/expanded 共享）
+  // 迁移会话对话框（折叠/展开态共用）
   const moveDialog = (
     <MoveSessionDialog
       open={moveTargetId !== null}
@@ -856,7 +856,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     />
   )
 
-  // SessionListItems props
+  // SessionListItems 参数
   const sessionListProps: SessionListItemsProps = {
     mode,
     viewMode,

@@ -1,5 +1,5 @@
 /**
- * TabCloseConfirmDialog — Agent Tab 关闭时的确认对话框
+ * TabCloseConfirmDialog — Agent 标签页关闭时的确认对话框
  *
  * 单例：在 TabBar 内渲染一次即可。
  * 状态通过 pendingCloseTabIdAtom 驱动，任何调用 useCloseTab().requestClose()

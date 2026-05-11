@@ -2,8 +2,21 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tauri::Emitter;
 
 use crate::kernel::JcliAdapter;
+
+#[path = "settings_agent_workspaces.rs"]
+mod settings_agent_workspaces;
+#[path = "settings_environment.rs"]
+mod settings_environment;
+#[path = "settings_system_prompts.rs"]
+mod settings_system_prompts;
+use settings_agent_workspaces as workspace_commands;
+use settings_environment as environment_commands;
+pub use settings_system_prompts::{
+    CreateSystemPromptInput, SystemPromptConfig, SystemPromptEntry, UpdateSystemPromptInput,
+};
 
 fn settings_dir() -> PathBuf {
     dirs_next().unwrap_or_else(|| PathBuf::from("."))
@@ -37,7 +50,7 @@ pub(crate) fn dirs_next() -> Option<PathBuf> {
 }
 
 // ============================================================
-// Settings types — match frontend AppSettings from src/types/settings.ts
+// 设置类型 —— 与前端 src/types/settings.ts 中的 AppSettings 对齐
 // ============================================================
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -200,10 +213,6 @@ fn save_user_profile(profile: &UserProfile) -> Result<(), String> {
     fs::write(&path, json).map_err(|e| e.to_string())
 }
 
-// ============================================================
-// Tauri Commands
-// ============================================================
-
 #[tauri::command]
 pub fn get_settings() -> Result<GuiSettings, String> {
     Ok(load_settings())
@@ -285,14 +294,24 @@ macro_rules! set_arr_str {
 }
 
 #[tauri::command]
-pub fn update_settings(updates: serde_json::Value) -> Result<GuiSettings, String> {
+pub fn update_settings(
+    app: tauri::AppHandle,
+    updates: serde_json::Value,
+) -> Result<GuiSettings, String> {
     let mut settings = load_settings();
+    let mut theme_changed = false;
 
     if let Some(obj) = updates.as_object() {
         for (key, value) in obj {
             match key.as_str() {
-                "themeMode" => set_str!(value, settings, theme_mode),
-                "themeStyle" => set_str!(value, settings, theme_style),
+                "themeMode" => {
+                    set_str!(value, settings, theme_mode);
+                    theme_changed = true;
+                }
+                "themeStyle" => {
+                    set_str!(value, settings, theme_style);
+                    theme_changed = true;
+                }
                 "onboardingCompleted" => set_bool!(value, settings, onboarding_completed),
                 "agentChannelId" => set_opt_str!(value, settings, agent_channel_id),
                 "agentModelId" => set_opt_str!(value, settings, agent_model_id),
@@ -325,6 +344,16 @@ pub fn update_settings(updates: serde_json::Value) -> Result<GuiSettings, String
     }
 
     save_settings(&settings)?;
+    if theme_changed {
+        app.emit(
+            "theme-changed",
+            serde_json::json!({
+                "themeMode": settings.theme_mode,
+                "themeStyle": settings.theme_style,
+            }),
+        )
+        .map_err(|e| e.to_string())?;
+    }
     Ok(settings)
 }
 
@@ -351,7 +380,7 @@ pub fn update_user_profile(updates: serde_json::Value) -> Result<UserProfile, St
 }
 
 // ============================================================
-// Agent Workspace commands
+// Agent 工作区相关命令
 // ============================================================
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -362,13 +391,19 @@ pub struct AgentWorkspaceInfo {
     pub slug: String,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAgentWorkspaceInput {
+    pub name: String,
+}
+
 fn workspaces_path() -> PathBuf {
     let mut p = settings_dir();
     p.push("workspaces.json");
     p
 }
 
-fn load_workspaces() -> Vec<AgentWorkspaceInfo> {
+pub(crate) fn load_workspaces() -> Vec<AgentWorkspaceInfo> {
     let path = workspaces_path();
     if path.exists() {
         fs::read_to_string(&path)
@@ -380,7 +415,7 @@ fn load_workspaces() -> Vec<AgentWorkspaceInfo> {
     }
 }
 
-fn save_workspaces(workspaces: &[AgentWorkspaceInfo]) -> Result<(), String> {
+pub(crate) fn save_workspaces(workspaces: &[AgentWorkspaceInfo]) -> Result<(), String> {
     let path = workspaces_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -391,30 +426,33 @@ fn save_workspaces(workspaces: &[AgentWorkspaceInfo]) -> Result<(), String> {
 
 #[tauri::command]
 pub fn list_agent_workspaces() -> Result<Vec<AgentWorkspaceInfo>, String> {
-    Ok(load_workspaces())
+    workspace_commands::list_agent_workspaces()
 }
 
 #[tauri::command]
 pub fn create_agent_workspace(name: String) -> Result<AgentWorkspaceInfo, String> {
-    let mut workspaces = load_workspaces();
-    let slug = name.to_lowercase().replace(' ', "-");
-    let id = uuid::Uuid::new_v4().to_string();
-    let ws = AgentWorkspaceInfo { id, name, slug };
-    workspaces.push(ws.clone());
-    save_workspaces(&workspaces)?;
-    Ok(ws)
+    workspace_commands::create_agent_workspace(name)
+}
+
+#[tauri::command]
+pub fn update_agent_workspace(
+    id: String,
+    updates: UpdateAgentWorkspaceInput,
+) -> Result<AgentWorkspaceInfo, String> {
+    workspace_commands::update_agent_workspace(id, updates)
 }
 
 #[tauri::command]
 pub fn delete_agent_workspace(id: String) -> Result<(), String> {
-    let mut workspaces = load_workspaces();
-    workspaces.retain(|w| w.id != id);
-    save_workspaces(&workspaces)
+    workspace_commands::delete_agent_workspace(id)
 }
 
-// ============================================================
-// Environment Check — scan system PATH for git/node
-// ============================================================
+#[tauri::command]
+pub fn reorder_agent_workspaces(
+    ordered_ids: Vec<String>,
+) -> Result<Vec<AgentWorkspaceInfo>, String> {
+    workspace_commands::reorder_agent_workspaces(ordered_ids)
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -436,280 +474,26 @@ pub struct EnvToolStatus {
     pub error: Option<String>,
 }
 
-fn find_in_path(tool: &str) -> Option<String> {
-    std::env::var("PATH").ok().and_then(|path| {
-        for dir in std::env::split_paths(&path) {
-            let exe = if cfg!(windows) {
-                dir.join(format!("{}.exe", tool))
-            } else {
-                dir.join(tool)
-            };
-            if exe.exists() {
-                return Some(exe.to_string_lossy().to_string());
-            }
-        }
-        None
-    })
-}
-
-fn get_tool_version(tool: &str, version_flag: &str) -> Option<String> {
-    std::process::Command::new(tool)
-        .arg(version_flag)
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-}
-
-fn parse_version(v: &str) -> Option<(u32, u32, u32)> {
-    let v = v.trim_start_matches('v');
-    let parts: Vec<&str> = v.split('.').collect();
-    if parts.len() != 3 {
-        return None;
-    }
-    Some((
-        parts[0].parse().ok()?,
-        parts[1].parse().ok()?,
-        parts[2].parse().ok()?,
-    ))
-}
-
-fn version_gte(version: &str, minimum: &str) -> bool {
-    match (parse_version(version), parse_version(minimum)) {
-        (Some(v), Some(m)) => v >= m,
-        _ => false,
-    }
-}
+#[cfg(test)]
+pub(crate) use settings_environment::{parse_version, version_gte};
 
 #[tauri::command]
 pub fn check_environment() -> Result<EnvCheckResult, String> {
-    let platform = if cfg!(windows) {
-        "win32"
-    } else if cfg!(target_os = "macos") {
-        "darwin"
-    } else {
-        "linux"
-    };
-
-    let nodejs = {
-        let installed = find_in_path("node").is_some();
-        let version = get_tool_version("node", "--version");
-        let meets_minimum = version.as_ref().is_some_and(|v| version_gte(v, "18.0.0"));
-        let meets_recommended = version.as_ref().is_some_and(|v| version_gte(v, "22.0.0"));
-        EnvToolStatus {
-            installed,
-            version,
-            meets_minimum,
-            meets_recommended,
-            meets_requirement: meets_minimum,
-            download_url: Some("https://nodejs.org/".into()),
-            error: if installed {
-                None
-            } else {
-                Some("Node.js not found in PATH".into())
-            },
-        }
-    };
-
-    let git = {
-        let installed = find_in_path("git").is_some();
-        let version = get_tool_version("git", "--version");
-        let ok = version.is_some();
-        EnvToolStatus {
-            installed,
-            version,
-            meets_minimum: ok,
-            meets_recommended: ok,
-            meets_requirement: ok,
-            download_url: Some("https://git-scm.com/".into()),
-            error: if installed {
-                None
-            } else {
-                Some("Git not found in PATH".into())
-            },
-        }
-    };
-
-    Ok(EnvCheckResult {
-        nodejs,
-        git,
-        platform: platform.into(),
-    })
-}
-
-// ============================================================
-// System Prompt Management
-// ============================================================
-
-static SYSTEM_PROMPT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-const JCLI_DEFAULT_ID: &str = "jcli-default";
-
-fn now_millis() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
-
-fn system_prompts_config_path() -> PathBuf {
-    settings_dir().join("system_prompts.json")
-}
-
-fn migrate_system_prompts_config(data_dir: &Path) {
-    let new_path = system_prompts_config_path();
-    if new_path.exists() {
-        return;
-    }
-    let old_path = data_dir
-        .join("agent")
-        .join("gui")
-        .join("system_prompts.json");
-    if old_path.exists() {
-        if let Some(parent) = new_path.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        if fs::rename(&old_path, &new_path).is_ok() {
-            eprintln!("已迁移系统提示词配置到新路径: {}", new_path.display());
-        }
-    }
-}
-
-fn create_default_system_prompt_config(jcli_system_prompt: Option<&str>) -> SystemPromptConfig {
-    let content = jcli_system_prompt.unwrap_or("").to_string();
-    let now = now_millis();
-    SystemPromptConfig {
-        prompts: vec![SystemPromptEntry {
-            id: JCLI_DEFAULT_ID.to_string(),
-            name: "j-cli 系统提示词".to_string(),
-            content,
-            builtin: true,
-            created_at: now,
-            updated_at: now,
-        }],
-        default_prompt_id: JCLI_DEFAULT_ID.to_string(),
-        append_date_time_and_user_name: true,
-    }
-}
-
-fn load_system_prompts_config_inner(
-    jcli_system_prompt: Option<&str>,
-) -> Result<SystemPromptConfig, String> {
-    let path = system_prompts_config_path();
-    if path.exists() {
-        let content =
-            fs::read_to_string(&path).map_err(|e| format!("读取系统提示词配置失败: {}", e))?;
-        match serde_json::from_str(&content) {
-            Ok(config) => Ok(config),
-            Err(e) => {
-                eprintln!("警告: 系统提示词配置已损坏 ({}), 将重置为默认配置", e);
-                let config = create_default_system_prompt_config(jcli_system_prompt);
-                let _ = save_system_prompts_config_inner(&config);
-                Ok(config)
-            }
-        }
-    } else {
-        let config = create_default_system_prompt_config(jcli_system_prompt);
-        save_system_prompts_config_inner(&config)?;
-        Ok(config)
-    }
-}
-
-fn save_system_prompts_config_inner(config: &SystemPromptConfig) -> Result<(), String> {
-    let path = system_prompts_config_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let json = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    fs::write(&path, json).map_err(|e| e.to_string())
-}
-
-fn modify_system_prompts_config<T>(
-    f: impl FnOnce(&mut SystemPromptConfig) -> Result<T, String>,
-    data_dir: &Path,
-    jcli_system_prompt: Option<&str>,
-) -> Result<T, String> {
-    let _lock = SYSTEM_PROMPT_LOCK
-        .lock()
-        .map_err(|e| format!("锁定系统提示词配置失败: {}", e))?;
-    migrate_system_prompts_config(data_dir);
-    let mut config = load_system_prompts_config_inner(jcli_system_prompt)?;
-    let result = f(&mut config)?;
-    save_system_prompts_config_inner(&config)?;
-    Ok(result)
-}
-
-fn read_system_prompts_config<T>(
-    f: impl FnOnce(&SystemPromptConfig) -> T,
-    data_dir: &Path,
-    jcli_system_prompt: Option<&str>,
-) -> Result<T, String> {
-    let _lock = SYSTEM_PROMPT_LOCK
-        .lock()
-        .map_err(|e| format!("锁定系统提示词配置失败: {}", e))?;
-    migrate_system_prompts_config(data_dir);
-    let config = load_system_prompts_config_inner(jcli_system_prompt)?;
-    Ok(f(&config))
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct SystemPromptConfig {
-    pub prompts: Vec<SystemPromptEntry>,
-    pub default_prompt_id: String,
-    pub append_date_time_and_user_name: bool,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct SystemPromptEntry {
-    pub id: String,
-    pub name: String,
-    pub content: String,
-    #[serde(rename = "isBuiltin")]
-    pub builtin: bool,
-    #[serde(default)]
-    pub created_at: u64,
-    #[serde(default)]
-    pub updated_at: u64,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateSystemPromptInput {
-    pub name: String,
-    pub content: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateSystemPromptInput {
-    pub name: Option<String>,
-    pub content: Option<String>,
+    environment_commands::check_environment()
 }
 
 #[tauri::command]
 pub fn get_system_prompts(
     state: tauri::State<'_, Arc<JcliAdapter>>,
 ) -> Result<Vec<SystemPromptEntry>, String> {
-    let data_dir = state.config().data_dir();
-    let jcli_prompt = state
-        .config()
-        .load_system_prompt()
-        .map_err(|e| e.to_string())?;
-    read_system_prompts_config(|c| c.prompts.clone(), &data_dir, jcli_prompt.as_deref())
+    settings_system_prompts::get_system_prompts(state)
 }
 
 #[tauri::command]
 pub fn get_system_prompt_config(
     state: tauri::State<'_, Arc<JcliAdapter>>,
 ) -> Result<SystemPromptConfig, String> {
-    let data_dir = state.config().data_dir();
-    let jcli_prompt = state
-        .config()
-        .load_system_prompt()
-        .map_err(|e| e.to_string())?;
-    read_system_prompts_config(|c| c.clone(), &data_dir, jcli_prompt.as_deref())
+    settings_system_prompts::get_system_prompt_config(state)
 }
 
 #[tauri::command]
@@ -717,28 +501,7 @@ pub fn create_system_prompt(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     input: CreateSystemPromptInput,
 ) -> Result<SystemPromptEntry, String> {
-    let data_dir = state.config().data_dir();
-    let jcli_prompt = state
-        .config()
-        .load_system_prompt()
-        .map_err(|e| e.to_string())?;
-    modify_system_prompts_config(
-        |config| {
-            let now = now_millis();
-            let entry = SystemPromptEntry {
-                id: uuid::Uuid::new_v4().to_string(),
-                name: input.name.clone(),
-                content: input.content.clone(),
-                builtin: false,
-                created_at: now,
-                updated_at: now,
-            };
-            config.prompts.push(entry.clone());
-            Ok(entry)
-        },
-        &data_dir,
-        jcli_prompt.as_deref(),
-    )
+    settings_system_prompts::create_system_prompt(state, input)
 }
 
 #[tauri::command]
@@ -747,33 +510,7 @@ pub fn update_system_prompt(
     id: String,
     input: UpdateSystemPromptInput,
 ) -> Result<SystemPromptEntry, String> {
-    let data_dir = state.config().data_dir();
-    let jcli_prompt = state
-        .config()
-        .load_system_prompt()
-        .map_err(|e| e.to_string())?;
-    modify_system_prompts_config(
-        |config| {
-            let entry = config
-                .prompts
-                .iter_mut()
-                .find(|p| p.id == id)
-                .ok_or_else(|| format!("提示词 '{}' 未找到", id))?;
-            if entry.builtin {
-                return Err("内置提示词不可编辑".to_string());
-            }
-            if let Some(name) = &input.name {
-                entry.name = name.clone();
-            }
-            if let Some(content) = &input.content {
-                entry.content = content.clone();
-            }
-            entry.updated_at = now_millis();
-            Ok(entry.clone())
-        },
-        &data_dir,
-        jcli_prompt.as_deref(),
-    )
+    settings_system_prompts::update_system_prompt(state, id, input)
 }
 
 #[tauri::command]
@@ -781,31 +518,7 @@ pub fn delete_system_prompt(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     id: String,
 ) -> Result<(), String> {
-    let data_dir = state.config().data_dir();
-    let jcli_prompt = state
-        .config()
-        .load_system_prompt()
-        .map_err(|e| e.to_string())?;
-    modify_system_prompts_config(
-        |config| {
-            let idx = config
-                .prompts
-                .iter()
-                .position(|p| p.id == id)
-                .ok_or_else(|| format!("提示词 '{}' 未找到", id))?;
-            if config.prompts[idx].builtin {
-                return Err("内置提示词不可删除".to_string());
-            }
-            config.prompts.remove(idx);
-            // If deleting the default, fall back to jcli-default
-            if config.default_prompt_id == id {
-                config.default_prompt_id = JCLI_DEFAULT_ID.to_string();
-            }
-            Ok(())
-        },
-        &data_dir,
-        jcli_prompt.as_deref(),
-    )
+    settings_system_prompts::delete_system_prompt(state, id)
 }
 
 #[tauri::command]
@@ -813,22 +526,7 @@ pub fn set_default_prompt(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     prompt_id: String,
 ) -> Result<(), String> {
-    let data_dir = state.config().data_dir();
-    let jcli_prompt = state
-        .config()
-        .load_system_prompt()
-        .map_err(|e| e.to_string())?;
-    modify_system_prompts_config(
-        |config| {
-            if !config.prompts.iter().any(|p| p.id == prompt_id) {
-                return Err(format!("提示词 '{}' 未找到", prompt_id));
-            }
-            config.default_prompt_id = prompt_id;
-            Ok(())
-        },
-        &data_dir,
-        jcli_prompt.as_deref(),
-    )
+    settings_system_prompts::set_default_prompt(state, prompt_id)
 }
 
 #[tauri::command]
@@ -836,190 +534,9 @@ pub fn update_append_setting(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     append_date_time_and_user_name: bool,
 ) -> Result<(), String> {
-    let data_dir = state.config().data_dir();
-    let jcli_prompt = state
-        .config()
-        .load_system_prompt()
-        .map_err(|e| e.to_string())?;
-    modify_system_prompts_config(
-        |config| {
-            config.append_date_time_and_user_name = append_date_time_and_user_name;
-            Ok(())
-        },
-        &data_dir,
-        jcli_prompt.as_deref(),
-    )
+    settings_system_prompts::update_append_setting(state, append_date_time_and_user_name)
 }
 
 #[cfg(test)]
-mod system_prompt_tests {
-    use super::*;
-
-    fn test_config() -> SystemPromptConfig {
-        SystemPromptConfig {
-            prompts: vec![
-                SystemPromptEntry {
-                    id: "builtin-1".into(),
-                    name: "Default".into(),
-                    content: "You are a helpful assistant.".into(),
-                    builtin: true,
-                    created_at: 0,
-                    updated_at: 0,
-                },
-                SystemPromptEntry {
-                    id: "custom-1".into(),
-                    name: "Custom".into(),
-                    content: "Custom prompt.".into(),
-                    builtin: false,
-                    created_at: 0,
-                    updated_at: 0,
-                },
-            ],
-            default_prompt_id: "builtin-1".into(),
-            append_date_time_and_user_name: true,
-        }
-    }
-
-    #[test]
-    fn test_add_prompt_entry() {
-        let mut config = test_config();
-        let entry = SystemPromptEntry {
-            id: "new-1".into(),
-            name: "New".into(),
-            content: "New content.".into(),
-            builtin: false,
-            created_at: 1000,
-            updated_at: 1000,
-        };
-        config.prompts.push(entry);
-        assert_eq!(config.prompts.len(), 3);
-    }
-
-    #[test]
-    fn test_update_prompt_entry() {
-        let mut config = test_config();
-        let entry = config
-            .prompts
-            .iter_mut()
-            .find(|p| p.id == "custom-1")
-            .unwrap();
-        entry.content = "Updated.".into();
-        assert_eq!(config.prompts[1].content, "Updated.");
-    }
-
-    #[test]
-    fn test_delete_prompt_entry() {
-        let mut config = test_config();
-        config.prompts.retain(|p| p.id != "custom-1");
-        assert_eq!(config.prompts.len(), 1);
-    }
-
-    #[test]
-    fn test_builtin_flag_protection() {
-        let config = test_config();
-        let builtin = config.prompts.iter().find(|p| p.id == "builtin-1").unwrap();
-        assert!(builtin.builtin);
-    }
-
-    #[test]
-    fn test_set_default_prompt() {
-        let mut config = test_config();
-        config.default_prompt_id = "custom-1".into();
-        assert_eq!(config.default_prompt_id, "custom-1");
-    }
-
-    #[test]
-    fn test_delete_default_fallback() {
-        let mut config = test_config();
-        config.default_prompt_id = "custom-1".into();
-        config.prompts.retain(|p| p.id != "custom-1");
-        if config.default_prompt_id == "custom-1" {
-            config.default_prompt_id = "builtin-1".into();
-        }
-        assert_eq!(config.default_prompt_id, "builtin-1");
-    }
-
-    #[test]
-    fn test_default_config_structure() {
-        let config = SystemPromptConfig {
-            prompts: vec![SystemPromptEntry {
-                id: "jcli-default".into(),
-                name: "j-cli 系统提示词".into(),
-                content: "test content".into(),
-                builtin: true,
-                created_at: 1000,
-                updated_at: 1000,
-            }],
-            default_prompt_id: "jcli-default".into(),
-            append_date_time_and_user_name: true,
-        };
-        assert_eq!(config.prompts.len(), 1);
-        assert!(config.prompts[0].builtin);
-        assert_eq!(config.prompts[0].id, "jcli-default");
-        assert_eq!(config.default_prompt_id, "jcli-default");
-        assert!(config.append_date_time_and_user_name);
-    }
-
-    #[test]
-    fn test_serde_is_builtin_rename() {
-        let entry = SystemPromptEntry {
-            id: "test".into(),
-            name: "Test".into(),
-            content: "Content".into(),
-            builtin: true,
-            created_at: 0,
-            updated_at: 0,
-        };
-        let json = serde_json::to_string(&entry).unwrap();
-        assert!(
-            json.contains("\"isBuiltin\""),
-            "JSON should contain isBuiltin, got: {}",
-            json
-        );
-        assert!(
-            !json.contains("\"builtin\""),
-            "JSON should not contain bare builtin, got: {}",
-            json
-        );
-    }
-
-    #[test]
-    fn test_serde_camel_case_config() {
-        let config = SystemPromptConfig {
-            prompts: vec![],
-            default_prompt_id: "default".into(),
-            append_date_time_and_user_name: true,
-        };
-        let json = serde_json::to_string(&config).unwrap();
-        assert!(json.contains("\"defaultPromptId\""));
-        assert!(json.contains("\"appendDateTimeAndUserName\""));
-    }
-}
-#[cfg(test)]
-mod version_tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_version_valid() {
-        assert_eq!(parse_version("v18.0.0"), Some((18, 0, 0)));
-        assert_eq!(parse_version("v22.1.3"), Some((22, 1, 3)));
-        assert_eq!(parse_version("18.0.0"), Some((18, 0, 0)));
-    }
-
-    #[test]
-    fn test_parse_version_invalid() {
-        assert_eq!(parse_version("v18"), None);
-        assert_eq!(parse_version("invalid"), None);
-        assert_eq!(parse_version(""), None);
-        assert_eq!(parse_version("v.a.b"), None);
-    }
-
-    #[test]
-    fn test_version_gte() {
-        assert!(version_gte("v22.0.0", "18.0.0"));
-        assert!(version_gte("v22.0.0", "22.0.0"));
-        assert!(!version_gte("v18.0.0", "22.0.0"));
-        assert!(!version_gte("invalid", "18.0.0"));
-        assert!(!version_gte("v18.0.0", "invalid"));
-    }
-}
+#[path = "../tests/commands_settings.rs"]
+mod settings_tests;

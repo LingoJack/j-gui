@@ -1,8 +1,8 @@
 /**
- * Tips 管理模块 — 平台感知的使用技巧
+ * 提示语管理模块 — 平台感知的使用技巧
  *
  * 区分 macOS / Windows 平台，提供随机轮换的小贴士。
- * Tips 内容可后续手动扩充。
+ * 提示语内容可后续手动扩充。
  */
 
 export type Platform = 'mac' | 'windows'
@@ -22,7 +22,7 @@ export function getPlatform(): Platform {
   return 'windows'
 }
 
-/** 所有 Tips 数据 */
+/** 所有提示语数据 */
 export const TIPS: Tip[] = [
   // macOS 快捷键
   { id: 'mac-shortcut-new', text: '按 ⌘N 快速创建新对话', platform: 'mac' },
@@ -58,7 +58,7 @@ export const TIPS: Tip[] = [
   { id: 'tip-shortcuts-custom', text: '在设置 → 快捷键中可以自定义所有快捷键', platform: 'all' },
 ]
 
-/** 获取适用于当前平台的随机 Tip */
+/** 获取适用于当前平台的随机提示语 */
 export function getRandomTip(platform: Platform): Tip {
   const filtered = TIPS.filter((t) => t.platform === 'all' || t.platform === platform)
   const index = Math.floor(Math.random() * filtered.length)

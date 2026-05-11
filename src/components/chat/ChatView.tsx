@@ -32,6 +32,7 @@ import {
   chatPendingMessageAtom,
   INITIAL_MESSAGE_LIMIT,
   pendingAttachmentsAtom,
+  channelsAtom,
 } from '@/atoms/chat-atoms'
 import type { PendingAttachment, ChatPendingMessage } from '@/atoms/chat-atoms'
 import { promptConfigAtom, promptSidebarOpenAtom, conversationPromptIdAtom, resolveSystemMessage, selectedPromptIdAtom } from '@/atoms/system-prompt-atoms'
@@ -76,14 +77,15 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
   const [messagesLoaded, setMessagesLoaded] = React.useState(false)
   const [inlineEditingMessageId, setInlineEditingMessageId] = React.useState<string | null>(null)
 
-  // ===== Per-conversation hooks（分屏独立） =====
+  // ===== 按对话隔离的钩子（分屏独立） =====
   const [selectedModel] = useConversationModel()
   const [contextLength] = useConversationContextLength()
   const [thinkingEnabled] = useConversationThinkingEnabled()
   const [conversationPromptId] = useConversationPromptId()
 
-  // ===== 全局 atoms（Map 结构，按 conversationId 读取） =====
+  // ===== 全局 atom（映射结构，按 conversationId 读取） =====
   const conversations = useAtomValue(conversationsAtom)
+  const channels = useAtomValue(channelsAtom)
   const setDraftSessionIds = useSetAtom(draftSessionIdsAtom)
   const streamingStates = useAtomValue(streamingStatesAtom)
   const setStreamingStates = useSetAtom(streamingStatesAtom)
@@ -112,7 +114,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
     setGlobalChatPending(null)
   }, [globalChatPending, conversationId, setGlobalChatPending])
 
-  // ===== 从 Map 派生当前对话状态 =====
+  // ===== 从映射中派生当前对话状态 =====
   const conversation = conversations.find((c) => c.id === conversationId) ?? null
   const streamState = streamingStates.get(conversationId)
   const isStreaming = streamState?.streaming ?? false
@@ -155,6 +157,16 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
     setExternalPendingAttachments([])
   }, [externalPendingAttachments, setExternalPendingAttachments])
 
+  React.useEffect(() => {
+    if (thinkingEnabled || !chatError?.includes('thinkingEnabled')) return
+    setChatStreamErrors((prev) => {
+      if (!prev.has(conversationId)) return prev
+      const map = new Map(prev)
+      map.delete(conversationId)
+      return map
+    })
+  }, [thinkingEnabled, chatError, conversationId, setChatStreamErrors])
+
   // ===== 加载消息 + 上下文分隔线 =====
   //
   // 【消息持久化链确认 - #19】
@@ -162,7 +174,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
   //   1. ChatView 组件挂载 → 调用 ipc.getRecentMessages()
   //   2. IPC 层 (ipc.ts) → invoke('get_session_messages', { sessionId })
   //   3. Rust 命令 (commands/chat.rs) → ChatKernel.get_session_messages()
-  //   4. Adapter (kernel/adapter.rs) → jcli SessionPaths → transcript.jsonl
+  //   4. 适配层（kernel/adapter.rs）→ jcli SessionPaths → transcript.jsonl
   //   5. JSONL 数据反序列化 → 返回给前端 → setMessages()
   // 写入端：每条消息在 chat_message 命令处理完成后写入 transcript.jsonl。
   // 该链路已验证完整，无需额外变更。
@@ -335,9 +347,10 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
       contextLength,
       contextDividers: options?.contextDividersOverride ?? contextDividers,
       attachments: savedAttachments.length > 0 ? savedAttachments : undefined,
-      thinkingEnabled: thinkingEnabled || undefined,
+      thinkingEnabled,
       systemMessage: resolveSystemMessage(conversationPromptId, promptConfig, userProfile.userName),
       enabledToolIds: activeToolIds.length > 0 ? activeToolIds : undefined,
+      protocolHint: channels.find((channel) => channel.id === selectedModel.channelId)?.protocolHint,
     }
 
     // 乐观更新：立即在 UI 中显示用户消息
@@ -373,6 +386,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
     promptConfig,
     userProfile.userName,
     activeToolIds,
+    channels,
     setChatStreamErrors,
     setStreamingStates,
   ])

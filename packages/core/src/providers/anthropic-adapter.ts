@@ -17,7 +17,7 @@
  * - Kimi（kimi-api / kimi-coding）：不发 thinking 字段（K2 系列非 reasoning 模型）
  *
  * Kimi Coding Plan 特殊要求：
- * - Base URL：`https://api.kimi.com/coding/v1`
+ * - 基础 URL：`https://api.kimi.com/coding/v1`
  * - 必须发送 `User-Agent: KimiCLI/1.3`，服务端会校验 coding agent 白名单
  * - 禁止伪造 User-Agent（违反服务条款可能导致会员停权）
  */
@@ -238,7 +238,7 @@ function appendContinuationMessages(
       }
       messages.push({ role: 'assistant', content })
     } else if (contMsg.role === 'tool') {
-      // Anthropic: tool_result 是 user role 消息的 content block
+      // Anthropic 中，tool_result 属于 user 角色消息的 content block
       const content: AnthropicContentBlock[] = contMsg.results.map((result) => ({
         type: 'tool_result' as const,
         tool_use_id: result.toolCallId,
@@ -259,7 +259,7 @@ export class AnthropicAdapter implements ProviderAdapter {
     this.providerType = providerType
   }
 
-  /** 根据 provider 类型选择 URL 规范化方式 */
+  /** 根据供应商类型选择 URL 规范化方式 */
   private normalizeUrl(baseUrl: string): string {
     // DeepSeek / Kimi：baseUrl 本身已含非版本路径（如 /anthropic、/coding/v1），不追加 /v1
     if (

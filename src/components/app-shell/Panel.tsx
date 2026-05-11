@@ -1,26 +1,26 @@
 /**
- * Panel - Base container component for app panels
- * Provides consistent styling for panel containers
+ * Panel - 应用面板的基础容器组件
+ * 为面板容器提供一致的样式封装
  */
 
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 
 export interface PanelProps {
-  /** Panel sizing behavior */
+  /** 面板尺寸行为 */
   variant?: 'shrink' | 'grow'
-  /** Fixed width in pixels (only for shrink variant) */
+  /** 固定宽度（像素，仅 shrink 变体使用） */
   width?: number
-  /** Optional className for additional styling */
+  /** 可选 className，用于补充样式 */
   className?: string
-  /** Optional inline styles */
+  /** 可选内联样式 */
   style?: React.CSSProperties
-  /** Panel content */
+  /** 面板内容 */
   children: React.ReactNode
 }
 
 /**
- * Base panel container with consistent styling
+ * 带统一样式的基础面板容器
  */
 export function Panel({
   variant = 'grow',
@@ -32,9 +32,9 @@ export function Panel({
   return (
     <div
       className={cn(
-        // Base styles shared by all panels
+        // 所有面板共享的基础样式
         'h-full flex flex-col min-w-0 overflow-hidden',
-        // Variant-specific styles
+        // 各变体专属样式
         variant === 'grow' && 'flex-1',
         variant === 'shrink' && 'shrink-0',
         className
