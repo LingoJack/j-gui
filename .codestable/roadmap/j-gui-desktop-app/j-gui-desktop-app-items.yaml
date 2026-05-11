@@ -4,7 +4,7 @@ last_reviewed: 2026-05-09
 
 items:
   - slug: scaffold
-    description: 项目脚手架——Tauri v2 + React + Vite + TypeScript 初始化，Tailwind v4 + Jotai + shadcn/ui 安装，j_cli path dependency 配置，验证 cargo tauri dev 启动成功
+    description: 项目脚手架——Tauri v2 + React + Vite + TypeScript 初始化，Tailwind v4 + Jotai + shadcn/ui 安装，j-cli Rust crate 依赖配置，验证 cargo tauri dev 启动成功
     depends_on: []
     status: done
     feature: null

@@ -11,7 +11,7 @@ tags: [j-gui, jcli, decouple, channel, data-model, storage]
 
 ## 背景
 
-j-gui 当前通过 path dependency 直接依赖 jcli crate，Channel 管理直接操作 jcli 的 `AgentConfig.providers`。这导致：
+j-gui 当前直接依赖 jcli crate，Channel 管理直接操作 jcli 的 `AgentConfig.providers`。这导致：
 
 1. j-gui 的前端 `Channel` 类型必须适配 jcli 的 `ModelProvider` 结构，前端/后端数据模型不兼容
 2. j-gui 的开发周期受 jcli 数据结构变更影响
@@ -27,7 +27,7 @@ j-gui 当前通过 path dependency 直接依赖 jcli crate，Channel 管理直�
 2. **j-gui 写入 jcli 数据目录**——Channel/Provider、Alias、Skills/Hooks/MCP 启停状态等通过 jcli 现有的存储 API 写入 `~/.jdata/`，保证 CLI 用户看到相同状态
 3. **GUI 独有配置走自有存储**——窗口尺寸、主题偏好、UI 状态等纯 GUI 数据存 `~/.jgui/`
 4. **数据同源**：jcli 数据目录是 Channel/Alias/Skills/Hooks/MCP 的唯一真实来源，j-gui 读写均通过此路径
-5. **jcli crate 作为依赖方向不变**——j-gui 通过 path dependency 调用 jcli API，但仅调用公开接口
+5. **jcli crate 作为依赖方向不变**——j-gui 继续通过 Rust crate 依赖调用 jcli API，但仅调用公开接口
 
 ## 为什么选这个方案
 
@@ -40,7 +40,7 @@ j-gui 当前通过 path dependency 直接依赖 jcli crate，Channel 管理直�
 - **22 个导入点**跨越 **10 个模块路径**，影响 **10/14 j-gui Rust 文件 (71%)**
 - **无抽象层**：j-gui 直接导入 jcli 内部实现（`j_cli::command::chat::agent::api::call_llm_stream_async`、`j_cli::command::chat::infra::hook::types::HookEvent` 等）
 - **最脆弱点**：`HookEvent` 13 变体全量枚举匹配 + `ModelProvider` 裸字段构造 × 2 处
-- **path dependency 无 semver**：`j-cli = { path = "../../jcli" }`，jcli 任意改动立即触发 j-gui 编译错误
+- **历史上的本地源码路径依赖无 semver**：旧口径下 `j-cli = { path = "../../jcli" }` 会让 jcli 任意改动立即触发 j-gui 编译错误；当前默认依赖口径已切到 crates.io 版本
 - **长期解决方案**：Phase E `kernel-trait-abstraction`（#30）——⭐ 提前到 #27 之前执行。先建 trait 抽象层，后续所有 feature 基于 trait 实现。每延迟一个 feature，解耦成本成倍增加。
 
 ### 实施路径（#30）

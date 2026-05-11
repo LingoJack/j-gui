@@ -115,6 +115,9 @@ type ChatSendRequest = {
 - 前端 `ChatView` 组织出的字段，后端要么真实消费，要么从 UI 上移除，不允许长期“组装但不生效”
 - `send_message` 的输入口径必须与 `ipc.ts` 暴露口径一致
 - 流式事件字段名必须前后端一致，不允许一端写 `content`、另一端按 `delta` 读
+- Chat runtime 必须先做协议选路，再决定 endpoint；不同 `provider/base URL` 不能再一律硬打 `/chat/completions`
+- `test_channel_input` 与真实 Chat 发送必须共享同一套协议解析逻辑，不允许“测试连接通过但真实聊天 404”
+- 首批必须把 `openai-chat-completions`、`openai-responses`、`anthropic-messages` 作为明确受支持的协议族写进实现真相
 
 ### 5.2 Agent 中断必须只保留一条真协议
 
@@ -220,6 +223,8 @@ type SearchResult = {
 
 1. `stream-protocol-unify`
    - 统一 Chat / Agent 的事件字段、输入字段、中断响应口径
+   - 收口 Chat runtime 的协议选路，让测试连接与真实发送同口径
+   - 首批补齐 OpenAI Responses，终结固定 `/chat/completions` 的单一路径假设
    - 去掉旧协议长期并存状态
 2. `agent-history-replay-closure`
    - 把 Agent 历史回放、fork、rewind、move 等工作台操作补到真实后端闭环
@@ -288,4 +293,3 @@ type SearchResult = {
 
 - `2026-05-11`：基于 `project-current-state-audit`、`roadmap-implementation-truth-audit`、`capability-closure-gap-vs-proma` 三份 explore，重写 roadmap 目标、状态语义、主线分组与接口契约。主路线从“功能清单”切换为“能力闭环 + Proma 追平/超越”。
 - `2026-05-10`：建立 `j-gui-v1` roadmap，承接旧的 `j-gui-desktop-app`。
-

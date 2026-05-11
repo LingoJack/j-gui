@@ -23,7 +23,7 @@ related_architecture:
 
 为 j-cli（Rust CLI AI 工具）开发 Tauri 桌面端。j-cli 已有完整的 AI Chat/Agent 能力、配置管理、会话存储等——但只在终端里跑。桌面端通过 Tauri v2 把 j-cli 包装成 GUI 应用，前端按 Proma（Electron AI Agent 桌面应用）当前远程版本做 1:1 复刻，除明确不需要的功能外保持 UI 和功能一致。
 
-后端以 Rust crate 依赖方式集成 j-cli（`j_cli = { path = "../../j" }`），不复用 WS remote 协议。前端 React + TypeScript + Vite + Tailwind + Jotai。
+后端以 Rust crate 依赖方式集成 j-cli（当前以 crates.io 版本依赖为准），不复用 WS remote 协议。前端 React + TypeScript + Vite + Tailwind + Jotai。
 
 ## 2. 范围与明确不做
 

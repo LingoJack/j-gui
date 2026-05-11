@@ -200,24 +200,24 @@ items:
   - slug: stream-protocol-unify
     description: 统一 Chat / Agent 的输入、流式事件和中断回传协议，消除字段错位与旧协议长期并存
     depends_on: [channel-model-unify, kernel-trait-abstraction]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-11-stream-protocol-unify
     minimal_loop: true
-    notes: 覆盖 ChatSendInput 字段消费、Chat delta/content 口径、respond_agent_interrupt 统一化
+    notes: 覆盖 ChatSendInput 字段消费、Chat delta/content 口径、respond_agent_interrupt 统一化，并补齐 Chat runtime 协议选路、测试连接与真实发送同口径、OpenAI Responses 首批支持
 
   - slug: agent-history-replay-closure
     description: Agent 历史回放闭环——补齐 replay 数据源、fork、rewind、workspace move 与恢复后继续工作能力
     depends_on: [stream-protocol-unify, message-persistence]
-    status: planned
-    feature: null
+    status: in-progress
+    feature: 2026-05-12-agent-history-replay-closure
     minimal_loop: true
     notes: 当前与 Proma 的最高价值差距；这是 Agent 从“当前会话可用”升级到“长期工作台可信”的关键断点
 
   - slug: agent-runtime-stability-recovery
     description: Agent 运行时稳定性与恢复——超时、重试、中断、恢复后的状态一致性与可观测性
     depends_on: [stream-protocol-unify, agent-history-replay-closure]
-    status: planned
-    feature: null
+    status: in-progress
+    feature: 2026-05-12-agent-runtime-stability-recovery
     minimal_loop: false
     notes: 目标是显著降低日常使用中的断链和假恢复
 

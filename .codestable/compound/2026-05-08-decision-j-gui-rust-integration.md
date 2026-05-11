@@ -18,7 +18,7 @@ j-gui 需要调用 j-cli 的 AI Chat/Agent 能力（配置、Agent 循环、15+ 
 
 ## 决定
 
-Tauri 后端以 **Rust crate 依赖** 方式集成 j-cli，路径依赖 `j_cli = { path = "../../j" }`，**不复用** WS remote 协议。
+Tauri 后端以 **Rust crate 依赖** 方式集成 j-cli，当前以 crates.io 版本依赖为准，**不复用** WS remote 协议。
 
 ## 理由
 
@@ -33,13 +33,13 @@ Tauri 后端以 **Rust crate 依赖** 方式集成 j-cli，路径依赖 `j_cli =
 
 ## 影响
 
-- `src-tauri/Cargo.toml` 需添加 `j_cli = { path = "../../j" }`
+- `src-tauri/Cargo.toml` 需添加 `j-cli` crate 依赖
 - 后端代码可直接 `use j_cli::...` 访问所有公共模块
 - j-cli 的编译时间进入 j-gui 构建链路
 - j-cli 的 API 变更直接影响 j-gui 编译
 
 ## 相关文档
 
-- 上游项目：`E:\Coding\AI\j` (j-cli)
+- 上游项目：`j-cli` crate / 独立 j-cli 仓库
 - `2026-05-08-decision-j-gui-ipc-dataflow.md` — 集成方式决定了 IPC 协议选型
 - `2026-05-08-decision-j-gui-chat-engine.md` — ChatEngine 直接依赖 j_cli crate
