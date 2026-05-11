@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+## 项目概述
+
+j-gui 是一个基于 Tauri v2 的 AI 桌面应用，集成 Chat（多 Provider 对话）和 Agent（自主执行任务）双模式。后端 Rust Kernel 适配 j-cli crates.io 版本，前端使用 React 19 + Jotai 状态管理，通过 Tauri Commands + Channels 实现流式 IPC。
+
 ## CodeStable 工作流
 
 本项目使用 CodeStable 工程工作流编排。`.codestable/` 下有完整的需求/架构/roadmap/feature/沉淀体系。动手前：
@@ -16,28 +20,100 @@ CodeStable 工作流技能：`/cs-feat`（新功能）`/cs-issue`（修 bug）`/
 | 层      | 技术                                                                 |
 | ------- | -------------------------------------------------------------------- |
 | 桌面壳  | Tauri v2 (Rust)                                                      |
-| 前端    | React 19 + TypeScript + Vite + Tailwind v4 + Jotai + shadcn/ui       |
-| AI 后端 | j-cli（Rust crate path dependency `j-cli = { path = "../../j" }`） |
-| 包管理  | **bun**（非 npm/yarn/pnpm）                                    |
+| 前端    | React 19 + TypeScript + Vite 7 + Tailwind CSS 3 + Jotai + Radix UI/CVA（shadcn 风格组件） |
+| AI Runtime | Rust Tauri Kernel（适配 j-cli crates.io 版本）+ bun workspace 内的 `@jgui/*` 包 |
+| 包管理  | **bun workspaces**（非 npm/yarn/pnpm）                              |
 | IPC     | Tauri Commands (`invoke`) + Channels（流式）+ Events（全局通知）   |
+
+## IPC 通信架构
+
+类型定义 → Rust Command → Tauri Bridge → 前端 `invoke`：
+
+1. 共享类型：`@jgui/shared` 定义请求/响应类型与 IPC 常量
+2. Rust Command：`src-tauri/src/commands/` 下按领域分文件（`chat.rs`、`agent.rs`、`channels.rs` 等），通过 `#[tauri::command]` 暴露
+3. 前端调用：`src/lib/ipc.ts` 封装 `tryInvoke()`、`invoke()` 与 `Channel<T>` 订阅
+
+添加新 IPC 时需同步修改：`@jgui/shared` 类型 → Rust command 函数 → `src/lib/ipc.ts` 封装。
+
+流式链路：Chat / Agent 流式统一走 `Channel<T>`，并通过 `src/lib/ipc-stream-protocol.ts` 解码协议事件。
+
+当前已接通的主要 IPC 领域：Settings、Channels、Conversations、Chat Messaging、Agent Sessions、Agent Permissions、Agent Workspaces、Files、Chat Tools、System Prompts、Hooks、Config、MCP。
+
+补充边界：
+- `src/lib/ipc.ts` 中仍有少量前端预留 / 兜底接口；只有 `src-tauri/src/lib.rs` 已注册的 command 才算正式后端能力
+- 涉及 Runtime 状态或重初始化时，先核对 Tauri command 是否已注册，不要把前端 fallback 当成已落地功能
 
 ## 项目结构
 
 ```
-src/                    React 前端（atoms/ + components/ + lib/）
-src-tauri/              Rust 后端（commands/ + chat_engine.rs）
+packages/
+  shared/               @jgui/shared (v0.1.19) — 共享类型、IPC 常量、权限规则（零运行时依赖）
+  core/                 @jgui/core (v0.2.9) — AI Provider 适配器、代码高亮（Shiki）
+  ui/                   @jgui/ui (v0.1.3) — 共享 UI 组件（CodeBlock、MermaidBlock、useSmoothStream）
+src/                    React 前端（atoms/ + components/ + hooks/ + lib/）
+src-tauri/              Rust 后端（commands/ + kernel/ + agent_engine.rs）
 .codestable/            CodeStable 工作流产物
 ```
+
+包依赖方向：`ui → core → shared`；前端 `src/` 可引用全部三个 workspace 包。
 
 ## 关键约束
 
 - **启动开发环境**：`bun run tauri dev`（非 `cargo tauri dev` — CLI 未安装，用 bun 自带的 `@tauri-apps/cli`）
-- **Rust 检查**：`cargo check`（**零警告零错误**，`#![deny(warnings)]`）+ `cargo fmt` + `cargo clippy -- -D warnings`
-- **TypeScript 检查**：`bunx tsc --noEmit`
-- **测试（TDD 强制）**：`bun run test` + `cargo test` — 前端测试必须通过 vitest（`bun test` 不支持 jsdom，组件测试会失败）。实现前先写测试，任何新功能/修复必须有对应测试覆盖
-- **j-cli 源码**：`E:\Coding\AI\jcli`，j-gui 通过相对路径依赖 `j-cli = { path = "../../jcli" }`
+- **默认验收入口**：`bash scripts/check_lint.sh`。它是本仓库默认的合规检查入口，统一执行 `cargo fmt --check`、`cargo clippy -- -D warnings`、workspace 全量 TypeScript 检查、`bun run test`、`cargo test`，并补充 Rust 结构性约束扫描
+- **测试（TDD 强制）**：实现前先写测试；任何新功能/修复必须有对应测试覆盖。前端测试必须走 `bun run test`（`bun test` 不走 vitest 配置，组件测试因缺 jsdom 会失败）
+- **j-cli 依赖**：当前以 crates.io 版本依赖为准（见 `src-tauri/Cargo.toml`），不再默认使用本地源码路径依赖
 - **j-cli 数据目录**：`~/.jdata/`（由 `j_cli::constants` 定义）
 - **Agent 配置路径**：`~/.jdata/agent/data/agent_config.json`
+- **本地数据边界**：
+  - j-gui 与 j-cli 共享 `~/.jdata/` 下的 j-cli 数据（例如 Agent 配置、MCP 配置）
+  - j-gui 自身的 GUI 设置与用户档案由本地 JSON 文件持久化
+  - 修改数据路径相关逻辑时，先区分“j-cli 管理的数据”与“j-gui 自管的数据”
+- **状态管理**（Jotai Atoms，高频入口，非穷尽清单）：
+  - `app-mode.ts` / `active-view.ts`：应用模式与主视图切换
+  - `tab-atoms.ts` / `draft-session-atoms.ts`：标签页与草稿会话管理
+  - `chat-atoms.ts` / `chat-tool-atoms.ts`：Chat 会话、消息、流式状态、Chat Tool 状态
+  - `agent-atoms.ts` / `working-atoms.ts`：Agent 会话、流式状态、权限请求、Working 区
+  - `search-atoms.ts` / `shortcut-atoms.ts`：搜索面板与快捷键状态
+  - `system-prompt-atoms.ts` / `settings-tab.ts`：System Prompt 与设置导航
+  - `theme.ts` / `ui-preferences.ts` / `sidebar-atoms.ts` / `notifications.ts` / `environment.ts` / `user-profile.ts`：主题、界面偏好、侧边栏、通知、环境信息、用户档案
+- **Agent 集成架构**：
+  - 用户输入 → `src/lib/ipc.ts` (`sendAgentMessage`)
+  - Tauri Command → `AgentEngine`
+  - Claude CLI 子进程或 j-agent 适配层产出事件流
+  - `Channel<T>` 推送到前端
+  - `useGlobalAgentListeners`（全局 Hook）写入 Jotai atoms
+  - React UI 更新
+- **TypeScript 编码规约**（强制）：
+  - 新增代码禁止引入 `any`；触达的存量 `any` 优先一并收敛为明确的 `interface` / 类型
+  - 对象类型优先使用 `interface` 而非 `type`
+  - 仅类型导入使用 `import type`
+  - 路径别名统一使用 `@/` → `src/`
+- **注释约束**（强制）：
+  - 不删除原有注释；只有在注释与本次代码改动直接冲突、且必须同步修正时，才允许做最小化改动
+  - 新增或改写的注释默认使用中文；`TODO`、`FIXME`、`NOTE` 标签可保留英文关键字，但正文仍用中文
+  - 修改带注释的代码时，必须同时检查注释是否仍然为真；过期注释必须同步修正，不能放着误导后人
+  - 临时注释必须带触发条件或保留原因，避免出现无期限悬空备注
+  - 什么时候必须写注释：
+    - 非直观的业务约束、协议约束、兼容性分支、历史包袱或外部系统耦合点
+    - 容易误改的边界条件、状态机切换条件、持久化/流式/并发相关前提
+    - `unsafe`、绕过类型系统、手工资源管理、跨线程/跨进程桥接
+    - 公共 API、导出类型、会被别处复用的关键入口
+    - 临时 workaround、保留旧行为、为修 bug 增加但表面上不明显的防线
+  - 注释应该写什么：
+    - 这段代码为什么存在、依赖什么前提、不能随便改哪里
+    - 输入/输出中的关键约束、状态变化条件、失败后的影响范围
+    - 与其他模块、协议、配置文件、上游系统之间的对应关系
+    - 临时方案的触发条件、退出条件、后续应该清理到哪里
+    - `pub` API 的 `///` 文档注释用中文写，说明职责、关键输入输出或边界，不写空话
+    - `unsafe` 的 `// SAFETY:` 注释用中文写清为什么安全，不能只写“这里是安全的”
+  - 哪些注释属于坏注释，禁止新增：
+    - 逐行翻译代码的注释，例如“给变量赋值”“遍历数组”
+    - 空话注释，例如“处理数据”“执行逻辑”“初始化内容”
+    - 已经过期、与代码实际行为不一致、或者只描述旧实现的注释
+    - 用来掩盖看不懂代码的注释；这类情况应先简化代码，再决定是否需要注释
+    - 没有时间条件或清理条件的临时注释，例如“先这样”“后面再说”
+    - 英文正文注释；除非引用协议字段、日志关键字、错误字面量或标准术语
 - **Rust 编码规约**（强制，详见 `.codestable/compound/2026-05-08-decision-rust-coding-conventions.md`）：
   - `cargo fmt` + `cargo clippy -- -D warnings` 零告警
   - 命名：`PascalCase`（类型/Trait）、`snake_case`（函数/变量/模块）、`SCREAMING_SNAKE_CASE`（常量）
@@ -65,18 +141,21 @@ src-tauri/              Rust 后端（commands/ + chat_engine.rs）
 
 ### 任务完成验证（强制）
 
-**每个子代理任务/手动改动完成后，必须跑全量检查，不通过不算完成：**
+**每个子代理任务/手动改动完成后，必须先跑 `bash scripts/check_lint.sh`，不通过不算完成：**
 
-| 检查项 | 命令 | 要求 |
-|--------|------|------|
-| 前端测试 | `bun run test` | 全部通过，零失败 |
-| Rust 测试 | `cargo test --manifest-path src-tauri/Cargo.toml` | 全部通过，零失败 |
-| 前端类型检查 | `bunx tsc --noEmit` | 零错误（存量错误例外，但不新增） |
-| Rust 编译检查 | `cargo check --manifest-path src-tauri/Cargo.toml` | 零新告警 |
-| Rust 格式 | `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` | 格式正确 |
-| Rust Lint | `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` | 零告警 |
+| 结果类型 | 处理规则 |
+|---------|----------|
+| `FAIL` | 必须修复，不能标记完成 |
+| `WARN`（由本次改动引入） | 必须处理，不能把新告警留给后续 |
+| `WARN`（已确认是存量且与本次无关） | 可保留，但必须在汇报中点明 |
 
-**这些检查在子代理实现报告中必须逐项汇报，主控 agent 在标记任务完成前必须独立验证。**
+**脚本当前覆盖的硬门禁**：`cargo fmt --check`、`cargo clippy -- -D warnings`、root + `packages/core` + `packages/shared` + `packages/ui` 的 TypeScript 检查、`j_cli::` 单入口约束、`bun run test`、`cargo test`、`mod.rs` 禁用。
+
+**脚本当前覆盖的告警约束**：Rust 单文件行数、函数行数、函数参数过多、非 test `unwrap/expect`、`super::super::` 过深引用、公共 API 缺 `///`、`unsafe` 缺 `// SAFETY:`。
+
+**脚本外仍需单独遵守的约束**：`.codestable/` `.claude/` 不提交、注释不可擅删且新增注释默认中文、Chat/Agent 状态隔离、流式协议改动必须同时补前后端测试、以及需求本身要求的针对性测试/验证。
+
+**这些检查在子代理实现报告中必须按“脚本结果 + 额外人工验证”汇报，主控 agent 在标记任务完成前必须独立验证。**
 
 ---
 
