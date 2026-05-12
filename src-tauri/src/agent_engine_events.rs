@@ -171,14 +171,18 @@ fn parse_plan_event(value: &serde_json::Value) -> Vec<AgentEvent> {
 /// 把 j-agent agent loop 事件流发出的 JSON 字符串
 /// （由 adapter.rs 中的 `stream_msg_to_json_string` 生成）转换成一个或多个 AgentEvent。
 /// 同时会为当前会话补充 timeline 条目。
-pub(super) fn json_stream_msg_to_agent_events(json: &str, session_id: &str) -> Vec<AgentEvent> {
+pub(super) fn json_stream_msg_to_agent_events(
+    json: &str,
+    session_id: &str,
+    permission_mode: &str,
+) -> Vec<AgentEvent> {
     let value: serde_json::Value = match serde_json::from_str(json) {
         Ok(value) => value,
         Err(_) => return vec![],
     };
 
     match value["type"].as_str() {
-        Some("toolCallRequest") => parse_tool_call_request(&value, session_id),
+        Some("toolCallRequest") => parse_tool_call_request(&value, session_id, permission_mode),
         Some("done") => vec![AgentEvent::Done { total_tokens: 0 }],
         Some("error") => vec![AgentEvent::Error {
             message: value["message"].as_str().unwrap_or("未知错误").to_string(),
@@ -189,7 +193,11 @@ pub(super) fn json_stream_msg_to_agent_events(json: &str, session_id: &str) -> V
     }
 }
 
-fn parse_tool_call_request(value: &serde_json::Value, session_id: &str) -> Vec<AgentEvent> {
+fn parse_tool_call_request(
+    value: &serde_json::Value,
+    session_id: &str,
+    permission_mode: &str,
+) -> Vec<AgentEvent> {
     let Some(tools) = value["tools"].as_array() else {
         return Vec::new();
     };
@@ -204,13 +212,31 @@ fn parse_tool_call_request(value: &serde_json::Value, session_id: &str) -> Vec<A
             let tool_name = tool["name"].as_str().unwrap_or("").to_string();
             let tool_input = tool["arguments"].as_str().unwrap_or("{}").to_string();
             append_tool_call_timeline_item(session_id, &tool_id, &tool_name, &tool_input);
-            AgentEvent::ToolUse {
-                tool_id,
-                tool_name,
-                tool_input,
+            if let Some(kind) = interrupt_kind_for_tool(&tool_name, permission_mode) {
+                AgentEvent::Interrupt {
+                    interrupt_id: tool_id,
+                    kind: kind.to_string(),
+                    tool_name,
+                    tool_input,
+                }
+            } else {
+                AgentEvent::ToolUse {
+                    tool_id,
+                    tool_name,
+                    tool_input,
+                }
             }
         })
         .collect()
+}
+
+fn interrupt_kind_for_tool(tool_name: &str, permission_mode: &str) -> Option<&'static str> {
+    match tool_name {
+        "Ask" | "ask_user" | "AskUser" => Some("ask_user"),
+        "ExitPlanMode" | "plan" => Some("plan"),
+        _ if permission_mode != "bypassPermissions" => Some("permission"),
+        _ => None,
+    }
 }
 
 fn append_tool_call_timeline_item(

@@ -9,6 +9,7 @@ import App from './App'
 import { themeModeAtom, themeStyleAtom, systemIsDarkAtom, applyThemeToDOM, initializeTheme } from './atoms/theme'
 import {
   agentChannelIdAtom, agentModelIdAtom, agentChannelIdsAtom,
+  agentBackendModeAtom,
   agentWorkspacesAtom, currentAgentWorkspaceIdAtom, currentAgentSessionIdAtom,
   workspaceCapabilitiesVersionAtom, workspaceFilesVersionAtom,
   agentThinkingAtom, agentEffortAtom, agentMaxBudgetUsdAtom, agentMaxTurnsAtom,
@@ -67,6 +68,7 @@ function ThemeInitializer(): null {
 function AgentSettingsInitializer(): null {
   const setAgentChannelId = useSetAtom(agentChannelIdAtom)
   const setAgentModelId = useSetAtom(agentModelIdAtom)
+  const setAgentBackendMode = useSetAtom(agentBackendModeAtom)
   const setAgentChannelIds = useSetAtom(agentChannelIdsAtom)
   const setAgentWorkspaces = useSetAtom(agentWorkspacesAtom)
   const setCurrentWorkspaceId = useSetAtom(currentAgentWorkspaceIdAtom)
@@ -94,6 +96,9 @@ function AgentSettingsInitializer(): null {
       if (chatModel && !channelIds.has(chatModel.channelId)) store.set(selectedModelAtom, null)
       if (settings.agentChannelId && channelIds.has(settings.agentChannelId)) setAgentChannelId(settings.agentChannelId)
       if (settings.agentModelId) setAgentModelId(settings.agentModelId)
+      if (settings.agentBackendMode === 'claude-sdk' || settings.agentBackendMode === 'jagent') {
+        setAgentBackendMode(settings.agentBackendMode)
+      }
       if (settings.agentChannelIds?.length) setAgentChannelIds(settings.agentChannelIds.filter((id: string) => channelIds.has(id)))
       if (settings.agentThinking) setThinking(settings.agentThinking)
       if (settings.agentEffort) setEffort(settings.agentEffort)

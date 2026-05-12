@@ -262,6 +262,9 @@ fn insert_runtime_replaces_finished_slot_but_rejects_running_slot() {
         session_id,
         AgentBackend::JAgent {
             session_id: session_id.to_string(),
+            cancel_token: tokio_util::sync::CancellationToken::new(),
+            tool_result_tx: std::sync::mpsc::sync_channel(1).0,
+            user_message_tx: std::sync::mpsc::sync_channel(1).0,
             agent_handle: None,
             bridge_handle: None,
         },
@@ -272,6 +275,9 @@ fn insert_runtime_replaces_finished_slot_but_rejects_running_slot() {
         session_id,
         AgentBackend::JAgent {
             session_id: session_id.to_string(),
+            cancel_token: tokio_util::sync::CancellationToken::new(),
+            tool_result_tx: std::sync::mpsc::sync_channel(1).0,
+            user_message_tx: std::sync::mpsc::sync_channel(1).0,
             agent_handle: None,
             bridge_handle: None,
         },
@@ -283,6 +289,9 @@ fn insert_runtime_replaces_finished_slot_but_rejects_running_slot() {
         session_id,
         AgentBackend::JAgent {
             session_id: session_id.to_string(),
+            cancel_token: tokio_util::sync::CancellationToken::new(),
+            tool_result_tx: std::sync::mpsc::sync_channel(1).0,
+            user_message_tx: std::sync::mpsc::sync_channel(1).0,
             agent_handle: Some(std::thread::spawn(|| {
                 std::thread::sleep(std::time::Duration::from_millis(50))
             })),
@@ -297,6 +306,9 @@ fn insert_runtime_replaces_finished_slot_but_rejects_running_slot() {
         session_id,
         AgentBackend::JAgent {
             session_id: session_id.to_string(),
+            cancel_token: tokio_util::sync::CancellationToken::new(),
+            tool_result_tx: std::sync::mpsc::sync_channel(1).0,
+            user_message_tx: std::sync::mpsc::sync_channel(1).0,
             agent_handle: None,
             bridge_handle: None,
         },
@@ -304,4 +316,92 @@ fn insert_runtime_replaces_finished_slot_but_rejects_running_slot() {
     let err = insert_runtime(&mut runtimes, session_id, another_engine)
         .expect_err("should reject running slot");
     assert!(err.contains("已在运行中"));
+}
+
+#[test]
+fn ensure_runtime_idle_rejects_running_session() {
+    let session_id = "session-1";
+    let mut runtimes = std::collections::HashMap::new();
+    runtimes.insert(
+        session_id.to_string(),
+        AgentEngine::test_stub(
+            session_id,
+            AgentBackend::JAgent {
+                session_id: session_id.to_string(),
+                cancel_token: tokio_util::sync::CancellationToken::new(),
+                tool_result_tx: std::sync::mpsc::sync_channel(1).0,
+                user_message_tx: std::sync::mpsc::sync_channel(1).0,
+                agent_handle: Some(std::thread::spawn(|| {
+                    std::thread::sleep(std::time::Duration::from_millis(50))
+                })),
+                bridge_handle: Some(std::thread::spawn(|| {
+                    std::thread::sleep(std::time::Duration::from_millis(50))
+                })),
+            },
+        ),
+    );
+
+    let err = ensure_runtime_idle(&mut runtimes, session_id)
+        .expect_err("running session should reject rewind/fork style operations");
+    assert!(err.contains("仍在运行中"));
+}
+
+#[test]
+fn ensure_runtime_idle_allows_finished_session() {
+    let session_id = "session-1";
+    let mut runtimes = std::collections::HashMap::new();
+    runtimes.insert(
+        session_id.to_string(),
+        AgentEngine::test_stub(
+            session_id,
+            AgentBackend::JAgent {
+                session_id: session_id.to_string(),
+                cancel_token: tokio_util::sync::CancellationToken::new(),
+                tool_result_tx: std::sync::mpsc::sync_channel(1).0,
+                user_message_tx: std::sync::mpsc::sync_channel(1).0,
+                agent_handle: None,
+                bridge_handle: None,
+            },
+        ),
+    );
+
+    ensure_runtime_idle(&mut runtimes, session_id)
+        .expect("finished session should allow rewind/fork style operations");
+    assert!(
+        !runtimes.contains_key(session_id),
+        "finished runtime should be pruned before the operation proceeds"
+    );
+}
+
+#[test]
+fn resolve_cli_resume_state_prefers_current_sdk_session() {
+    let session_id = crate::agent_session::create_agent_session().expect("create session");
+    crate::agent_session::set_session_sdk_session_id(&session_id, Some("sdk-current".to_string()))
+        .expect("persist sdk session id");
+
+    let state = resolve_cli_resume_state(&session_id).expect("resolve resume state");
+    assert_eq!(
+        state,
+        CliResumeState {
+            resume_session_id: Some("sdk-current".to_string()),
+            fork_session: false,
+        }
+    );
+}
+
+#[test]
+fn resolve_cli_resume_state_uses_source_session_for_forks() {
+    let source_id = crate::agent_session::create_agent_session().expect("create source session");
+    crate::agent_session::set_session_sdk_session_id(&source_id, Some("sdk-source".to_string()))
+        .expect("persist source sdk session id");
+
+    let forked = crate::agent_session::fork_agent_session(&source_id, None).expect("fork session");
+    let state = resolve_cli_resume_state(&forked.id).expect("resolve fork resume state");
+    assert_eq!(
+        state,
+        CliResumeState {
+            resume_session_id: Some("sdk-source".to_string()),
+            fork_session: true,
+        }
+    );
 }

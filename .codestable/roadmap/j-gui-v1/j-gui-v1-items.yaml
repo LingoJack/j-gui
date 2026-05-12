@@ -1,6 +1,6 @@
 roadmap: j-gui-v1
 created: 2026-05-10
-last_reviewed: 2026-05-11
+last_reviewed: 2026-05-12
 
 items:
   # ===== Phase A: 基础底座与已证实闭环 =====
@@ -208,84 +208,84 @@ items:
   - slug: agent-history-replay-closure
     description: Agent 历史回放闭环——补齐 replay 数据源、fork、rewind、workspace move 与恢复后继续工作能力
     depends_on: [stream-protocol-unify, message-persistence]
-    status: in-progress
+    status: done
     feature: 2026-05-12-agent-history-replay-closure
     minimal_loop: true
-    notes: 当前与 Proma 的最高价值差距；这是 Agent 从“当前会话可用”升级到“长期工作台可信”的关键断点
+    notes: 2026-05-12 完成——history replay/fork/rewind/workspace move 已补 acceptance，Phase B 联合复验通过；继续恢复 hidden context 不在本项范围内
 
   - slug: agent-runtime-stability-recovery
     description: Agent 运行时稳定性与恢复——超时、重试、中断、恢复后的状态一致性与可观测性
     depends_on: [stream-protocol-unify, agent-history-replay-closure]
-    status: in-progress
+    status: done
     feature: 2026-05-12-agent-runtime-stability-recovery
     minimal_loop: false
-    notes: 目标是显著降低日常使用中的断链和假恢复
+    notes: 2026-05-12 完成——per-session runtime table、interrupt/stop 路由、slot 清理与继续使用一致性已补 acceptance，并通过 Phase B 联合复验
 
   # ===== Phase C: P1 体验与治理闭环 =====
   - slug: governance-bidirectional-sync
     description: 工作区治理双向同步——补齐 Skills / Hooks / MCP / workspace 配置的真实持久化与同步链路
     depends_on: [kernel-trait-abstraction]
-    status: in-progress
-    feature: null
+    status: done
+    feature: 2026-05-10-governance-bidirectional-sync
     minimal_loop: false
-    notes: 现有治理面已较完整，但 2026-05-11 快照下仍不应把所有子链路视为完全闭环
+    notes: 2026-05-12 完成——Skills / Hooks / MCP / workspace 治理真相已翻正；默认门禁 + 串行 ignored 持久化验收已执行，Skills 启停继续复用共享 disabled_skills；后续门禁收紧转入 #runtime-observability-gates
 
   - slug: chat-tools-ui
     description: Chat Tools 管理 UI 基线
     depends_on: [governance-bidirectional-sync]
-    status: in-progress
+    status: done
     feature: null
     minimal_loop: false
-    notes: UI 已有，但 ToolSettings / 运行时闭环仍需 #toolsettings-runtime-closure 收口
+    notes: ToolSettings / ToolSelector UI 基线已存在，并已随 #toolsettings-runtime-closure 收口为真实可用入口
 
   - slug: toolsettings-runtime-closure
     description: ToolSettings / Chat Tools 运行时闭环——工具列表、启停、配置、校验与真实 runtime 生效一致
     depends_on: [governance-bidirectional-sync, stream-protocol-unify, chat-tools-ui]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-12-toolsettings-runtime-closure
     minimal_loop: false
-    notes: 解决“设置页存在但后端注册/运行时行为未完全证实”的问题
+    notes: 2026-05-12 完成——ToolSettings / ToolSelector 继续共用 list_chat_tools / set_tool_enabled，全局工具真相与 Chat runtime 口径已统一，不再透传 enabledToolIds 伪闭环字段
 
   - slug: search-content-closure
     description: 搜索内容闭环——从标题搜索升级到消息内容搜索、命中预览、消息锚点打开与跨模式一致性
     depends_on: [message-persistence]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-12-search-content-closure
     minimal_loop: false
-    notes: 当前标题搜索可用，但内容搜索仍缺稳定后端闭环证据
+    notes: 2026-05-12 完成——Chat 正式补上 search_conversation_messages，SearchDialog 继续通过 messageId 锚点打开目标消息，requirement/roadmap/acceptance 已同步到内容搜索当前真相
 
   - slug: session-archive
     description: 会话归档与归档视图一致性
     depends_on: [search-content-closure, agent-history-replay-closure]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-12-session-archive
     minimal_loop: false
-    notes: 放在搜索与回放闭环之后推进，避免归档成为新的伪闭环入口
+    notes: 2026-05-12 完成——Chat / Agent 归档命令、归档视图与 SearchDialog archived 标记已按搜索/回放可信前提收口，并同步翻正 roadmap 真相
 
   # ===== Phase D: P1 质量与 Proma 证据收口 =====
   - slug: runtime-observability-gates
     description: 关键闭环的错误暴露、回归测试与验收门禁
     depends_on: [stream-protocol-unify, agent-runtime-stability-recovery, toolsettings-runtime-closure, search-content-closure]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-12-runtime-observability-gates
     minimal_loop: false
-    notes: 重点覆盖 Agent history replay、message-content search、ToolSettings runtime closure 三个高风险域
+    notes: 2026-05-12 完成——默认 check_lint 门禁已显式绑定 replay/search/toolsettings 三个高风险域的关键回归锚点，并补 acceptance 收口为可复用的质量证据输入
 
   - slug: proma-parity-evidence-pass
     description: Proma 对标证据收口——截图、录屏、验收记录与代码证据统一
     depends_on: [agent-history-replay-closure, toolsettings-runtime-closure, search-content-closure, runtime-observability-gates]
-    status: in-progress
-    feature: null
+    status: done
+    feature: 2026-05-12-proma-parity-evidence-pass
     minimal_loop: false
-    notes: 保留原有证据收集方向，但以后只在关键闭环完成后再推进通过判定
+    notes: 2026-05-12 完成——已建立新的 2026-05-12 parity 证据目录，显式记录输入漂移并用真实的 Pass/Partial/Fail 框架替换旧的过度乐观结论；当前完成的是证据收口，不代表所有 parity 项都已判 Pass
 
   - slug: tdd-coverage
     description: 测试与规约门禁升级——从“已有大量测试”升级到“能真正挡住高价值闭环回归”
     depends_on: [runtime-observability-gates]
-    status: in-progress
-    feature: null
+    status: done
+    feature: 2026-05-12-tdd-coverage
     minimal_loop: false
-    notes: 旧口径过于乐观；当前改为持续收口项，重点看高价值闭环而不是总数
+    notes: 2026-05-12 完成——已按当前代码真相翻正旧 coverage 口径，并补 chat 命令层的会话生命周期与 stop-generation 状态锚点；本项完成代表建立持续收口基线，不代表全仓命令层测试已补平
 
   # ===== Phase E: P2 自我开发闭环与超越 Proma =====
   - slug: agent-engine-jagent

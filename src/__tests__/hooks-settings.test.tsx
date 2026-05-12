@@ -106,6 +106,17 @@ describe('HooksSettings', () => {
     expect(screen.getByText(/尚未注册任何钩子/)).toBeInTheDocument()
   })
 
+  it('shows explicit error state when hook loading fails', async () => {
+    ;(ipc.listHooks as any).mockRejectedValue(new Error('hook backend unavailable'))
+
+    render(<HooksSettings />)
+
+    await waitFor(() => {
+      expect(screen.getByText('加载钩子配置失败')).toBeInTheDocument()
+    })
+    expect(screen.getByText('hook backend unavailable')).toBeInTheDocument()
+  })
+
   it('handles multiple hooks in the same event group', async () => {
     const multiHooks = [
       { ...mockHooks[0] },

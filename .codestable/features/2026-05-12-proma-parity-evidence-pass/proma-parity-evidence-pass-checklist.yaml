@@ -1,0 +1,57 @@
+feature: 2026-05-12-proma-parity-evidence-pass
+roadmap: j-gui-v1
+roadmap_item: proma-parity-evidence-pass
+created: 2026-05-12
+status: done
+
+steps:
+  - id: step-1
+    paradigm: docs
+    description: "建立 `.codestable/acceptance/proma-parity/2026-05-12/` 证据目录和 index 骨架，记录基线信息与缺失输入观察项"
+    exit: 证据目录和 index 初稿存在
+    status: done
+
+  - id: step-2
+    paradigm: audit
+    description: "按区域收集实现锚点与自动化证据，优先消费 runtime-observability-gates 的质量结论"
+    exit: 至少 6 个区域有实现证据草稿
+    status: done
+
+  - id: step-3
+    paradigm: acceptance
+    description: "为自动化不能证明的区域补手动验收记录模板和操作步骤"
+    exit: 各区域都有可执行的行为证据方案
+    status: done
+
+  - id: step-4
+    paradigm: docs
+    description: "输出区域级证据文件与 `gaps.md`，给出 Pass/Partial/Fail/Blocked/Excluded 结论"
+    exit: 区域记录和缺口汇总初稿完成
+    status: done
+
+  - id: step-5
+    paradigm: verification
+    description: "运行默认门禁，确认本轮 evidence 收口未破坏仓库约束"
+    exit: bash scripts/check_lint.sh 通过
+    status: done
+
+checks:
+  - id: check-evidence-shape
+    target: step-1
+    description: "证据输出必须落在 `.codestable/acceptance/proma-parity/{date}/`，不能只留在 feature acceptance 里"
+    status: passed
+
+  - id: check-two-layer-proof
+    target: step-2
+    description: "每个区域结论都要同时有实现证据和行为证据，不能只引用代码"
+    status: passed
+
+  - id: check-gap-honesty
+    target: step-4
+    description: "仍然是 Partial/Fail/Blocked 的条目必须如实保留，并汇总到 gaps.md"
+    status: passed
+
+  - id: check-input-drift
+    target: step-1
+    description: "缺失的 parity requirement/spec/matrix 输入必须作为观察项显式记录，不能静默忽略"
+    status: passed

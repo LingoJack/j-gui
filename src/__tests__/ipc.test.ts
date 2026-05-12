@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import * as ipc from '@/lib/ipc'
-import { CHAT_IPC_CHANNELS } from '@jgui/shared'
+import { AGENT_IPC_CHANNELS, CHAT_IPC_CHANNELS } from '@jgui/shared'
 import { decodeChatStreamEvent, decodeAgentStreamEvent } from '@/lib/ipc-stream-protocol'
 
 describe('IPC module — settings', () => {
@@ -81,6 +81,10 @@ describe('IPC module — channels', () => {
     )
   })
 
+  it('does not expose placeholder queueAgentMessage API', () => {
+    expect('queueAgentMessage' in ipc).toBe(false)
+  })
+
   it('testMcpServer forwards to the backend command', async () => {
     await vi.resetModules()
 
@@ -103,10 +107,85 @@ describe('IPC module — channels', () => {
     await vi.resetModules()
   })
 
-  it('testMemoryConnection fails fast when the backend command is unavailable', async () => {
-    await expect(async () => ipc.testMemoryConnection({ provider: 'demo' })).rejects.toThrow(
-      "Tauri command 'test_memory_connection' not available"
+  it('does not expose placeholder testMemoryConnection API', () => {
+    expect('testMemoryConnection' in ipc).toBe(false)
+  })
+
+  it('governance IPC wrappers surface workspace capability failures', async () => {
+    await expect(async () => ipc.getWorkspaceCapabilities('demo-workspace')).rejects.toThrow(
+      'Tauri not available in test'
     )
+    await expect(async () => ipc.getWorkspaceMcpConfig('demo-workspace')).rejects.toThrow(
+      'Tauri not available in test'
+    )
+    await expect(async () => ipc.getWorkspaceSkills('demo-workspace')).rejects.toThrow(
+      'Tauri not available in test'
+    )
+  })
+
+  it('governance IPC wrappers surface skill and hook failures', async () => {
+    await expect(async () => ipc.getOtherWorkspaceSkills('demo-workspace')).rejects.toThrow(
+      'Tauri not available in test'
+    )
+    await expect(async () => ipc.readSkillContent('demo-workspace', 'demo-skill')).rejects.toThrow(
+      'Tauri not available in test'
+    )
+    await expect(async () => ipc.listHooks()).rejects.toThrow(
+      'Tauri not available in test'
+    )
+  })
+
+  it('governance IPC does not expose placeholder updateSkillFromSource API', () => {
+    expect('updateSkillFromSource' in ipc).toBe(false)
+    expect('UPDATE_SKILL_FROM_SOURCE' in AGENT_IPC_CHANNELS).toBe(false)
+  })
+
+  it('workspace governance writes emit capability and file change events', async () => {
+    await vi.resetModules()
+
+    const invokeMock = vi.fn(async () => undefined)
+    vi.doMock('@tauri-apps/api/core', () => ({
+      invoke: invokeMock,
+      Channel: class ChannelMock {},
+    }))
+
+    const freshIpc = await import('@/lib/ipc')
+    const capabilitiesCb = vi.fn()
+    const filesCb = vi.fn()
+    const cleanupCapabilities = freshIpc.onCapabilitiesChanged(capabilitiesCb)
+    const cleanupFiles = freshIpc.onWorkspaceFilesChanged(filesCb)
+
+    await freshIpc.saveWorkspaceMcpConfig('demo-workspace', { servers: {} })
+    await freshIpc.toggleWorkspaceSkill('demo-workspace', 'demo-skill', true)
+    await freshIpc.writeSkillContent('demo-workspace', 'demo-skill', '# updated')
+    await freshIpc.copySkillToWorkspace('/source/dir', 'demo-workspace', 'copied-skill')
+
+    expect(capabilitiesCb).toHaveBeenCalledTimes(4)
+    expect(filesCb).toHaveBeenCalledTimes(2)
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'save_workspace_mcp_config', {
+      workspaceSlug: 'demo-workspace',
+      config: { servers: {} },
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'toggle_workspace_skill', {
+      workspaceSlug: 'demo-workspace',
+      skillSlug: 'demo-skill',
+      enabled: true,
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'write_skill_content', {
+      workspaceSlug: 'demo-workspace',
+      skillSlug: 'demo-skill',
+      content: '# updated',
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(4, 'copy_skill_to_workspace', {
+      sourceDir: '/source/dir',
+      workspaceSlug: 'demo-workspace',
+      skillSlug: 'copied-skill',
+    })
+
+    cleanupCapabilities()
+    cleanupFiles()
+    vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
   })
 
   it('getAgentSessionSDKMessages surfaces backend replay failures instead of synthesizing fallback', async () => {
@@ -127,6 +206,73 @@ describe('IPC module — channels', () => {
     await expect(freshIpc.getAgentSessionSDKMessages('agent-replay')).rejects.toThrow(
       "Tauri command 'get_agent_session_sdk_messages' not available"
     )
+
+    vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
+  })
+
+  it('searchAgentSessionMessages surfaces backend failures instead of synthesizing session replay fallback', async () => {
+    await vi.resetModules()
+
+    const invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'search_agent_session_messages') {
+        throw new Error('agent search unavailable')
+      }
+      return undefined
+    })
+    vi.doMock('@tauri-apps/api/core', () => ({
+      invoke: invokeMock,
+      Channel: class ChannelMock {},
+    }))
+
+    const freshIpc = await import('@/lib/ipc')
+    await expect(freshIpc.searchAgentSessionMessages('matched')).rejects.toThrow(
+      'agent search unavailable'
+    )
+
+    expect(invokeMock).toHaveBeenCalledWith('search_agent_session_messages', { query: 'matched' })
+
+    vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
+  })
+
+  it('searchConversationMessages uses the backend command as the only content-search source', async () => {
+    await vi.resetModules()
+
+    const invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'search_conversation_messages') {
+        return [{
+          conversationId: 'chat-1',
+          conversationTitle: 'Search title',
+          messageId: 'chat-index-0',
+          role: 'assistant',
+          snippet: 'matched text',
+          matchStart: 0,
+          matchLength: 7,
+          archived: false,
+        }]
+      }
+      return undefined
+    })
+    vi.doMock('@tauri-apps/api/core', () => ({
+      invoke: invokeMock,
+      Channel: class ChannelMock {},
+    }))
+
+    const freshIpc = await import('@/lib/ipc')
+    const result = await freshIpc.searchConversationMessages('matched')
+
+    expect(result).toEqual([{
+      conversationId: 'chat-1',
+      conversationTitle: 'Search title',
+      messageId: 'chat-index-0',
+      role: 'assistant',
+      snippet: 'matched text',
+      matchStart: 0,
+      matchLength: 7,
+      archived: false,
+    }])
+    expect(invokeMock).toHaveBeenCalledWith('search_conversation_messages', { query: 'matched' })
 
     vi.doUnmock('@tauri-apps/api/core')
     await vi.resetModules()
@@ -568,10 +714,6 @@ describe('IPC module — agent', () => {
       userMessage: 'hello',
       channelId: 'channel-a',
       modelId: 'model-a',
-      workspaceId: 'workspace-a',
-      additionalDirectories: ['E:/extra'],
-      mentionedSkills: ['skill-a'],
-      mentionedMcpServers: ['mcp-a'],
       permissionModeOverride: 'plan',
       startedAt: 123,
     })
@@ -602,6 +744,8 @@ describe('IPC module — agent', () => {
         channelId: 'channel-a',
         modelId: 'model-a',
         permissionModeOverride: 'plan',
+        useJagent: false,
+        userMessage: undefined,
       },
       onEvent: channelInstances[0],
     })
@@ -614,6 +758,125 @@ describe('IPC module — agent', () => {
 
     cleanup()
     vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
+  })
+
+  it('sendAgentMessage starts jagent mode with the first user message and keeps canonical follow-up sends', async () => {
+    await vi.resetModules()
+
+    const channelInstances: Array<{ onmessage?: (event: unknown) => void }> = []
+    const invokeMock = vi.fn(async () => undefined)
+    vi.doMock('@tauri-apps/api/core', () => {
+      class ChannelMock {
+        onmessage?: (event: unknown) => void
+        constructor() {
+          channelInstances.push(this)
+        }
+      }
+
+      return {
+        invoke: invokeMock,
+        Channel: ChannelMock,
+      }
+    })
+
+    const freshIpc = await import('@/lib/ipc')
+
+    await freshIpc.sendAgentMessage({
+      sessionId: 'agent-jagent',
+      userMessage: 'hello jagent',
+      channelId: 'channel-a',
+      backendMode: 'jagent',
+    })
+    await freshIpc.sendAgentMessage({
+      sessionId: 'agent-jagent',
+      userMessage: 'follow up jagent',
+      channelId: 'channel-a',
+      backendMode: 'jagent',
+    })
+
+    expect(channelInstances).toHaveLength(1)
+    expect(invokeMock.mock.calls).toEqual([
+      ['start_agent', {
+        input: {
+          sessionId: 'agent-jagent',
+          channelId: 'channel-a',
+          modelId: undefined,
+          permissionModeOverride: 'bypassPermissions',
+          useJagent: true,
+          userMessage: 'hello jagent',
+        },
+        onEvent: channelInstances[0],
+      }],
+      ['send_agent_message', {
+        input: {
+          sessionId: 'agent-jagent',
+          userMessage: 'follow up jagent',
+        },
+      }],
+    ])
+
+    vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
+  })
+
+  it('stopAgent marks the run as user-stopped before backend teardown resolves', async () => {
+    await vi.resetModules()
+
+    const channelInstances: Array<{ onmessage?: (event: unknown) => void }> = []
+    const completeCb = vi.fn()
+    let finishStop: (() => void) | null = null
+
+    vi.doMock('@tauri-apps/api/core', () => {
+      class ChannelMock {
+        onmessage?: (event: unknown) => void
+        constructor() {
+          channelInstances.push(this)
+        }
+      }
+
+      return {
+        invoke: vi.fn(async (cmd: string) => {
+          if (cmd === 'start_agent') return undefined
+          if (cmd === 'send_agent_message') return undefined
+          if (cmd === 'stop_agent') {
+            channelInstances[0]?.onmessage?.({
+              event: 'done',
+              data: { total_tokens: 2, result_subtype: 'success' },
+            })
+            await new Promise<void>((resolve) => {
+              finishStop = resolve
+            })
+            return undefined
+          }
+          return undefined
+        }),
+        Channel: ChannelMock,
+      }
+    })
+
+    const freshIpc = await import('@/lib/ipc')
+    const cleanup = freshIpc.onAgentStreamComplete(completeCb)
+
+    await freshIpc.sendAgentMessage({
+      sessionId: 'agent-stop-race',
+      userMessage: 'first',
+      channelId: 'channel-a',
+      startedAt: 1001,
+    })
+
+    const stopPromise = freshIpc.stopAgent('agent-stop-race')
+    expect(completeCb).toHaveBeenCalledWith({
+      sessionId: 'agent-stop-race',
+      startedAt: 1001,
+      stoppedByUser: true,
+      resultSubtype: 'success',
+    })
+    finishStop?.()
+    await stopPromise
+
+    vi.doUnmock('@tauri-apps/api/core')
+    cleanup()
     await vi.resetModules()
   })
 
@@ -1141,6 +1404,41 @@ describe('IPC module — event subscriptions', () => {
           sessionId: 'chat-1',
           content: 'hello',
           protocolHint: 'openai-responses',
+        }),
+      })
+    )
+
+    vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
+  })
+
+  it('sendMessage no longer forwards enabledToolIds that backend does not consume', async () => {
+    await vi.resetModules()
+
+    const invokeMock = vi.fn(async () => undefined)
+    vi.doMock('@tauri-apps/api/core', () => {
+      class ChannelMock {
+        onmessage?: (event: unknown) => void
+      }
+
+      return {
+        invoke: invokeMock,
+        Channel: ChannelMock,
+      }
+    })
+
+    const freshIpc = await import('@/lib/ipc')
+    await freshIpc.sendMessage({
+      sessionId: 'chat-1',
+      content: 'hello',
+      enabledToolIds: ['web-search'],
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      'send_message',
+      expect.objectContaining({
+        request: expect.not.objectContaining({
+          enabledToolIds: expect.anything(),
         }),
       })
     )

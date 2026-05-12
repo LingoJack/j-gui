@@ -70,6 +70,8 @@ pub struct AgentSessionInfo {
     #[serde(default)]
     pub permission_mode: Option<String>,
     #[serde(default)]
+    pub backend_mode: Option<String>,
+    #[serde(default)]
     pub fork_source_dir: Option<String>,
     #[serde(default)]
     pub fork_source_sdk_session_id: Option<String>,
@@ -194,6 +196,7 @@ pub fn create_agent_session_with_meta(input: CreateSessionMetaInput) -> Result<S
         if let Some(mode) = input.permission_mode {
             meta.permission_mode = Some(mode);
         }
+        meta.backend_mode = input.backend_mode;
         meta.fork_source_dir = input.fork_source_dir;
         meta.fork_source_sdk_session_id = input.fork_source_sdk_session_id;
         meta.resume_at_message_uuid = input.resume_at_message_uuid;
@@ -358,6 +361,7 @@ pub fn list_agent_sessions() -> Result<Vec<AgentSessionInfo>, String> {
             manual_working: meta.manual_working,
             stopped_by_user: meta.stopped_by_user,
             permission_mode: meta.permission_mode.clone(),
+            backend_mode: meta.backend_mode.clone(),
             fork_source_dir: meta.fork_source_dir.clone(),
             fork_source_sdk_session_id: meta.fork_source_sdk_session_id.clone(),
             resume_at_message_uuid: meta.resume_at_message_uuid.clone(),
@@ -459,6 +463,17 @@ pub fn update_session_permission_mode(session_id: &str, mode: &str) -> Result<()
     Ok(())
 }
 
+/// 更新指定 Agent 会话最近一次实际运行所使用的后端模式。
+pub fn set_session_backend_mode(
+    session_id: &str,
+    backend_mode: Option<&str>,
+) -> Result<(), String> {
+    update_session_meta(session_id, |meta| {
+        meta.backend_mode = backend_mode.map(ToString::to_string);
+    })?;
+    Ok(())
+}
+
 /// 更新会话归属的工作区 ID。
 pub fn set_session_workspace(session_id: &str, workspace_id: Option<String>) -> Result<(), String> {
     update_session_meta(session_id, |meta| {
@@ -511,6 +526,7 @@ pub fn fork_agent_session(
         channel_id: source_meta.channel_id.clone(),
         workspace_id: source_meta.workspace_id.clone(),
         permission_mode: source_meta.permission_mode.clone(),
+        backend_mode: source_meta.backend_mode.clone(),
         fork_source_dir: Some(session_dir(session_id).to_string_lossy().to_string()),
         fork_source_sdk_session_id: source_meta.sdk_session_id.clone(),
         resume_at_message_uuid: None,

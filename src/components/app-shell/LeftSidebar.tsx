@@ -180,6 +180,8 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
 
   // 工作区能力（MCP + 技能计数）
   const [capabilities, setCapabilities] = React.useState<WorkspaceCapabilities | null>(null)
+  const [capabilitiesError, setCapabilitiesError] = React.useState<string | null>(null)
+  const lastCapabilitiesErrorRef = React.useRef<string | null>(null)
   const capabilitiesVersion = useAtomValue(workspaceCapabilitiesVersionAtom)
 
   // 标签页状态
@@ -299,15 +301,44 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   React.useEffect(() => {
     if (!currentWorkspaceSlug || mode !== 'agent') {
       setCapabilities(null)
+      setCapabilitiesError(null)
+      lastCapabilitiesErrorRef.current = null
       return
     }
-    Promise.all([
+    Promise.allSettled([
       ipc.getWorkspaceCapabilities(currentWorkspaceSlug),
-      ipc.listMcpServers().catch(() => []),
-      ipc.scanGlobalSkills().catch(() => []),
-      ipc.listSkills().catch(() => []),
+      ipc.listMcpServers(),
+      ipc.scanGlobalSkills(),
+      ipc.listSkills(),
     ])
-      .then(([workspaceCapabilities, jcliMcpServers, globalSkills, jcliSkills]) => {
+      .then(([workspaceCapabilitiesResult, jcliMcpServersResult, globalSkillsResult, jcliSkillsResult]) => {
+        if (
+          workspaceCapabilitiesResult.status !== 'fulfilled' ||
+          jcliMcpServersResult.status !== 'fulfilled' ||
+          globalSkillsResult.status !== 'fulfilled' ||
+          jcliSkillsResult.status !== 'fulfilled'
+        ) {
+          const firstFailure = [
+            workspaceCapabilitiesResult,
+            jcliMcpServersResult,
+            globalSkillsResult,
+            jcliSkillsResult,
+          ].find((result) => result.status === 'rejected')
+          const message = firstFailure?.reason instanceof Error ? firstFailure.reason.message : '未知错误'
+          console.error('[LeftSidebar] 加载工作区能力失败:', firstFailure?.reason)
+          setCapabilities(null)
+          setCapabilitiesError(message)
+          if (lastCapabilitiesErrorRef.current !== message) {
+            lastCapabilitiesErrorRef.current = message
+            toast.error('加载工作区能力失败', { description: message })
+          }
+          return
+        }
+
+        const workspaceCapabilities = workspaceCapabilitiesResult.value
+        const jcliMcpServers = jcliMcpServersResult.value
+        const globalSkills = globalSkillsResult.value
+        const jcliSkills = jcliSkillsResult.value
         const mergedMcp = new Map<string, WorkspaceCapabilities['mcpServers'][number]>(
           workspaceCapabilities.mcpServers.map((server) => [server.name, server]),
         )
@@ -316,7 +347,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
             mergedMcp.set(server.name, {
               name: server.name,
               enabled: !server.disabled,
-              type: server.transport,
+              type: server.transport as WorkspaceCapabilities['mcpServers'][number]['type'],
             })
           }
         }
@@ -340,8 +371,19 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
           mcpServers: [...mergedMcp.values()],
           skills: [...mergedSkills.values()],
         })
+        setCapabilitiesError(null)
+        lastCapabilitiesErrorRef.current = null
       })
-      .catch(console.error)
+      .catch((error) => {
+        console.error('[LeftSidebar] 加载工作区能力失败:', error)
+        setCapabilities(null)
+        const message = error instanceof Error ? error.message : '未知错误'
+        setCapabilitiesError(message)
+        if (lastCapabilitiesErrorRef.current !== message) {
+          lastCapabilitiesErrorRef.current = message
+          toast.error('加载工作区能力失败', { description: message })
+        }
+      })
   }, [currentWorkspaceSlug, mode, activeView, capabilitiesVersion])
 
   /** 置顶对话列表（仅活跃模式显示，排除草稿） */
@@ -1074,6 +1116,23 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">点击配置 MCP 与 Skills</TooltipContent>
+          </Tooltip>
+        </div>
+      )}
+
+      {mode === 'agent' && !capabilities && capabilitiesError && (
+        <div className="px-3 pb-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => { setSettingsTab('agent'); setSettingsOpen(true) }}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-[10px] text-[12px] text-amber-600 hover:bg-amber-500/10 transition-colors titlebar-no-drag"
+              >
+                <Plug size={13} />
+                <span className="truncate">能力加载失败</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">{capabilitiesError}</TooltipContent>
           </Tooltip>
         </div>
       )}

@@ -24,6 +24,8 @@ pub(crate) struct AgentSessionMetaRecord {
     #[serde(default)]
     pub permission_mode: Option<String>,
     #[serde(default)]
+    pub backend_mode: Option<String>,
+    #[serde(default)]
     pub fork_source_dir: Option<String>,
     #[serde(default)]
     pub fork_source_sdk_session_id: Option<String>,
@@ -37,6 +39,7 @@ pub(crate) struct CreateSessionMetaInput {
     pub channel_id: Option<String>,
     pub workspace_id: Option<String>,
     pub permission_mode: Option<String>,
+    pub backend_mode: Option<String>,
     pub fork_source_dir: Option<String>,
     pub fork_source_sdk_session_id: Option<String>,
     pub resume_at_message_uuid: Option<String>,

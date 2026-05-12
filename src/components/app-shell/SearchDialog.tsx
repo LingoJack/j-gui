@@ -128,6 +128,7 @@ export function SearchDialog(): React.ReactElement {
   const [selectedIndex, setSelectedIndex] = React.useState(0)
   const [contentResults, setContentResults] = React.useState<ContentResult[]>([])
   const [contentLoading, setContentLoading] = React.useState(false)
+  const [contentError, setContentError] = React.useState<string | null>(null)
   const inputRef = React.useRef<HTMLInputElement>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
   const isComposingRef = React.useRef(false)
@@ -194,59 +195,67 @@ export function SearchDialog(): React.ReactElement {
     if (!searchQuery || searchQuery.length < 2) {
       setContentResults([])
       setContentLoading(false)
+      setContentError(null)
       return
     }
 
     setContentLoading(true)
+    setContentError(null)
     let cancelled = false
 
     const timer = setTimeout(async () => {
       try {
-        const [chatResults, agentResults] = await Promise.all([
+        const [chatResults, agentResults] = await Promise.allSettled([
           ipc.searchConversationMessages(searchQuery),
           ipc.searchAgentSessionMessages(searchQuery),
         ])
         if (cancelled) return
 
-        const titleIds = new Set(titleResults.map((t) => t.id))
+        const chatContent: ContentResult[] = chatResults.status === 'fulfilled'
+          ? chatResults.value.map((r) => ({
+              id: r.conversationId,
+              title: r.conversationTitle,
+              type: 'chat' as const,
+              messageId: r.messageId,
+              snippet: r.snippet,
+              matchStart: r.matchStart,
+              matchLength: r.matchLength,
+              archived: r.archived,
+            }))
+          : []
 
-        const chatContent: ContentResult[] = (chatResults as MessageSearchResult[])
-          .filter((r) => !titleIds.has(r.conversationId))
-          .map((r) => ({
-            id: r.conversationId,
-            title: r.conversationTitle,
-            type: 'chat' as const,
-            messageId: r.messageId,
-            snippet: r.snippet,
-            matchStart: r.matchStart,
-            matchLength: r.matchLength,
-            archived: r.archived,
-          }))
+        const agentContent: ContentResult[] = agentResults.status === 'fulfilled'
+          ? agentResults.value.map((r) => ({
+              id: r.sessionId,
+              title: r.sessionTitle,
+              type: 'agent' as const,
+              messageId: r.messageId,
+              snippet: r.snippet,
+              matchStart: r.matchStart,
+              matchLength: r.matchLength,
+              archived: r.archived,
+            }))
+          : []
 
-        const agentContent: ContentResult[] = (agentResults as AgentMessageSearchResult[])
-          .filter((r) => !titleIds.has(r.sessionId))
-          .map((r) => ({
-            id: r.sessionId,
-            title: r.sessionTitle,
-            type: 'agent' as const,
-            messageId: r.messageId,
-            snippet: r.snippet,
-            matchStart: r.matchStart,
-            matchLength: r.matchLength,
-            archived: r.archived,
-          }))
+        const errorMessages = [chatResults, agentResults]
+          .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+          .map((result) => (result.reason instanceof Error ? result.reason.message : '未知错误'))
 
         setContentResults([...chatContent, ...agentContent])
+        setContentError(errorMessages.length > 0 ? errorMessages[0] ?? '未知错误' : null)
       } catch (error) {
         console.error('[搜索] 内容搜索失败:', error)
-        if (!cancelled) setContentResults([])
+        if (!cancelled) {
+          setContentResults([])
+          setContentError(error instanceof Error ? error.message : '未知错误')
+        }
       } finally {
         if (!cancelled) setContentLoading(false)
       }
     }, 300)
 
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [searchQuery, titleResults])
+  }, [searchQuery])
 
   // 全部结果列表
   const allResults = React.useMemo(
@@ -308,6 +317,7 @@ export function SearchDialog(): React.ReactElement {
       setQuery('')
       setSearchQuery('')
       setContentResults([])
+      setContentError(null)
       setSelectedIndex(0)
       setTimeout(() => inputRef.current?.focus(), 50)
     }
@@ -355,9 +365,16 @@ export function SearchDialog(): React.ReactElement {
             </div>
           )}
 
-          {searchQuery && titleResults.length === 0 && contentResults.length === 0 && !contentLoading && (
+          {searchQuery && titleResults.length === 0 && contentResults.length === 0 && !contentLoading && !contentError && (
             <div className="py-12 text-center text-[13px] text-foreground/40">
               未找到匹配结果
+            </div>
+          )}
+
+          {contentError && (
+            <div className="border-t border-border/30 py-4 text-center">
+              <div className="text-[12px] font-medium text-destructive">内容搜索失败</div>
+              <div className="mt-1 text-[11px] text-muted-foreground">{contentError}</div>
             </div>
           )}
 
@@ -416,7 +433,7 @@ export function SearchDialog(): React.ReactElement {
                 const globalIdx = titleResults.length + i
                 return (
                   <button
-                    key={`content-${result.id}`}
+                    key={`content-${result.type}-${result.id}-${result.messageId}`}
                     data-index={globalIdx}
                     onClick={() => navigateToResult(result)}
                     onMouseEnter={() => setSelectedIndex(globalIdx)}

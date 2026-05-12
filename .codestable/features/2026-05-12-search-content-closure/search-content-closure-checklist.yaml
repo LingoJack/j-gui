@@ -1,0 +1,45 @@
+feature: 2026-05-12-search-content-closure
+roadmap: j-gui-v1
+roadmap_item: search-content-closure
+created: 2026-05-12
+status: done
+
+steps:
+  - id: step-1
+    paradigm: backend
+    description: "在 `commands/chat.rs` 新增 `search_conversation_messages` 正式命令，并注册到 `src-tauri/src/lib.rs`"
+    exit: cargo test 通过
+    status: done
+  - id: step-2
+    paradigm: frontend
+    description: "收紧 `ipc.searchConversationMessages()` 到正式后端主链路，并补充对应测试"
+    exit: bun run test 通过
+    status: done
+  - id: step-3
+    paradigm: docs
+    description: "同步 requirement / roadmap / architecture 到“标题搜索 + 内容搜索”的代码真相"
+    exit: validate-yaml.py 通过，文档表述一致
+    status: done
+  - id: step-4
+    paradigm: verification
+    description: "运行仓库默认合规检查，确认搜索闭环未引入回归"
+    exit: bash scripts/check_lint.sh 通过
+    status: done
+
+checks:
+  - id: check-chat-backend-truth
+    description: "Chat 内容搜索已有正式 Tauri 后端命令，不再依赖命令缺失 fallback"
+    target: step-1
+    status: passed
+  - id: check-search-anchor
+    description: "内容搜索结果继续携带 messageId，可打开并定位到目标消息"
+    target: step-2
+    status: passed
+  - id: check-doc-truth
+    description: "活动 requirement / roadmap 不再把内容搜索写成首版排除"
+    target: step-3
+    status: passed
+  - id: check-full-regression
+    description: "全量检查通过，Chat/Agent 搜索链路未回退"
+    target: step-4
+    status: passed

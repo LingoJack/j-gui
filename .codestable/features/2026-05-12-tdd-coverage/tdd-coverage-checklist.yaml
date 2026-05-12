@@ -1,0 +1,50 @@
+feature: 2026-05-12-tdd-coverage
+roadmap: j-gui-v1
+roadmap_item: tdd-coverage
+created: 2026-05-12
+status: in-progress
+
+steps:
+  - id: step-1
+    paradigm: explore
+    title: 复核当前命令层测试真相
+    status: done
+    description: "重新检查 chat/config/alias/system 等命令文件的当前测试分布，确认哪些旧 explore 结论已过时，避免把历史零测试口径继续当真。"
+    exit: 当前薄弱点清单明确，且能说明为什么本轮只收口其中一小批。
+
+  - id: step-2
+    paradigm: test
+    title: 补 chat 命令层最小高价值测试
+    status: done
+    description: "为 chat.rs 增加会话生命周期和 stop-generation 命令态状态测试，覆盖当前最缺、最常用、最容易绕过默认门禁的命令层语义。"
+    exit: chat.rs 至少新增一组能挡生命周期回归和 stop 状态回归的测试。
+
+  - id: step-3
+    paradigm: docs
+    title: 记录 tdd 收口真相
+    status: done
+    description: "编写 acceptance，说明这轮补了什么、哪些旧结论已过时、剩余缺口仍有哪些。"
+    exit: acceptance 可直接作为后续 roadmap update 和 audit 输入。
+
+  - id: step-4
+    paradigm: verification
+    title: 运行默认门禁
+    status: done
+    description: "执行 YAML 校验与 `bash scripts/check_lint.sh`，确认本轮补测没有破坏仓库约束。"
+    exit: YAML 校验通过，默认门禁通过。
+
+checks:
+  - id: check-no-coverage-chasing
+    target: step-2
+    description: "本轮只补高价值回归锚点，不以覆盖率数字或测试总数增长作为完成标准。"
+    status: passed
+
+  - id: check-current-truth
+    target: step-1
+    description: "旧的 backend-test-coverage explore 只能作为输入，不能直接复述成当前真相。"
+    status: passed
+
+  - id: check-default-gate
+    target: step-4
+    description: "完成判定仍以 `bash scripts/check_lint.sh` 为准，不另造手工记忆门槛。"
+    status: passed

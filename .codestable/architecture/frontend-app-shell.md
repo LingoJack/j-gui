@@ -214,6 +214,7 @@ AlertDialog (删除确认)     (pendingDeleteId, 放在 LeftSidebar 内局部挂
 
 2. **消息内容搜索**（debounce 300ms，IPC 调用）：
    - `ipc.searchConversationMessages(query)` + `ipc.searchAgentSessionMessages(query)`
+   - Chat 侧走正式 Tauri `search_conversation_messages`；Agent 侧走正式 Tauri `search_agent_session_messages`
    - 结果含 snippet、`matchStart`、`matchLength` 用于高亮
    - 排除已在标题结果中的会话
    - 搜索词 >= 2 字符才触发

@@ -186,8 +186,6 @@ export interface ChatSendInput {
   attachments?: FileAttachment[]
   /** 是否启用思考模式 */
   thinkingEnabled?: boolean
-  /** 本次请求启用的工具 ID 列表（由前端工具选择器决定） */
-  enabledToolIds?: string[]
   /** 显式协议提示；通常来自渠道配置 */
   protocolHint?: ChatProtocolHint
 }
@@ -216,8 +214,6 @@ export interface ChatRequestInput {
   attachments?: FileAttachment[]
   /** 是否启用思考模式 */
   thinkingEnabled?: boolean
-  /** 本次请求启用的工具 ID 列表 */
-  enabledToolIds?: string[]
   /** 显式协议提示；通常由渠道配置驱动 */
   protocolHint?: ChatProtocolHint
 }

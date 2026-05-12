@@ -38,7 +38,6 @@ describe('shared stream protocol types', () => {
       contextDividers: ['divider-1'],
       attachments: [],
       thinkingEnabled: true,
-      enabledToolIds: ['tool-1'],
     } satisfies ChatRequestInput
 
     const unsupported = {
@@ -274,12 +273,7 @@ describe('shared stream protocol types', () => {
       userMessage: 'hello',
       channelId: 'channel-1',
       modelId: 'model-1',
-      workspaceId: 'workspace-1',
-      additionalDirectories: ['/tmp/project'],
-      customMcpServers: {},
       permissionModeOverride: 'bypassPermissions',
-      mentionedSkills: ['skill-1'],
-      mentionedMcpServers: ['mcp-1'],
       startedAt: 123,
     } satisfies AgentSendInput
 

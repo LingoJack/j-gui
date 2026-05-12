@@ -164,6 +164,7 @@ function EmptyState(): React.ReactElement {
 export function HooksSettings(): React.ReactElement {
   const [hooks, setHooks] = React.useState<HookInfo[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
   const [eventFilter, setEventFilter] = React.useState('all')
   const [sourceFilter, setSourceFilter] = React.useState('all')
   const [togglingSet, setTogglingSet] = React.useState<Set<string>>(new Set())
@@ -175,12 +176,14 @@ export function HooksSettings(): React.ReactElement {
       .then((result) => {
         if (!cancelled) {
           setHooks(result)
+          setLoadError(null)
           setLoading(false)
         }
       })
       .catch((err) => {
         if (!cancelled) {
           console.error('[钩子设置] 加载失败:', err)
+          setLoadError(err instanceof Error ? err.message : '未知错误')
           setLoading(false)
         }
       })
@@ -244,6 +247,15 @@ export function HooksSettings(): React.ReactElement {
     return (
       <div className="text-sm text-muted-foreground py-8 text-center">
         加载中...
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="space-y-2 py-8 text-center">
+        <div className="text-sm font-medium text-foreground">加载钩子配置失败</div>
+        <div className="text-xs text-muted-foreground">{loadError}</div>
       </div>
     )
   }

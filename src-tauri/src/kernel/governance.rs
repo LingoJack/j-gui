@@ -36,6 +36,7 @@ pub trait GovernanceKernel: Send + Sync {
     /// 按名称启用或禁用聊天工具。
     fn set_tool_enabled(&self, name: &str, enabled: bool) -> Result<(), KernelError>;
     /// 返回当前全局禁用的 Skill slug 列表。
+    /// 这是 jcli 共享配置真相，不按 workspace 单独切分。
     fn get_disabled_skill_slugs(&self) -> Result<Vec<String>, KernelError>;
 
     // === 技能工作区管理 ===
@@ -54,6 +55,8 @@ pub trait GovernanceKernel: Send + Sync {
         content: &str,
     ) -> Result<(), KernelError>;
     /// 启用或禁用工作区技能。
+    /// 注意：当前启停状态仍复用全局 `disabled_skills`，`workspace_slug`
+    /// 只用于定位技能目录与前端上下文，不代表独立的 per-workspace 开关表。
     fn toggle_workspace_skill(
         &self,
         workspace_slug: &str,

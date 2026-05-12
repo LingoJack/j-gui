@@ -2,7 +2,7 @@
  * Tauri IPC 模块
  *
  * 所有前端→后端的通信都通过这里。
- * 每个函数封装 Tauri invoke()，Rust 命令未实现时有 fallback 桩。
+ * 只有明确允许降级的入口才保留 fallback；治理真相相关入口必须暴露真实失败。
  * 不使用任何 Electron API — 纯 Tauri 实现。
  */
 
@@ -18,9 +18,8 @@ import type {
   MessageSearchResult,
   AgentMessageSearchResult,
   SDKMessage,
-  SDKAssistantMessage,
-  SDKUserMessage,
   ChatToolInfo,
+  AgentBackendMode,
 } from '@jgui/shared'
 
 // ============================================================
@@ -86,7 +85,8 @@ async function tryInvoke<T>(cmd: string, args?: unknown, fallback?: T, opts?: { 
       return fallback
     }
     console.error(`[tryInvoke] Tauri command '${cmd}' failed:`, err)
-    throw new Error(`Tauri command '${cmd}' not available`)
+    const message = extractInvokeErrorMessage(err)
+    throw new Error(message || `Tauri command '${cmd}' not available`)
   }
 }
 
@@ -96,6 +96,14 @@ function unsupportedCommand(name: string): never {
 
 function unsupportedSubscription(name: string): never {
   throw new Error(`Tauri event '${name}' is not implemented in j-gui backend`)
+}
+
+function emitCapabilitiesChanged(): void {
+  emit('workspace:capabilities-changed')
+}
+
+function emitWorkspaceFilesChanged(): void {
+  emit('workspace:files-changed')
 }
 
 function listenToTauriEvent<T>(eventName: string, mapPayload?: (payload: unknown) => T): (callback: (payload: T) => void) => (() => void) {
@@ -189,6 +197,7 @@ export async function getSettings(): Promise<AppSettings> {
         themeStyle: 'default' as ThemeStyle,
         onboardingCompleted: true,
         agentChannelIds: [],
+        agentBackendMode: 'claude-sdk' as AgentBackendMode,
         agentWorkspaceId: null,
         notificationsEnabled: true,
         notificationSoundEnabled: false,
@@ -343,58 +352,6 @@ function buildChatRenderMessageId(message: any, index: number): string {
     : `chat-index-${index}`
 }
 
-function buildSnippet(content: string, query: string): { snippet: string; matchStart: number; matchLength: number } {
-  const lower = content.toLowerCase()
-  const matchIndex = lower.indexOf(query.toLowerCase())
-  if (matchIndex < 0) {
-    return {
-      snippet: content.slice(0, 80),
-      matchStart: -1,
-      matchLength: query.length,
-    }
-  }
-  const start = Math.max(0, matchIndex - 30)
-  const end = Math.min(content.length, matchIndex + query.length + 50)
-  return {
-    snippet: content.slice(start, end),
-    matchStart: matchIndex - start,
-    matchLength: query.length,
-  }
-}
-
-function extractSearchableTextFromSdkMessage(message: SDKMessage): string {
-  if (message.type === 'user') {
-    return ((message as SDKUserMessage).message?.content ?? [])
-      .map((block) => {
-        if (block.type === 'text' && typeof block.text === 'string') return block.text
-        if (block.type === 'tool_result') {
-          if (typeof block.content === 'string') return block.content
-          if (Array.isArray(block.content)) {
-            return block.content
-              .map((entry) => typeof entry === 'object' && entry && 'text' in entry ? String((entry as { text?: unknown }).text ?? '') : '')
-              .join('\n')
-          }
-        }
-        return ''
-      })
-      .filter(Boolean)
-      .join('\n')
-  }
-  if (message.type === 'assistant') {
-    return ((message as SDKAssistantMessage).message?.content ?? [])
-      .map((block) => {
-        if (block.type === 'text' && typeof block.text === 'string') return block.text
-        if (block.type === 'tool_use') {
-          return `${block.name} ${JSON.stringify(block.input)}`
-        }
-        return ''
-      })
-      .filter(Boolean)
-      .join('\n')
-  }
-  return ''
-}
-
 function timelineToSdkMessages(timeline: TimelineItem[], sessionId: string): SDKMessage[] {
   const messages: SDKMessage[] = []
 
@@ -468,32 +425,7 @@ function timelineToSdkMessages(timeline: TimelineItem[], sessionId: string): SDK
 }
 
 export async function searchConversationMessages(query: string): Promise<MessageSearchResult[]> {
-  try {
-    return await invoke<MessageSearchResult[]>('search_conversation_messages', { query })
-  } catch {
-    warnOnce('search_conversation_messages')
-    const conversations = await listConversations()
-    const results: MessageSearchResult[] = []
-    for (const conversation of conversations) {
-      const messages = await getConversationMessages(conversation.id)
-      messages.forEach((message, index) => {
-        const content = typeof message?.content === 'string' ? message.content : ''
-        if (!content.toLowerCase().includes(query.toLowerCase())) return
-        const snippet = buildSnippet(content, query)
-        results.push({
-          conversationId: conversation.id,
-          conversationTitle: conversation.title,
-          messageId: buildChatRenderMessageId(message, index),
-          role: message.role ?? 'assistant',
-          snippet: snippet.snippet,
-          matchStart: snippet.matchStart,
-          matchLength: snippet.matchLength,
-          archived: conversation.archived,
-        })
-      })
-    }
-    return results
-  }
+  return await invoke<MessageSearchResult[]>('search_conversation_messages', { query })
 }
 export const generateTitle = (input: any) => tryInvoke<string>('generate_title', { input }, null)
 export const createWelcomeConversation = () => tryInvoke<any>('create_welcome_conversation', undefined, null)
@@ -520,9 +452,6 @@ export async function sendMessage(input: any): Promise<void> {
       : undefined,
     thinkingEnabled:
       typeof input.thinkingEnabled === 'boolean' ? input.thinkingEnabled : undefined,
-    enabledToolIds: Array.isArray(input.enabledToolIds) && input.enabledToolIds.length > 0
-      ? input.enabledToolIds
-      : undefined,
     protocolHint: input.protocolHint && input.protocolHint !== 'auto'
       ? input.protocolHint
       : undefined,
@@ -568,7 +497,7 @@ export async function stopGeneration(sessionId: string) { try { await invoke('st
 export const deleteMessage = (conversationId: string, pairIndex: number) =>
   tryInvoke<void>('delete_message', { sessionId: conversationId, pairIndex })
 export const truncateMessagesFrom = (conversationId: string, messageId: string, preserveFirstMessageAttachments?: boolean) =>
-  tryInvoke<any[]>('truncate_messages_from', { conversationId, messageId, preserveFirstMessageAttachments }, [])
+  tryInvoke<any[]>('truncate_messages_from', { input: { conversationId, messageId, preserveFirstMessageAttachments } })
 export const updateContextDividers = (conversationId: string, dividers: string[]) =>
   tryInvoke<any>('update_context_dividers', { conversationId, dividers })
 
@@ -615,32 +544,7 @@ export const toggleManualWorkingAgentSession = (id: string) =>
   tryInvoke<any>('toggle_manual_working_agent_session', { sessionId: id })
 export const toggleArchiveAgentSession = (id: string) => tryInvoke<any>('toggle_archive_agent_session', { sessionId: id })
 export async function searchAgentSessionMessages(query: string): Promise<AgentMessageSearchResult[]> {
-  try {
-    return await invoke<AgentMessageSearchResult[]>('search_agent_session_messages', { query })
-  } catch {
-    warnOnce('search_agent_session_messages')
-    const sessions = await listAgentSessions()
-    const results: AgentMessageSearchResult[] = []
-    for (const session of sessions) {
-      const messages = await getAgentSessionSDKMessages(session.id)
-      messages.forEach((message) => {
-        const content = extractSearchableTextFromSdkMessage(message)
-        if (!content || !content.toLowerCase().includes(query.toLowerCase())) return
-        const snippet = buildSnippet(content, query)
-        results.push({
-          sessionId: session.id,
-          sessionTitle: session.title ?? '新 Agent 会话',
-          messageId: (message as { uuid?: string }).uuid ?? '',
-          role: message.type === 'assistant' ? 'assistant' : 'user',
-          snippet: snippet.snippet,
-          matchStart: snippet.matchStart,
-          matchLength: snippet.matchLength,
-          archived: session.archived,
-        })
-      })
-    }
-    return results.filter((result) => result.messageId)
-  }
+  return await invoke<AgentMessageSearchResult[]>('search_agent_session_messages', { query })
 }
 export const moveAgentSessionToWorkspace = (input: any) =>
   tryInvoke<any>('move_agent_session_to_workspace', { input })
@@ -665,12 +569,17 @@ function buildAgentStartRequest(input: AgentSendInput): {
   channelId: string
   modelId?: string
   permissionModeOverride?: string
+  useJagent?: boolean
+  userMessage?: string
 } {
+  const useJagent = input.backendMode === 'jagent'
   return {
     sessionId: input.sessionId,
     channelId: input.channelId,
     modelId: input.modelId,
     permissionModeOverride: input.permissionModeOverride,
+    useJagent,
+    userMessage: useJagent ? input.userMessage : undefined,
   }
 }
 
@@ -688,6 +597,8 @@ export async function sendAgentMessage(input: AgentSendInput): Promise<void> {
   const sessionId = input.sessionId
   const content = input.userMessage
   const permissionMode = input.permissionModeOverride || 'bypassPermissions'
+  const backendMode = input.backendMode ?? 'claude-sdk'
+  let startedRuntime = false
   const runState: AgentRunState = {
     runId: nextAgentRunId++,
     startedAt: input.startedAt,
@@ -730,10 +641,12 @@ export async function sendAgentMessage(input: AgentSendInput): Promise<void> {
       await invoke('start_agent', {
         input: buildAgentStartRequest({
           ...input,
+          backendMode,
           permissionModeOverride: permissionMode,
         }),
         onEvent: channel,
       })
+      startedRuntime = true
     } catch (e: any) {
       const currentChannel = agentChannels.get(sessionId)
       if (currentChannel === channel) {
@@ -742,6 +655,16 @@ export async function sendAgentMessage(input: AgentSendInput): Promise<void> {
       emit('agent:stream-error', { sessionId, error: e?.message || String(e) })
       return
     }
+  }
+
+  const channel = agentChannels.get(sessionId)
+  if (!channel) {
+    emit('agent:stream-error', { sessionId, error: `Agent 未启动: ${sessionId}` })
+    return
+  }
+
+  if (backendMode === 'jagent' && startedRuntime) {
+    return
   }
 
   // 将实际消息发送给正在运行的 agent
@@ -765,8 +688,6 @@ export async function stopAgent(sessionId: string): Promise<void> {
   await invoke('stop_agent', { sessionId })
   agentChannels.delete(sessionId)
 }
-
-export const queueAgentMessage = (input: any) => tryInvoke<string>('queue_agent_message', { input }, '')
 
 // ============================================================
 // Agent 流式事件
@@ -857,34 +778,45 @@ export const reorderAgentWorkspaces = (orderedIds: string[]) =>
 
 /** 从 ~/.jdata/agent/mcp_config.json 列出 j-cli MCP 服务器（只读数据源） */
 export const listMcpServers = () =>
-  tryInvoke<Array<{ name: string; transport: string; command?: string; args?: string[]; url?: string; env?: Record<string, string>; disabled: boolean }>>('list_mcp_servers', undefined, [])
+  tryInvoke<Array<{ name: string; transport: string; command?: string; args?: string[]; url?: string; env?: Record<string, string>; disabled: boolean }>>('list_mcp_servers')
 
 export const getWorkspaceCapabilities = (workspaceSlug: string) =>
-  tryInvoke<any>('get_workspace_capabilities', { workspaceSlug }, { mcpServers: [], skills: [] })
+  tryInvoke<any>('get_workspace_capabilities', { workspaceSlug })
 export const getWorkspaceMcpConfig = (workspaceSlug: string) =>
-  tryInvoke<any>('get_workspace_mcp_config', { workspaceSlug }, { servers: {} })
-export const saveWorkspaceMcpConfig = (workspaceSlug: string, config: any) =>
-  tryInvoke('save_workspace_mcp_config', { workspaceSlug, config })
+  tryInvoke<any>('get_workspace_mcp_config', { workspaceSlug })
+export const saveWorkspaceMcpConfig = async (workspaceSlug: string, config: any) => {
+  await tryInvoke('save_workspace_mcp_config', { workspaceSlug, config })
+  emitCapabilitiesChanged()
+}
 export const testMcpServer = (name: string, entry: any) =>
   tryInvoke<ConnectionTestResult>('test_mcp_server', { name, entry })
 export const getWorkspaceSkills = (workspaceSlug: string) =>
-  tryInvoke<any[]>('get_workspace_skills', { workspaceSlug }, [])
+  tryInvoke<any[]>('get_workspace_skills', { workspaceSlug })
 export const getWorkspaceSkillsDir = (workspaceSlug: string) =>
-  tryInvoke<string>('get_workspace_skills_dir', { workspaceSlug }, '')
-export const deleteWorkspaceSkill = (workspaceSlug: string, skillSlug: string) =>
-  tryInvoke('delete_workspace_skill', { workspaceSlug, skillSlug })
-export const toggleWorkspaceSkill = (workspaceSlug: string, skillSlug: string, enabled: boolean) =>
-  tryInvoke('toggle_workspace_skill', { workspaceSlug, skillSlug, enabled })
+  tryInvoke<string>('get_workspace_skills_dir', { workspaceSlug })
+export const deleteWorkspaceSkill = async (workspaceSlug: string, skillSlug: string) => {
+  await tryInvoke('delete_workspace_skill', { workspaceSlug, skillSlug })
+  emitCapabilitiesChanged()
+  emitWorkspaceFilesChanged()
+}
+export const toggleWorkspaceSkill = async (workspaceSlug: string, skillSlug: string, enabled: boolean) => {
+  await tryInvoke('toggle_workspace_skill', { workspaceSlug, skillSlug, enabled })
+  emitCapabilitiesChanged()
+}
 export const getOtherWorkspaceSkills = (currentSlug: string) =>
-  tryInvoke<any[]>('get_other_workspace_skills', { currentSlug }, [])
-export const importSkillFromWorkspace = (targetSlug: string, sourceSlug: string, skillSlug: string) =>
-  tryInvoke<any>('import_skill_from_workspace', { targetSlug, sourceSlug, skillSlug })
-export const updateSkillFromSource = (targetSlug: string, skillSlug: string) =>
-  tryInvoke<any>('update_skill_from_source', { targetSlug, skillSlug })
+  tryInvoke<any[]>('get_other_workspace_skills', { currentSlug })
+export const importSkillFromWorkspace = async (targetSlug: string, sourceSlug: string, skillSlug: string) => {
+  await tryInvoke<void>('import_skill_from_workspace', { targetSlug, sourceSlug, skillSlug })
+  emitCapabilitiesChanged()
+  emitWorkspaceFilesChanged()
+}
 export const readSkillContent = (workspaceSlug: string, skillSlug: string) =>
-  tryInvoke<string>('read_skill_content', { workspaceSlug, skillSlug }, '')
-export const writeSkillContent = (workspaceSlug: string, skillSlug: string, content: string) =>
-  tryInvoke('write_skill_content', { workspaceSlug, skillSlug, content })
+  tryInvoke<string>('read_skill_content', { workspaceSlug, skillSlug })
+export const writeSkillContent = async (workspaceSlug: string, skillSlug: string, content: string) => {
+  await tryInvoke('write_skill_content', { workspaceSlug, skillSlug, content })
+  emitCapabilitiesChanged()
+  emitWorkspaceFilesChanged()
+}
 
 // ============================================================
 // 事件
@@ -1008,8 +940,11 @@ export const scanGlobalSkills = () =>
   invoke<Array<{ name: string; description: string; source: string; dirPath: string }>>('scan_global_skills')
 
 /** 将 skill 从源目录复制到当前工作区 */
-export const copySkillToWorkspace = (sourceDir: string, workspaceSlug: string, skillSlug: string) =>
-  invoke<void>('copy_skill_to_workspace', { sourceDir, workspaceSlug, skillSlug })
+export const copySkillToWorkspace = async (sourceDir: string, workspaceSlug: string, skillSlug: string) => {
+  await invoke<void>('copy_skill_to_workspace', { sourceDir, workspaceSlug, skillSlug })
+  emitCapabilitiesChanged()
+  emitWorkspaceFilesChanged()
+}
 
 /** 按名称启用或禁用内置 chat 工具 */
 export const setToolEnabled = (name: string, enabled: boolean) =>
@@ -1085,8 +1020,6 @@ export const getFilePath = (file: File) => URL.createObjectURL(file)
 export const getMemoryConfig = () => tryInvoke<any>('get_memory_config', undefined, { enabled: false, memories: [] })
 export const saveMemoryConfig = (config: any) => tryInvoke('save_memory_config', { config })
 export const setMemoryConfig = (config: any) => tryInvoke('set_memory_config', { config })
-export const testMemoryConnection = (config: any) =>
-  tryInvoke<ConnectionTestResult>('test_memory_connection', { config })
 
 // ============================================================
 // Agent 团队
@@ -1112,7 +1045,7 @@ export interface HookInfo {
   enabled: boolean
 }
 
-export const listHooks = () => tryInvoke<HookInfo[]>('list_hooks', undefined, [])
+export const listHooks = () => tryInvoke<HookInfo[]>('list_hooks')
 
 export const toggleHook = (uniqueId: string, enabled: boolean) =>
   tryInvoke('toggle_hook', { uniqueId, enabled })

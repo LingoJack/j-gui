@@ -5,9 +5,10 @@
  */
 
 import * as React from 'react'
-import { useSetAtom } from 'jotai'
+import { useAtom } from 'jotai'
 import { toast } from 'sonner'
 import { Info } from 'lucide-react'
+import { chatToolsAtom } from '@/atoms/chat-tool-atoms'
 import { Switch } from '@/components/ui/switch'
 import { SettingsSection, SettingsCard } from './primitives'
 import * as ipc from '@/lib/ipc'
@@ -19,19 +20,19 @@ async function refreshChatTools(setter: (tools: Awaited<ReturnType<typeof ipc.ge
     setter(tools)
   } catch (err) {
     console.error('[ToolSettings] 刷新工具列表失败:', err)
+    throw err
   }
 }
 
 /** 内置工具列表区域 — 使用后端 list_chat_tools / set_tool_enabled */
 export function BuiltinToolsSection(): React.ReactElement {
-  const [tools, setTools] = React.useState<Array<{ name: string; description: string; enabled: boolean }>>([])
+  const [tools, setTools] = useAtom(chatToolsAtom)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
   React.useEffect(() => {
-    ipc.listChatTools()
-      .then((result) => {
-        setTools(result)
+    refreshChatTools(setTools)
+      .then(() => {
         setLoading(false)
       })
       .catch((err: unknown) => {
@@ -40,19 +41,20 @@ export function BuiltinToolsSection(): React.ReactElement {
       })
   }, [])
 
-  const handleToggle = async (name: string, currentEnabled: boolean): Promise<void> => {
+  const handleToggle = async (toolId: string, currentEnabled: boolean): Promise<void> => {
     // 先做乐观更新，立即反馈到 UI
     setTools((prev) =>
-      prev.map((t) => (t.name === name ? { ...t, enabled: !currentEnabled } : t))
+      prev.map((tool) => (tool.meta.id === toolId ? { ...tool, enabled: !currentEnabled } : tool))
     )
     try {
-      await ipc.setToolEnabled(name, !currentEnabled)
+      await ipc.updateChatToolState(toolId, { enabled: !currentEnabled })
+      await refreshChatTools(setTools)
     } catch (err) {
       console.error('[内置工具] 切换失败:', err)
       toast.error('切换工具状态失败')
       // 失败时回滚
       setTools((prev) =>
-        prev.map((t) => (t.name === name ? { ...t, enabled: currentEnabled } : t))
+        prev.map((tool) => (tool.meta.id === toolId ? { ...tool, enabled: currentEnabled } : tool))
       )
     }
   }
@@ -84,19 +86,19 @@ export function BuiltinToolsSection(): React.ReactElement {
     >
       <SettingsCard divided>
         {tools.map((tool) => (
-          <div key={tool.name} className="flex items-center justify-between p-4">
+          <div key={tool.meta.id} className="flex items-center justify-between p-4">
             <div className="flex-1 min-w-0 mr-4">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">{tool.name}</span>
+                <span className="text-sm font-medium">{tool.meta.name}</span>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                {tool.description}
+                {tool.meta.description}
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <Switch
                 checked={tool.enabled}
-                onCheckedChange={() => handleToggle(tool.name, tool.enabled)}
+                onCheckedChange={() => handleToggle(tool.meta.id, tool.enabled)}
               />
             </div>
           </div>

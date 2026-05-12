@@ -190,8 +190,8 @@ related_mapping: proma-mapping
 | 项 | 必须一致 | 当前判定 |
 |---|---|---|
 | 唤起方式 | 全局搜索快捷键和侧栏搜索入口都能打开同一个搜索面板 | Partial |
-| 搜索范围 | Chat 标题、Agent 标题；Chat/Agent 内容全文搜索首版排除 | Partial |
-| 高亮 | 标题命中部分高亮；内容 snippet 高亮首版排除 | Partial |
+| 搜索范围 | Chat 标题、Agent 标题、Chat/Agent 消息内容搜索都可用 | Partial |
+| 高亮 | 标题命中部分高亮；内容 snippet 高亮 | Partial |
 | IME | 中文输入法 composition 不抖动，不逐字误触发跳转 | Partial |
 | 键盘导航 | 上下箭头、Enter、Esc、清空 query 行为完整 | Partial |
 | 打开结果 | 选中结果必须打开对应 Chat/Agent tab 并回填内容，不只设置 session id | Partial |
@@ -199,7 +199,7 @@ related_mapping: proma-mapping
 
 验收补充：
 
-- 会话内容全文搜索已在 `j-gui-proma-parity.md` 和 roadmap 明确排除，验收时不按 Fail 处理；如果后续要追平 Proma 内容搜索，必须先更新 req 边界和 roadmap。
+- 当前搜索验收不再把“内容搜索排除”当作豁免项；重点核对的是后端命令是否真实存在、结果是否带消息锚点，以及 Chat/Agent 两侧是否同口径。
 
 ## Settings
 

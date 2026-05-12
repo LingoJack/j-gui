@@ -365,3 +365,195 @@ impl GovernanceKernel for JcliAdapter {
         Ok(load_agent_config().disabled_skills)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct TestEnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        root: PathBuf,
+        old_userprofile: Option<String>,
+        old_home: Option<String>,
+        old_appdata: Option<String>,
+    }
+
+    impl TestEnvGuard {
+        fn new(slug: &str) -> Self {
+            let lock = env_lock().lock().unwrap();
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let root = std::env::temp_dir().join(format!("j-gui-{slug}-{unique}"));
+            let user_root = root.join("user");
+            let appdata_root = root.join("appdata");
+            std::fs::create_dir_all(&user_root).unwrap();
+            std::fs::create_dir_all(&appdata_root).unwrap();
+
+            let old_userprofile = std::env::var("USERPROFILE").ok();
+            let old_home = std::env::var("HOME").ok();
+            let old_appdata = std::env::var("APPDATA").ok();
+
+            std::env::set_var("USERPROFILE", &user_root);
+            std::env::set_var("HOME", &user_root);
+            std::env::set_var("APPDATA", &appdata_root);
+
+            Self {
+                _lock: lock,
+                root,
+                old_userprofile,
+                old_home,
+                old_appdata,
+            }
+        }
+    }
+
+    impl Drop for TestEnvGuard {
+        fn drop(&mut self) {
+            match &self.old_userprofile {
+                Some(value) => std::env::set_var("USERPROFILE", value),
+                None => std::env::remove_var("USERPROFILE"),
+            }
+            match &self.old_home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+            match &self.old_appdata {
+                Some(value) => std::env::set_var("APPDATA", value),
+                None => std::env::remove_var("APPDATA"),
+            }
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    #[ignore = "需要独占环境变量并串行执行，避免污染全量 Rust 测试"]
+    fn governance_persists_workspace_skill_content_and_toggle_state() {
+        let _guard = TestEnvGuard::new("governance-skill");
+        let adapter = JcliAdapter::new();
+        let content = "---\nname: Demo Skill\ndescription: Persisted skill\n---\nBody\n";
+
+        adapter
+            .write_skill_content("demo-workspace", "demo-skill", content)
+            .unwrap();
+
+        assert_eq!(
+            adapter
+                .read_skill_content("demo-workspace", "demo-skill")
+                .unwrap(),
+            content
+        );
+
+        let skills = adapter.get_workspace_skills("demo-workspace").unwrap();
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].name, "Demo Skill");
+        assert_eq!(skills[0].description, "Persisted skill");
+
+        adapter
+            .toggle_workspace_skill("demo-workspace", "demo-skill", false)
+            .unwrap();
+        assert_eq!(
+            adapter.get_disabled_skill_slugs().unwrap(),
+            vec!["demo-skill"]
+        );
+
+        adapter
+            .toggle_workspace_skill("demo-workspace", "demo-skill", true)
+            .unwrap();
+        assert!(adapter.get_disabled_skill_slugs().unwrap().is_empty());
+    }
+
+    #[test]
+    #[ignore = "需要独占环境变量并串行执行，避免污染全量 Rust 测试"]
+    fn governance_persists_workspace_mcp_and_hook_state() {
+        let _guard = TestEnvGuard::new("governance-mcp-hooks");
+        let adapter = JcliAdapter::new();
+        let config = KernelMcpWorkspaceConfig {
+            servers: vec![KernelMcpServerConfig {
+                name: "demo-server".into(),
+                transport: "stdio".into(),
+                command: Some("demo-cmd".into()),
+                args: Some(vec!["--serve".into()]),
+                url: None,
+                env: None,
+                disabled: false,
+            }],
+        };
+
+        adapter
+            .save_workspace_mcp_config("demo-workspace", &config)
+            .unwrap();
+        assert_eq!(
+            adapter.get_workspace_mcp_config("demo-workspace").unwrap(),
+            config
+        );
+
+        adapter.toggle_hook("hook-pre-send", false).unwrap();
+        assert_eq!(
+            load_agent_config().disabled_hooks,
+            vec![String::from("hook-pre-send")]
+        );
+
+        adapter.toggle_hook("hook-pre-send", true).unwrap();
+        assert!(load_agent_config().disabled_hooks.is_empty());
+    }
+
+    #[test]
+    #[ignore = "需要独占环境变量并串行执行，避免污染全量 Rust 测试"]
+    fn governance_imports_cc_sdk_artifacts_from_real_sdk_config_dir() {
+        let _guard = TestEnvGuard::new("governance-sdk-import");
+        let adapter = JcliAdapter::new();
+        let sdk_dir = YamlConfig::data_dir().join("agent").join("sdk-config");
+        let hooks_dir = sdk_dir.join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+
+        std::fs::write(
+            hooks_dir.join("hook-one.json"),
+            serde_json::json!({
+                "name": "SDK Hook",
+                "event": "PreSendMessage",
+                "source": "sdk",
+                "hookType": "bash",
+                "label": "SDK Hook",
+                "timeout": 30,
+                "onError": "skip",
+                "uniqueId": "sdk-hook-1",
+                "enabled": true
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        std::fs::write(
+            sdk_dir.join("mcp_config.json"),
+            serde_json::json!([
+                {
+                    "name": "sdk-mcp",
+                    "transport": "stdio",
+                    "command": "sdk-mcp",
+                    "args": ["--help"],
+                    "disabled": false
+                }
+            ])
+            .to_string(),
+        )
+        .unwrap();
+
+        let hooks = adapter.import_cc_sdk_hooks().unwrap();
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0].unique_id, "sdk-hook-1");
+
+        let servers = adapter.import_cc_sdk_mcp("demo-workspace").unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "sdk-mcp");
+    }
+}

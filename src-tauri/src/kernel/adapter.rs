@@ -18,7 +18,7 @@ use crate::commands::files::resolve_attachment_path;
 use j_cli::command::chat::agent::config::{AgentLoopConfig, AgentLoopSharedState};
 use j_cli::command::chat::agent::{run_main_agent_loop, MainAgentLoopParams};
 use j_cli::command::chat::app::types::StreamMsg;
-use j_cli::command::chat::app::types::{AskRequest, ToolResultMsg};
+use j_cli::command::chat::app::types::{AskRequest, PlanDecision, ToolResultMsg};
 use j_cli::command::chat::context::compact::new_invoked_skills_map;
 #[cfg(test)]
 use j_cli::command::chat::error::ChatError;

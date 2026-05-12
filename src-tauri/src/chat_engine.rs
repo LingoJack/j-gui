@@ -16,7 +16,9 @@ use tauri::ipc::Channel;
 #[path = "chat_engine_payloads.rs"]
 mod chat_engine_payloads;
 use chat_engine_payloads::{parse_context_length, parse_image_attachments, parse_optional_bool};
-pub use chat_engine_payloads::{ChatEvent, MessageInfo, SendMessageRequest, SessionInfo};
+pub use chat_engine_payloads::{
+    ChatEvent, MessageInfo, MessageSearchResult, SendMessageRequest, SessionInfo,
+};
 
 static SESSION_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
@@ -444,6 +446,49 @@ impl ChatEngine {
             .collect())
     }
 
+    /// 按关键字搜索所有聊天会话的消息内容，返回带消息锚点的搜索结果。
+    pub fn search_messages(&self, query: &str) -> Result<Vec<MessageSearchResult>, String> {
+        let trimmed_query = query.trim();
+        if trimmed_query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let normalized_query = trimmed_query.to_lowercase();
+        let query_utf16_len = trimmed_query.encode_utf16().count();
+
+        let sessions = self.list_sessions()?;
+        let mut results = Vec::new();
+
+        for session in sessions {
+            let session_title = session
+                .title
+                .clone()
+                .unwrap_or_else(|| "新对话".to_string());
+            let messages = match self.get_messages(&session.id) {
+                Ok(messages) => messages,
+                Err(_) => continue,
+            };
+
+            for (index, message) in messages.into_iter().enumerate() {
+                if let Some((snippet, match_start, match_length)) =
+                    build_search_snippet(&message.content, &normalized_query, query_utf16_len)
+                {
+                    results.push(MessageSearchResult {
+                        conversation_id: session.id.clone(),
+                        conversation_title: session_title.clone(),
+                        message_id: build_message_search_id(index),
+                        role: message.role,
+                        snippet,
+                        match_start,
+                        match_length,
+                        archived: session.archived,
+                    });
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
     /// 删除指定轮次的用户/助手消息对。
     pub fn delete_message(&self, session_id: &str, pair_index: usize) -> Result<(), String> {
         Self::validate_session_id(session_id)?;
@@ -453,6 +498,24 @@ impl ChatEngine {
         self.chat_kernel
             .delete_message(session_id, pair_index)
             .map_err(|e| e.to_string())
+    }
+
+    /// 从指定消息锚点开始截断后续全部消息对，并返回截断后的消息列表。
+    pub fn truncate_messages_from(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        preserve_first_message_attachments: bool,
+    ) -> Result<Vec<MessageInfo>, String> {
+        Self::validate_session_id(session_id)?;
+        let pair_index = parse_message_render_index(message_id)? / 2;
+        let _lock = SESSION_WRITE_LOCK
+            .lock()
+            .map_err(|e| format!("锁定会话写入失败: {}", e))?;
+        self.chat_kernel
+            .truncate_messages_from(session_id, pair_index, preserve_first_message_attachments)
+            .map_err(|e| e.to_string())?;
+        self.get_messages(session_id)
     }
 
     /// 清空指定会话中的全部消息。
@@ -507,6 +570,72 @@ impl ChatEngine {
             archived: summary.archived,
         })
     }
+}
+
+fn build_message_search_id(index: usize) -> String {
+    format!("chat-index-{}", index)
+}
+
+fn parse_message_render_index(message_id: &str) -> Result<usize, String> {
+    message_id
+        .strip_prefix("chat-index-")
+        .ok_or_else(|| format!("无效的消息锚点 ID: {}", message_id))?
+        .parse::<usize>()
+        .map_err(|_| format!("无效的消息锚点 ID: {}", message_id))
+}
+
+fn build_search_snippet(
+    content: &str,
+    normalized_query: &str,
+    query_utf16_len: usize,
+) -> Option<(String, usize, usize)> {
+    let content_utf16: Vec<u16> = content.to_lowercase().encode_utf16().collect();
+    let query_utf16: Vec<u16> = normalized_query.encode_utf16().collect();
+    let match_start = find_utf16_subsequence(&content_utf16, &query_utf16)?;
+    let window_start = match_start.saturating_sub(30);
+    let window_end = (match_start + query_utf16_len + 50).min(content.encode_utf16().count());
+    let (snippet, snippet_start) = slice_utf16_window(content, window_start, window_end);
+    Some((
+        snippet,
+        match_start.saturating_sub(snippet_start),
+        query_utf16_len,
+    ))
+}
+
+fn find_utf16_subsequence(haystack: &[u16], needle: &[u16]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn slice_utf16_window(content: &str, start_utf16: usize, end_utf16: usize) -> (String, usize) {
+    let mut boundaries = Vec::with_capacity(content.chars().count() + 1);
+    boundaries.push((0usize, 0usize));
+
+    let mut utf16_offset = 0usize;
+    for (byte_index, ch) in content.char_indices() {
+        utf16_offset += ch.len_utf16();
+        boundaries.push((utf16_offset, byte_index + ch.len_utf8()));
+    }
+
+    let snippet_start = boundaries
+        .iter()
+        .rfind(|(offset, _)| *offset <= start_utf16)
+        .copied()
+        .unwrap_or((0, 0));
+    let snippet_end = boundaries
+        .iter()
+        .find(|(offset, _)| *offset >= end_utf16)
+        .copied()
+        .unwrap_or((content.encode_utf16().count(), content.len()));
+
+    (
+        content[snippet_start.1..snippet_end.1].to_string(),
+        snippet_start.0,
+    )
 }
 
 impl StreamUiForwarder<'_> {

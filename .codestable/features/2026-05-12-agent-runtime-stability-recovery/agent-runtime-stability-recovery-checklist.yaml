@@ -35,15 +35,20 @@ checks:
   - id: check-session-routed-interrupt
     description: "interrupt 响应已按 `sessionId` 路由，不再命中全局当前实例"
     target: step-2
+    status: passed
   - id: check-runtime-table
     description: "Rust 后端已不再使用 `Option<AgentEngine>` 单槽位模型"
     target: step-3
+    status: passed
   - id: check-stop-routing
     description: "`stop_agent(sessionId)` 只影响目标会话"
     target: step-3
+    status: passed
   - id: check-frontend-no-forced-stop
     description: "前端不再因切换会话自动停止其他会话的 Agent"
     target: step-4
+    status: passed
   - id: check-recovery-surface
     description: "complete/error/用户中断后，前后端状态能一致恢复并允许继续发送"
     target: step-5
+    status: passed

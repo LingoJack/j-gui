@@ -41,6 +41,7 @@ impl ChatKernel for JcliAdapter {
     }
 
     async fn run_agent_loop(&self, params: KernelAgentParams) -> Result<(), KernelError> {
+        let mut params = params;
         let agent_config = load_agent_config();
         let provider = agent_config
             .providers
@@ -48,14 +49,19 @@ impl ChatKernel for JcliAdapter {
             .cloned()
             .ok_or_else(|| KernelError::Config("No active provider configured".into()))?;
         let loop_state = build_agent_loop_state(&params, &agent_config);
+        let tool_result_rx = bridge_tool_result_receiver(params.tool_result_rx.take());
+        bridge_user_message_receiver(
+            params.user_message_rx.take(),
+            Arc::clone(&loop_state.pending_user_messages),
+        );
 
         let loop_params = MainAgentLoopParams {
-            config: build_agent_loop_config(&agent_config, provider),
+            config: build_agent_loop_config(&agent_config, provider, params.cancel_token.clone()),
             shared: build_agent_loop_shared_state(&params, &agent_config, &loop_state),
             messages: to_jcli_messages(&params.messages),
             system_prompt_fn: build_system_prompt_fn(params.system_prompt.clone()),
             tx: create_stream_bridge(&params),
-            tool_result_rx: std::sync::mpsc::channel::<ToolResultMsg>().1,
+            tool_result_rx,
         };
 
         run_main_agent_loop(loop_params).await;
@@ -218,6 +224,64 @@ impl ChatKernel for JcliAdapter {
         Ok(())
     }
 
+    fn truncate_messages_from(
+        &self,
+        session_id: &str,
+        pair_index: usize,
+        preserve_first_message_attachments: bool,
+    ) -> Result<(), KernelError> {
+        let paths = SessionPaths::new(session_id);
+        let transcript_path = paths.transcript();
+        if !transcript_path.exists() {
+            return Err(KernelError::Config("会话记录不存在".into()));
+        }
+        let content = std::fs::read_to_string(&transcript_path)?;
+
+        let mut msg_event_indices: Vec<usize> = Vec::new();
+        for (i, line) in content.lines().enumerate() {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                if v.get("msg").is_some() {
+                    msg_event_indices.push(i);
+                }
+            }
+        }
+
+        let user_idx = pair_index * 2;
+        if user_idx >= msg_event_indices.len() {
+            return Err(KernelError::Config("消息索引超出范围".into()));
+        }
+
+        let remove_lines: HashSet<usize> = msg_event_indices[user_idx..].iter().copied().collect();
+        let new_content: String = content
+            .lines()
+            .enumerate()
+            .filter(|(i, _)| !remove_lines.contains(i))
+            .map(|(_, line)| line.to_string() + "\n")
+            .collect();
+
+        std::fs::write(&transcript_path, new_content)?;
+
+        let mut sidecar = load_chat_attachment_sidecar(session_id);
+        if !sidecar.is_empty() {
+            let mut remapped = HashMap::new();
+            for (index, attachments) in sidecar.drain() {
+                if index < user_idx {
+                    remapped.insert(index, attachments);
+                    continue;
+                }
+
+                if index == user_idx && preserve_first_message_attachments {
+                    continue;
+                }
+
+                remove_attachment_files(&attachments);
+            }
+            save_chat_attachment_sidecar(session_id, &remapped)?;
+        }
+
+        Ok(())
+    }
+
     fn clear_session(&self, session_id: &str) -> Result<(), KernelError> {
         if !storage::append_session_event(session_id, &SessionEvent::Clear) {
             return Err(KernelError::Config("清除会话失败".into()));
@@ -236,6 +300,75 @@ impl ChatKernel for JcliAdapter {
 
     fn toggle_archive(&self, session_id: &str) -> Result<KernelSessionSummary, KernelError> {
         toggle_session_bool_field(session_id, "archived")
+    }
+}
+
+fn bridge_tool_result_receiver(
+    rx: Option<std::sync::mpsc::Receiver<KernelAgentToolResult>>,
+) -> std::sync::mpsc::Receiver<ToolResultMsg> {
+    let (tool_result_tx, tool_result_rx) = std::sync::mpsc::sync_channel::<ToolResultMsg>(16);
+    if let Some(rx) = rx {
+        std::thread::spawn(move || {
+            while let Ok(result) = rx.recv() {
+                if tool_result_tx
+                    .send(ToolResultMsg {
+                        tool_call_id: result.tool_call_id,
+                        result: result.result,
+                        is_error: result.is_error,
+                        images: vec![],
+                        plan_decision: match result.plan_decision {
+                            KernelPlanDecision::None => PlanDecision::None,
+                            KernelPlanDecision::Approve => PlanDecision::Approve,
+                            KernelPlanDecision::ApproveAndClearContext => {
+                                PlanDecision::ApproveAndClearContext
+                            }
+                            KernelPlanDecision::Reject => PlanDecision::Reject,
+                        },
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        });
+    }
+    tool_result_rx
+}
+
+fn bridge_user_message_receiver(
+    rx: Option<std::sync::mpsc::Receiver<KernelChatMessage>>,
+    pending_user_messages: Arc<Mutex<Vec<JcliChatMessage>>>,
+) {
+    if let Some(rx) = rx {
+        std::thread::spawn(move || {
+            while let Ok(message) = rx.recv() {
+                let mut queue = match pending_user_messages.lock() {
+                    Ok(queue) => queue,
+                    Err(_) => return,
+                };
+                queue.push(to_pending_jcli_message(&message));
+            }
+        });
+    }
+}
+
+fn to_pending_jcli_message(message: &KernelChatMessage) -> JcliChatMessage {
+    JcliChatMessage {
+        role: match message.role.as_str() {
+            "user" => MessageRole::User,
+            "assistant" => MessageRole::Assistant,
+            "tool" => MessageRole::Tool,
+            "system" => MessageRole::System,
+            _ => MessageRole::User,
+        },
+        content: message.content.clone(),
+        tool_calls: None,
+        tool_call_id: None,
+        images: None,
+        reasoning_content: message.reasoning.clone(),
+        sender_name: None,
+        recipient_name: None,
+        display_hint: DisplayHint::Normal,
     }
 }
 
@@ -353,6 +486,7 @@ fn build_agent_loop_state(
 fn build_agent_loop_config(
     agent_config: &JcliAgentConfig,
     provider: ModelProvider,
+    cancel_token: CancellationToken,
 ) -> AgentLoopConfig {
     AgentLoopConfig {
         provider,
@@ -360,7 +494,7 @@ fn build_agent_loop_config(
         compact_config: agent_config.compact.clone(),
         hook_manager: HookManager::load(),
         disabled_hooks: agent_config.disabled_hooks.clone(),
-        cancel_token: CancellationToken::new(),
+        cancel_token,
     }
 }
 

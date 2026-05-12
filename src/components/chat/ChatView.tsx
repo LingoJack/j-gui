@@ -36,7 +36,6 @@ import {
 } from '@/atoms/chat-atoms'
 import type { PendingAttachment, ChatPendingMessage } from '@/atoms/chat-atoms'
 import { promptConfigAtom, promptSidebarOpenAtom, conversationPromptIdAtom, resolveSystemMessage, selectedPromptIdAtom } from '@/atoms/system-prompt-atoms'
-import { activeToolIdsAtom } from '@/atoms/chat-tool-atoms'
 import { userProfileAtom } from '@/atoms/user-profile'
 import { ConversationProvider } from '@/contexts/session-context'
 import {
@@ -96,7 +95,6 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
   const promptConfig = useAtomValue(promptConfigAtom)
   const userProfile = useAtomValue(userProfileAtom)
   const promptSidebarOpen = useAtomValue(promptSidebarOpenAtom)
-  const activeToolIds = useAtomValue(activeToolIdsAtom)
   const setPendingRecommendation = useSetAtom(pendingAgentRecommendationAtom)
   const [chatPendingMessage, setChatPendingMessage] = React.useState<ChatPendingMessage | null>(null)
   const externalPendingAttachments = useAtomValue(pendingAttachmentsAtom)
@@ -349,7 +347,6 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
       attachments: savedAttachments.length > 0 ? savedAttachments : undefined,
       thinkingEnabled,
       systemMessage: resolveSystemMessage(conversationPromptId, promptConfig, userProfile.userName),
-      enabledToolIds: activeToolIds.length > 0 ? activeToolIds : undefined,
       protocolHint: channels.find((channel) => channel.id === selectedModel.channelId)?.protocolHint,
     }
 
@@ -385,7 +382,6 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
     conversationPromptId,
     promptConfig,
     userProfile.userName,
-    activeToolIds,
     channels,
     setChatStreamErrors,
     setStreamingStates,

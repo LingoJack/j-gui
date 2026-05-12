@@ -7,14 +7,15 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { Provider } from 'jotai'
 import { BuiltinToolsSection } from '@/components/settings/ToolSettings'
 import * as ipc from '@/lib/ipc'
 import { toast } from 'sonner'
 
 // 模拟 BuiltinToolsSection 使用的 IPC 模块
 vi.mock('@/lib/ipc', () => ({
-  listChatTools: vi.fn(),
-  setToolEnabled: vi.fn(),
+  getChatTools: vi.fn(),
+  updateChatToolState: vi.fn(),
 }))
 
 // 为 #21 的错误提示验证模拟 sonner toast
@@ -24,15 +25,23 @@ vi.mock('sonner', () => ({
   },
 }))
 
-const mockTools: Array<{ name: string; description: string; enabled: boolean }> = [
-  { name: 'Bash', description: 'Execute shell commands.', enabled: true },
-  { name: 'Read', description: 'Read the contents of a file.', enabled: true },
-  { name: 'Write', description: 'Write content to a file.', enabled: false },
-  { name: 'Edit', description: 'Edit an existing file with replacement.', enabled: true },
-  { name: 'Glob', description: 'Fast file pattern matching tool that works with any codebase size.', enabled: false },
-  { name: 'WebFetch', description: 'Fetch content from a URL using HTTP requests.', enabled: true },
-  { name: 'WebSearch', description: 'Search the internet for real-time information.', enabled: false },
+const mockTools = [
+  { meta: { id: 'Bash', name: 'Bash', description: 'Execute shell commands.' }, enabled: true, available: true },
+  { meta: { id: 'Read', name: 'Read', description: 'Read the contents of a file.' }, enabled: true, available: true },
+  { meta: { id: 'Write', name: 'Write', description: 'Write content to a file.' }, enabled: false, available: true },
+  { meta: { id: 'Edit', name: 'Edit', description: 'Edit an existing file with replacement.' }, enabled: true, available: true },
+  { meta: { id: 'Glob', name: 'Glob', description: 'Fast file pattern matching tool that works with any codebase size.' }, enabled: false, available: true },
+  { meta: { id: 'WebFetch', name: 'WebFetch', description: 'Fetch content from a URL using HTTP requests.' }, enabled: true, available: true },
+  { meta: { id: 'WebSearch', name: 'WebSearch', description: 'Search the internet for real-time information.' }, enabled: false, available: true },
 ]
+
+function renderBuiltinToolsSection() {
+  return render(
+    <Provider>
+      <BuiltinToolsSection />
+    </Provider>
+  )
+}
 
 describe('BuiltinToolsSection', () => {
   beforeEach(() => {
@@ -40,9 +49,9 @@ describe('BuiltinToolsSection', () => {
   })
 
   it('renders tool list from listChatTools()', async () => {
-    ;(ipc.listChatTools as any).mockResolvedValue(mockTools)
+    ;(ipc.getChatTools as any).mockResolvedValue(mockTools)
 
-    render(<BuiltinToolsSection />)
+    renderBuiltinToolsSection()
 
     // 等待工具名称渲染
     await waitFor(() => {
@@ -57,9 +66,9 @@ describe('BuiltinToolsSection', () => {
   })
 
   it('each tool shows name, description, and enabled switch', async () => {
-    ;(ipc.listChatTools as any).mockResolvedValue(mockTools)
+    ;(ipc.getChatTools as any).mockResolvedValue(mockTools)
 
-    render(<BuiltinToolsSection />)
+    renderBuiltinToolsSection()
 
     await waitFor(() => {
       expect(screen.getByText('Bash')).toBeInTheDocument()
@@ -82,10 +91,10 @@ describe('BuiltinToolsSection', () => {
   })
 
   it('toggling a tool calls setToolEnabled with correct args', async () => {
-    ;(ipc.listChatTools as any).mockResolvedValue(mockTools)
-    ;(ipc.setToolEnabled as any).mockResolvedValue(undefined)
+    ;(ipc.getChatTools as any).mockResolvedValue(mockTools)
+    ;(ipc.updateChatToolState as any).mockResolvedValue(undefined)
 
-    render(<BuiltinToolsSection />)
+    renderBuiltinToolsSection()
 
     await waitFor(() => {
       expect(screen.getByText('Bash')).toBeInTheDocument()
@@ -95,32 +104,32 @@ describe('BuiltinToolsSection', () => {
     const switches = screen.getAllByRole('switch')
     fireEvent.click(switches[0])
 
-    expect(ipc.setToolEnabled).toHaveBeenCalledWith('Bash', false)
+    expect(ipc.updateChatToolState).toHaveBeenCalledWith('Bash', { enabled: false })
 
     // 切换 Write（当前为禁用 -> 启用）
     fireEvent.click(switches[2])
 
-    expect(ipc.setToolEnabled).toHaveBeenCalledWith('Write', true)
+    expect(ipc.updateChatToolState).toHaveBeenCalledWith('Write', { enabled: true })
   })
 
   it('shows loading state while fetching', async () => {
     // 返回永不 resolve 的 promise，以维持加载态
-    ;(ipc.listChatTools as any).mockImplementation(
+    ;(ipc.getChatTools as any).mockImplementation(
       () => new Promise(() => {})
     )
 
-    render(<BuiltinToolsSection />)
+    renderBuiltinToolsSection()
 
     // 加载指示器应立即可见
     expect(screen.getByText('加载工具列表...')).toBeInTheDocument()
   })
 
   it('shows error state when fetch fails', async () => {
-    ;(ipc.listChatTools as any).mockRejectedValue(
+    ;(ipc.getChatTools as any).mockRejectedValue(
       new Error('Failed to fetch tools')
     )
 
-    render(<BuiltinToolsSection />)
+    renderBuiltinToolsSection()
 
     await waitFor(() => {
       expect(screen.getByText(/加载失败/)).toBeInTheDocument()
@@ -129,12 +138,12 @@ describe('BuiltinToolsSection', () => {
   })
 
   it('shows error toast when toggle fails (#21 error-toast)', async () => {
-    ;(ipc.listChatTools as any).mockResolvedValue(mockTools)
-    ;(ipc.setToolEnabled as any).mockRejectedValue(
+    ;(ipc.getChatTools as any).mockResolvedValue(mockTools)
+    ;(ipc.updateChatToolState as any).mockRejectedValue(
       new Error('Toggle failed')
     )
 
-    render(<BuiltinToolsSection />)
+    renderBuiltinToolsSection()
 
     await waitFor(() => {
       expect(screen.getByText('Bash')).toBeInTheDocument()

@@ -74,7 +74,19 @@ pub(crate) fn get_workspace_capabilities(
         .get_workspace_mcp_config(&workspace_slug)
         .map_err(|e| e.to_string())?;
 
-    Ok(WorkspaceCapabilities {
+    Ok(build_workspace_capabilities(
+        skills,
+        &disabled_skills,
+        mcp_config,
+    ))
+}
+
+fn build_workspace_capabilities(
+    skills: Vec<crate::kernel::types::KernelSkillInfo>,
+    disabled_skills: &[String],
+    mcp_config: crate::kernel::types::KernelMcpWorkspaceConfig,
+) -> WorkspaceCapabilities {
+    WorkspaceCapabilities {
         mcp_servers: mcp_config
             .servers
             .into_iter()
@@ -86,19 +98,20 @@ pub(crate) fn get_workspace_capabilities(
             .collect(),
         skills: skills
             .into_iter()
-            .map(|skill| WorkspaceCapabilitySkill {
-                slug: Path::new(&skill.dir_path)
+            .map(|skill| {
+                let slug = Path::new(&skill.dir_path)
                     .file_name()
                     .map(|name| name.to_string_lossy().to_string())
-                    .unwrap_or_else(|| skill.name.clone()),
-                name: skill.name.clone(),
-                description: skill.description.clone(),
-                enabled: !disabled_skills
-                    .iter()
-                    .any(|disabled| disabled == &skill.name),
+                    .unwrap_or_else(|| skill.name.clone());
+                WorkspaceCapabilitySkill {
+                    enabled: !disabled_skills.iter().any(|disabled| disabled == &slug),
+                    slug,
+                    name: skill.name.clone(),
+                    description: skill.description.clone(),
+                }
             })
             .collect(),
-    })
+    }
 }
 
 pub(crate) fn test_mcp_server(
@@ -161,5 +174,50 @@ pub(crate) fn test_mcp_server(
             })
         }
         other => Err(format!("不支持的 MCP transport type: {}", other)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_workspace_capabilities;
+    use crate::kernel::types::{KernelMcpServerConfig, KernelMcpWorkspaceConfig, KernelSkillInfo};
+
+    #[test]
+    fn workspace_capabilities_match_disabled_skill_by_slug() {
+        let capabilities = build_workspace_capabilities(
+            vec![
+                KernelSkillInfo {
+                    name: "Readable Skill Name".into(),
+                    description: "desc".into(),
+                    source: "workspace".into(),
+                    dir_path: "/tmp/demo-workspace/my-skill".into(),
+                },
+                KernelSkillInfo {
+                    name: "Another Skill".into(),
+                    description: "desc".into(),
+                    source: "workspace".into(),
+                    dir_path: "/tmp/demo-workspace/another-skill".into(),
+                },
+            ],
+            &[String::from("my-skill")],
+            KernelMcpWorkspaceConfig {
+                servers: vec![KernelMcpServerConfig {
+                    name: "local".into(),
+                    transport: "stdio".into(),
+                    command: Some("cmd".into()),
+                    args: Some(vec!["--help".into()]),
+                    url: None,
+                    env: None,
+                    disabled: false,
+                }],
+            },
+        );
+
+        assert_eq!(capabilities.mcp_servers.len(), 1);
+        assert_eq!(capabilities.skills.len(), 2);
+        assert_eq!(capabilities.skills[0].slug, "my-skill");
+        assert!(!capabilities.skills[0].enabled);
+        assert_eq!(capabilities.skills[1].slug, "another-skill");
+        assert!(capabilities.skills[1].enabled);
     }
 }

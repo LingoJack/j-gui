@@ -1,5 +1,8 @@
 use crate::agent_session::{self, AgentTimelineItem};
-use crate::kernel::types::{KernelAgentParams, KernelChatMessage};
+use crate::kernel::types::{
+    KernelAgentInterruptResponse, KernelAgentParams, KernelAgentToolResult, KernelChatMessage,
+    KernelPlanDecision,
+};
 use crate::kernel::ChatKernel;
 use serde::Serialize;
 use std::io::{BufRead, BufReader, Write};
@@ -8,6 +11,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use tauri::ipc::Channel;
+use tokio_util::sync::CancellationToken;
 
 #[path = "agent_engine_events.rs"]
 mod agent_engine_events;
@@ -62,6 +66,9 @@ pub enum AgentBackend {
     JAgent {
         #[allow(dead_code)]
         session_id: String,
+        cancel_token: CancellationToken,
+        tool_result_tx: std::sync::mpsc::SyncSender<KernelAgentToolResult>,
+        user_message_tx: std::sync::mpsc::SyncSender<KernelChatMessage>,
         agent_handle: Option<JoinHandle<()>>,
         bridge_handle: Option<JoinHandle<()>>,
     },
@@ -83,6 +90,8 @@ pub(crate) struct AgentCliStartParams {
     pub model: String,
     pub api_base: String,
     pub api_key: String,
+    pub resume_session_id: Option<String>,
+    pub fork_session: bool,
 }
 
 pub(crate) struct AgentJStartParams {
@@ -104,11 +113,18 @@ impl AgentEngine {
             model,
             api_base,
             api_key,
+            resume_session_id,
+            fork_session,
         } = params;
         let claude_path = which_claude()?;
 
         let mut cmd = Command::new(&claude_path);
-        let args = build_claude_args(&model, &permission_mode);
+        let args = build_claude_args(
+            &model,
+            &permission_mode,
+            resume_session_id.as_deref(),
+            fork_session,
+        );
         cmd.args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -202,6 +218,11 @@ impl AgentEngine {
             permission_mode,
             system_prompt,
         } = params;
+        let cancel_token = CancellationToken::new();
+        let (tool_result_tx, tool_result_rx) =
+            std::sync::mpsc::sync_channel::<KernelAgentToolResult>(16);
+        let (user_message_tx, user_message_rx) =
+            std::sync::mpsc::sync_channel::<KernelChatMessage>(16);
         // 1. 创建拦截通道，用于把 StreamMsg JSON 桥接成 AgentEvent
         let (interceptor_tx, interceptor_rx) = std::sync::mpsc::channel::<String>();
 
@@ -214,46 +235,20 @@ impl AgentEngine {
             session_id: session_id.clone(),
             messages,
             system_prompt,
-            permission_mode,
+            permission_mode: permission_mode.clone(),
+            cancel_token: cancel_token.clone(),
+            tool_result_rx: Some(tool_result_rx),
+            user_message_rx: Some(user_message_rx),
             on_event: json_channel,
             event_interceptor: Some(interceptor_tx),
         };
-
-        // 4. bridge 线程：从拦截器接收 agent loop 发出的 JSON 字符串，
-        //    转成 AgentEvent 后再转发给前端。
-        let bridge_channel = on_event.clone();
-        let sid_for_bridge = session_id.clone();
-        let bridge_handle = std::thread::spawn(move || {
-            while let Ok(json) = interceptor_rx.recv() {
-                let events = json_stream_msg_to_agent_events(&json, &sid_for_bridge);
-                for event in events {
-                    if bridge_channel.send(event).is_err() {
-                        return;
-                    }
-                }
-            }
-        });
-
-        // 5. agent loop 线程：创建 tokio runtime 并调用 run_agent_loop。
-        let error_channel = on_event.clone();
-        let agent_handle = std::thread::spawn(move || {
-            let rt = match tokio::runtime::Runtime::new() {
-                Ok(rt) => rt,
-                Err(e) => {
-                    let _ = error_channel.send(AgentEvent::Error {
-                        message: format!("创建 tokio runtime 失败: {}", e),
-                    });
-                    return;
-                }
-            };
-            rt.block_on(async {
-                if let Err(e) = kernel.run_agent_loop(params).await {
-                    let _ = error_channel.send(AgentEvent::Error {
-                        message: format!("Agent loop 错误: {}", e),
-                    });
-                }
-            });
-        });
+        let bridge_handle = spawn_jagent_bridge_thread(
+            on_event.clone(),
+            interceptor_rx,
+            session_id.clone(),
+            permission_mode,
+        );
+        let agent_handle = spawn_jagent_runtime_thread(kernel, on_event.clone(), params);
 
         // 6. 构造 transcript 路径
         let transcript_path = agent_session::agent_sessions_dir()
@@ -263,6 +258,9 @@ impl AgentEngine {
         Ok(Self {
             backend: AgentBackend::JAgent {
                 session_id: session_id.clone(),
+                cancel_token,
+                tool_result_tx,
+                user_message_tx,
                 agent_handle: Some(agent_handle),
                 bridge_handle: Some(bridge_handle),
             },
@@ -275,8 +273,27 @@ impl AgentEngine {
     pub fn send_message(&mut self, content: &str) -> Result<(), String> {
         let stdin = match &mut self.backend {
             AgentBackend::Cli { stdin, .. } => stdin.as_mut().ok_or("claude 进程未启动")?,
-            AgentBackend::JAgent { .. } => {
-                return Err("当前 Agent 不支持直接发送消息".to_string());
+            AgentBackend::JAgent {
+                user_message_tx, ..
+            } => {
+                let item = AgentTimelineItem {
+                    id: agent_session::generate_item_id(),
+                    kind: "user_message".into(),
+                    content: Some(content.to_string()),
+                    tool_call: None,
+                    interrupt: None,
+                    created_at: agent_session::now_millis(),
+                };
+                agent_session::append_timeline_item(&self.session_id, &item)?;
+                user_message_tx
+                    .send(KernelChatMessage {
+                        role: "user".to_string(),
+                        content: content.to_string(),
+                        reasoning: None,
+                        attachments: None,
+                    })
+                    .map_err(|e| format!("发送 jagent 用户消息失败: {}", e))?;
+                return Ok(());
             }
         };
         let item = AgentTimelineItem {
@@ -304,27 +321,36 @@ impl AgentEngine {
     }
 
     /// 回应一个等待中的 Agent 中断请求。
-    pub fn respond_interrupt(&mut self, interrupt_id: &str, content: &str) -> Result<(), String> {
-        let stdin = match &mut self.backend {
-            AgentBackend::Cli { stdin, .. } => stdin.as_mut().ok_or("Agent 未启动")?,
-            AgentBackend::JAgent { .. } => {
-                return Err("当前 Agent 不支持中断响应".to_string());
+    pub fn respond_interrupt(
+        &mut self,
+        interrupt_id: &str,
+        response: &KernelAgentInterruptResponse,
+    ) -> Result<(), String> {
+        let content = serialize_interrupt_response(response);
+        match &mut self.backend {
+            AgentBackend::Cli { stdin, .. } => {
+                let stdin = stdin.as_mut().ok_or("Agent 未启动")?;
+                let msg = serde_json::json!({
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": [{ "type": "tool_result", "tool_use_id": interrupt_id, "content": content }]
+                    }
+                });
+                writeln!(
+                    stdin,
+                    "{}",
+                    serde_json::to_string(&msg).map_err(|e| e.to_string())?
+                )
+                .map_err(|e| format!("写入 claude stdin 失败: {}", e))?;
             }
-        };
-        let msg = serde_json::json!({
-            "type": "user",
-            "message": {
-                "role": "user",
-                "content": [{ "type": "tool_result", "tool_use_id": interrupt_id, "content": content }]
+            AgentBackend::JAgent { tool_result_tx, .. } => {
+                tool_result_tx
+                    .send(kernel_tool_result_from_response(interrupt_id, response))
+                    .map_err(|e| format!("发送 Agent 中断响应失败: {}", e))?;
             }
-        });
-        writeln!(
-            stdin,
-            "{}",
-            serde_json::to_string(&msg).map_err(|e| e.to_string())?
-        )
-        .map_err(|e| format!("写入 claude stdin 失败: {}", e))?;
-        agent_session::update_interrupt_response(&self.session_id, interrupt_id, content)
+        }
+        agent_session::update_interrupt_response(&self.session_id, interrupt_id, &content)
     }
 
     /// 判断当前运行时是否已经自然结束。
@@ -395,12 +421,15 @@ impl AgentEngine {
                 }
             }
             AgentBackend::JAgent {
+                cancel_token,
+                tool_result_tx: _,
+                user_message_tx: _,
                 agent_handle,
                 bridge_handle,
                 ..
             } => {
-                // 分离 agent 与 bridge 线程（它们会运行到 agent loop 自然结束）。
-                // 当前还没有主动取消机制，因此 loop 会自行跑完。
+                cancel_token.cancel();
+                // j-cli agent loop 会在检测到 cancel token 后自行退出。
                 if let Some(h) = agent_handle.take() {
                     drop(h);
                 }
@@ -412,7 +441,55 @@ impl AgentEngine {
     }
 }
 
-fn build_claude_args(model: &str, permission_mode: &str) -> Vec<String> {
+fn spawn_jagent_bridge_thread(
+    on_event: Channel<AgentEvent>,
+    interceptor_rx: std::sync::mpsc::Receiver<String>,
+    session_id: String,
+    permission_mode: String,
+) -> JoinHandle<()> {
+    std::thread::spawn(move || {
+        while let Ok(json) = interceptor_rx.recv() {
+            let events = json_stream_msg_to_agent_events(&json, &session_id, &permission_mode);
+            for event in events {
+                if on_event.send(event).is_err() {
+                    return;
+                }
+            }
+        }
+    })
+}
+
+fn spawn_jagent_runtime_thread(
+    kernel: Arc<dyn ChatKernel>,
+    on_event: Channel<AgentEvent>,
+    params: KernelAgentParams,
+) -> JoinHandle<()> {
+    std::thread::spawn(move || {
+        let rt = match tokio::runtime::Runtime::new() {
+            Ok(rt) => rt,
+            Err(e) => {
+                let _ = on_event.send(AgentEvent::Error {
+                    message: format!("创建 tokio runtime 失败: {}", e),
+                });
+                return;
+            }
+        };
+        rt.block_on(async {
+            if let Err(e) = kernel.run_agent_loop(params).await {
+                let _ = on_event.send(AgentEvent::Error {
+                    message: format!("Agent loop 错误: {}", e),
+                });
+            }
+        });
+    })
+}
+
+fn build_claude_args(
+    model: &str,
+    permission_mode: &str,
+    resume_session_id: Option<&str>,
+    fork_session: bool,
+) -> Vec<String> {
     let mut args = vec![
         // NOTE: 不要使用 -p；那是单次执行模式，会导致 CLI 无法在多次 send_message 之间维持会话状态。
         "--output-format".to_string(),
@@ -423,6 +500,15 @@ fn build_claude_args(model: &str, permission_mode: &str) -> Vec<String> {
         "--permission-mode".to_string(),
         permission_mode.to_string(),
     ];
+
+    if let Some(resume_session_id) = resume_session_id.filter(|value| !value.is_empty()) {
+        args.push("--resume".to_string());
+        args.push(resume_session_id.to_string());
+    }
+
+    if fork_session {
+        args.push("--fork-session".to_string());
+    }
 
     if !model.is_empty() {
         args.push("--model".to_string());
@@ -435,6 +521,66 @@ fn build_claude_args(model: &str, permission_mode: &str) -> Vec<String> {
 impl Drop for AgentEngine {
     fn drop(&mut self) {
         self.close();
+    }
+}
+
+fn serialize_interrupt_response(response: &KernelAgentInterruptResponse) -> String {
+    match response {
+        KernelAgentInterruptResponse::Permission {
+            allowed: true,
+            always_allow: true,
+        } => "always_approved".to_string(),
+        KernelAgentInterruptResponse::Permission {
+            allowed: true,
+            always_allow: false,
+        } => "approved".to_string(),
+        KernelAgentInterruptResponse::Permission { allowed: false, .. } => "denied".to_string(),
+        KernelAgentInterruptResponse::AskUser { result_json } => result_json.clone(),
+        KernelAgentInterruptResponse::Plan { decision, feedback } => serde_json::json!({
+            "decision": match decision {
+                KernelPlanDecision::Approve => "approve",
+                KernelPlanDecision::ApproveAndClearContext => "approve_and_clear_context",
+                KernelPlanDecision::Reject => "reject",
+                KernelPlanDecision::None => "reject",
+            },
+            "feedback": feedback,
+        })
+        .to_string(),
+    }
+}
+
+fn kernel_tool_result_from_response(
+    interrupt_id: &str,
+    response: &KernelAgentInterruptResponse,
+) -> KernelAgentToolResult {
+    match response {
+        KernelAgentInterruptResponse::Permission {
+            allowed,
+            always_allow,
+        } => KernelAgentToolResult {
+            tool_call_id: interrupt_id.to_string(),
+            result: if *allowed && *always_allow {
+                "always_approved".to_string()
+            } else if *allowed {
+                "approved".to_string()
+            } else {
+                "denied".to_string()
+            },
+            is_error: !allowed,
+            plan_decision: KernelPlanDecision::None,
+        },
+        KernelAgentInterruptResponse::AskUser { result_json } => KernelAgentToolResult {
+            tool_call_id: interrupt_id.to_string(),
+            result: result_json.clone(),
+            is_error: false,
+            plan_decision: KernelPlanDecision::None,
+        },
+        KernelAgentInterruptResponse::Plan { decision, feedback } => KernelAgentToolResult {
+            tool_call_id: interrupt_id.to_string(),
+            result: feedback.clone().unwrap_or_default(),
+            is_error: matches!(decision, KernelPlanDecision::Reject),
+            plan_decision: decision.clone(),
+        },
     }
 }
 

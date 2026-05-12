@@ -1,9 +1,20 @@
-use crate::chat_engine::{ChatEngine, ChatEvent, MessageInfo, SendMessageRequest, SessionInfo};
+use crate::chat_engine::{
+    ChatEngine, ChatEvent, MessageInfo, MessageSearchResult, SendMessageRequest, SessionInfo,
+};
 use std::collections::HashSet;
 use std::sync::Mutex;
 use tauri::ipc::Channel;
 
 static STOPPED_SESSIONS: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TruncateMessagesFromInput {
+    pub conversation_id: String,
+    pub message_id: String,
+    #[serde(default)]
+    pub preserve_first_message_attachments: bool,
+}
 
 #[tauri::command]
 pub async fn send_message(
@@ -41,8 +52,24 @@ pub fn get_session_messages(session_id: String) -> Result<Vec<MessageInfo>, Stri
 }
 
 #[tauri::command]
+pub fn search_conversation_messages(query: String) -> Result<Vec<MessageSearchResult>, String> {
+    ChatEngine::new().search_messages(&query)
+}
+
+#[tauri::command]
 pub fn delete_message(session_id: String, pair_index: usize) -> Result<(), String> {
     ChatEngine::new().delete_message(&session_id, pair_index)
+}
+
+#[tauri::command]
+pub fn truncate_messages_from(
+    input: TruncateMessagesFromInput,
+) -> Result<Vec<MessageInfo>, String> {
+    ChatEngine::new().truncate_messages_from(
+        &input.conversation_id,
+        &input.message_id,
+        input.preserve_first_message_attachments,
+    )
 }
 
 #[tauri::command]
@@ -121,6 +148,61 @@ mod tests {
     fn test_toggle_invalid_session() {
         let engine = ChatEngine::new();
         let result = engine.toggle_pin("invalid-session-id!");
+        assert!(result.is_err(), "invalid session id should fail");
+    }
+
+    #[test]
+    fn test_session_lifecycle_round_trip() {
+        let engine = ChatEngine::new();
+        let id = engine.create_session();
+
+        let sessions = engine.list_sessions().unwrap();
+        assert!(
+            sessions.iter().any(|session| session.id == id),
+            "created session should be listed"
+        );
+
+        let messages = engine.get_messages(&id).unwrap();
+        assert!(
+            messages.is_empty(),
+            "newly created session should not have seeded messages"
+        );
+
+        engine.delete_session(&id).unwrap();
+        let sessions = engine.list_sessions().unwrap();
+        assert!(
+            sessions.iter().all(|session| session.id != id),
+            "deleted session should no longer be listed"
+        );
+    }
+
+    #[test]
+    fn test_stop_generation_marks_and_clears_session_state() {
+        let engine = ChatEngine::new();
+        let id = engine.create_session();
+        let _cleanup = Cleanup(id.clone());
+
+        assert!(
+            !is_session_stopped(&id),
+            "new session should not be marked as stopped"
+        );
+
+        stop_generation(id.clone()).unwrap();
+        assert!(
+            is_session_stopped(&id),
+            "stop_generation should mark the session as stopped"
+        );
+
+        clear_stopped_session(&id);
+        assert!(
+            !is_session_stopped(&id),
+            "clear_stopped_session should remove the stop marker"
+        );
+    }
+
+    #[test]
+    fn test_stop_generation_rejects_invalid_session_id() {
+        let result = stop_generation("invalid-session-id!".to_string());
         assert!(result.is_err(), "invalid session id should fail");
     }
 }

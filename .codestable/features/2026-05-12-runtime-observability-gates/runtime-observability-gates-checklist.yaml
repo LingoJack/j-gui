@@ -1,0 +1,69 @@
+feature: 2026-05-12-runtime-observability-gates
+roadmap: j-gui-v1
+roadmap_item: runtime-observability-gates
+created: 2026-05-12
+status: in-progress
+
+steps:
+  - id: step-1
+    paradigm: explore
+    title: 盘点三个高风险域的现有门禁锚点
+    status: done
+    description: "梳理 agent-history-replay、message-content-search、toolsettings-runtime 三域现有自动化测试、失败显式化和 acceptance 证据，明确哪些已在默认门禁中、哪些仍缺。"
+    exit: 三域差距清单完成，并能映射到默认门禁或 supplemental gate。
+
+  - id: step-2
+    paradigm: verification
+    title: 收口 replay 域的默认门禁与失败显式化
+    status: done
+    description: "补齐 Agent history replay 相关的前端 IPC 或 Rust 回归锚点，确保后端失败不会再被 fallback 吞掉。"
+    exit: replay 域的关键回归锚点进入默认门禁，相关测试通过。
+
+  - id: step-3
+    paradigm: verification
+    title: 收口 search 域的默认门禁与错误表面
+    status: done
+    description: "补齐 Chat 内容搜索的错误态和单侧失败场景测试，确保内容搜索闭环和现有 UI 错误表面一致。"
+    exit: search 域的关键回归锚点进入默认门禁，相关测试通过。
+
+  - id: step-4
+    paradigm: verification
+    title: 收口 toolsettings 域的默认门禁与 unsupported surface
+    status: done
+    description: "补齐 ToolSettings / ToolSelector / Chat 发送链路的回归测试或最小错误表面，确保不再回退到 enabledToolIds 伪闭环。"
+    exit: toolsettings 域的关键回归锚点进入默认门禁，相关测试通过。
+
+  - id: step-5
+    paradigm: verification
+    title: 对齐默认门禁入口
+    status: done
+    description: "如有必要，最小更新 check_lint 脚本或测试组织方式，让三个高风险域的回归锚点稳定被默认门禁执行。"
+    exit: "`bash scripts/check_lint.sh` 能稳定执行到三域关键锚点并通过。"
+
+  - id: step-6
+    paradigm: docs
+    title: 产出 Phase D 质量验收记录
+    status: done
+    description: "编写 runtime-observability-gates acceptance，统一记录 Closure Gate、Supplemental Gate 和 Evidence Pack。"
+    exit: acceptance 初稿完成，并能作为 proma-parity-evidence-pass 的直接输入。
+
+checks:
+  - id: check-scope
+    target: step-1
+    description: "只覆盖 replay/search/toolsettings 三个 roadmap 点名高风险域，不扩大到全仓测试补平或 parity 最终判定。"
+    status: passed
+
+  - id: check-default-gate
+    target: step-5
+    description: "三个高风险域的关键回归锚点必须由默认 `bash scripts/check_lint.sh` 跑到，而不是只留在补充命令里。"
+    status: passed
+
+  - id: check-failure-surface
+    target: step-2
+    description: "后端失败不能被 fallback 吞掉；前端或测试必须能直接观察到 replay/search/toolsettings 的失败。"
+    status: passed
+
+  - id: check-evidence-pack
+    target: step-6
+    description: "本 feature 的 acceptance 必须把三域证据整理成后续 `proma-parity-evidence-pass` 可直接消费的输入。"
+    status: passed

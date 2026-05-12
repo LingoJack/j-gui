@@ -4,7 +4,7 @@
  * 主题模式、IPC 通道等设置相关定义。
  */
 
-import type { EnvironmentCheckResult, ThinkingConfig, AgentEffort } from '@jgui/shared'
+import type { EnvironmentCheckResult, ThinkingConfig, AgentEffort, AgentBackendMode } from '@jgui/shared'
 
 /** 通知音场景类型 */
 export type NotificationSoundType = 'taskComplete' | 'permissionRequest' | 'exitPlanMode'
@@ -153,6 +153,8 @@ export interface AppSettings {
   agentChannelId?: string
   /** Agent 默认模型 ID */
   agentModelId?: string
+  /** Agent 默认后端模式 */
+  agentBackendMode?: AgentBackendMode
   /** Agent 启用的渠道 ID 列表（多选，Switch 开关） */
   agentChannelIds?: string[]
   /** Agent 当前工作区 ID */

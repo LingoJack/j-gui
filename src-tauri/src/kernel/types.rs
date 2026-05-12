@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::mpsc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::Channel;
+use tokio_util::sync::CancellationToken;
 
 // ---------------------------------------------------------------------------
 // 提供方 / 渠道相关类型
@@ -88,6 +89,37 @@ pub struct KernelChatMessage {
     pub content: String,
     pub reasoning: Option<String>,
     pub attachments: Option<Vec<KernelFileAttachment>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KernelPlanDecision {
+    None,
+    Approve,
+    ApproveAndClearContext,
+    Reject,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KernelAgentToolResult {
+    pub tool_call_id: String,
+    pub result: String,
+    pub is_error: bool,
+    pub plan_decision: KernelPlanDecision,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KernelAgentInterruptResponse {
+    Permission {
+        allowed: bool,
+        always_allow: bool,
+    },
+    AskUser {
+        result_json: String,
+    },
+    Plan {
+        decision: KernelPlanDecision,
+        feedback: Option<String>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -273,12 +305,14 @@ pub fn is_anthropic_compatible_provider(provider: Option<&str>) -> bool {
 }
 
 /// 直接通过 ChatKernel 运行 jcli agent loop 所需的参数。
-#[derive(Clone)]
 pub struct KernelAgentParams {
     pub session_id: String,
     pub messages: Vec<KernelChatMessage>,
     pub system_prompt: Option<String>,
     pub permission_mode: String,
+    pub cancel_token: CancellationToken,
+    pub tool_result_rx: Option<mpsc::Receiver<KernelAgentToolResult>>,
+    pub user_message_rx: Option<mpsc::Receiver<KernelChatMessage>>,
     /// 以 JSON 字符串流式发送 Agent 事件的通道。
     /// 前端需要把每个字符串当作 JSON 解析。
     pub on_event: Channel<String>,

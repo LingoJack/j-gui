@@ -26,7 +26,7 @@ DO_FIX=false
 [[ "${1:-}" == "--fix" ]] && DO_FIX=true
 
 # ── 计数器 ────────────────────────────────────────────────────────────────────
-FIXED_CHECK_GROUPS=14
+FIXED_CHECK_GROUPS=16
 N_TOTAL=0; N_PASS=0; N_WARN=0; N_FAIL=0
 
 pass()  { ((N_PASS++))  || true; ((N_TOTAL++)) || true; printf "  ${C_PASS}PASS${C_RST} %s\n" "$*"; }
@@ -152,21 +152,27 @@ fi
 # 5. 前端测试
 # =============================================================================
 hdr "=== 5. 前端测试 (bun run test) ==="
-if "$BUN_BIN" run test 2>&1; then
+frontend_test_log="$(mktemp)"
+if "$BUN_BIN" run test >"$frontend_test_log" 2>&1; then
     pass "前端测试全部通过"
 else
+    cat "$frontend_test_log"
     fail "前端测试存在失败"
 fi
+rm -f "$frontend_test_log"
 
 # =============================================================================
 # 6. Rust 测试
 # =============================================================================
 hdr "=== 6. Rust 测试 (cargo test) ==="
-if "$CARGO_BIN" test --manifest-path "$CARGO_MANIFEST_NATIVE" 2>&1; then
+runs_test_log="$(mktemp)"
+if "$CARGO_BIN" test --manifest-path "$CARGO_MANIFEST_NATIVE" >"$runs_test_log" 2>&1; then
     pass "Rust 测试全部通过"
 else
+    cat "$runs_test_log"
     fail "Rust 测试存在失败"
 fi
+rm -f "$runs_test_log"
 
 # =============================================================================
 # 7. 单文件行数
@@ -537,6 +543,127 @@ while IFS= read -r f; do
 done < <(all_rs)
 if (( unsafe_warn == 0 )); then
     pass "所有 unsafe 块均有 SAFETY 注释（或无 unsafe 代码）"
+fi
+
+# =============================================================================
+# 15. 占位符/假实现检查
+# =============================================================================
+hdr "=== 15. 占位符/假实现检查 (TODO/FIXME/TBD 等) ==="
+placeholder_warn=0
+while IFS= read -r f; do
+    rel="${f#$PROJECT_ROOT/}"
+    if [[ "$f" == *.rs ]]; then
+        hits=$(awk '
+        function brace_delta(line,   chars, i, c, delta) {
+            chars = line
+            gsub(/[^\{\}]/, "", chars)
+            delta = 0
+            for (i = 1; i <= length(chars); i++) {
+                c = substr(chars, i, 1)
+                if (c == "{") delta++
+                else if (c == "}") delta--
+            }
+            return delta
+        }
+
+        /^[[:space:]]*#\[cfg\(test\)\]/ {
+            pending_test_attr = 1
+            next
+        }
+
+        pending_test_attr && /^[[:space:]]*mod[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\{/ {
+            in_test = 1
+            test_depth = brace_delta($0)
+            pending_test_attr = 0
+            next
+        }
+
+        pending_test_attr && /^[[:space:]]*mod[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*;/ {
+            pending_test_attr = 0
+            next
+        }
+
+        in_test {
+            test_depth += brace_delta($0)
+            if (test_depth <= 0) {
+                in_test = 0
+                test_depth = 0
+            }
+            next
+        }
+
+        {
+            pending_test_attr = 0
+            lc = tolower($0)
+            if ($0 ~ /TODO|FIXME|TBD|待实现|未实现|临时实现/ || lc ~ /todo!\(|unimplemented!\(/) {
+                printf "      %d: %s\n", NR, $0
+            }
+        }
+        ' "$f" 2>/dev/null || true)
+    else
+        hits=$(grep -n -I -E 'TODO|FIXME|TBD|待实现|未实现|临时实现|todo!\(|unimplemented!\(' "$f" 2>/dev/null || true)
+    fi
+    if [[ -n "$hits" ]]; then
+        fail "$rel — 发现占位符/假实现标记:"
+        echo "$hits" | sed 's/^/      /'
+        ((placeholder_warn++)) || true
+    fi
+done < <(
+    find "$PROJECT_ROOT/src" "$PROJECT_ROOT/src-tauri/src" "$PROJECT_ROOT/packages" \
+        -type f \
+        \( -name '*.rs' -o -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' \) \
+        -not -path '*/target/*' \
+        -not -path '*/tests/*' \
+        -not -path '*/__tests__/*' \
+        -not -path '*/dist/*'
+)
+if (( placeholder_warn == 0 )); then
+    pass "未发现 TODO/FIXME 等占位符或假实现标记"
+fi
+
+# =============================================================================
+# 16. Phase D 关键闭环门
+# =============================================================================
+hdr "=== 16. Phase D 关键闭环门 (replay/search/toolsettings) ==="
+
+phase_d_gate_fail=0
+
+if grep -Fq "getAgentSessionSDKMessages surfaces backend replay failures instead of synthesizing fallback" \
+    "$PROJECT_ROOT/src/__tests__/ipc.test.ts"; then
+    pass "Agent history replay 错误显式化锚点已纳入默认前端测试"
+else
+    fail "缺少 Agent history replay 错误显式化锚点测试"
+    ((phase_d_gate_fail++)) || true
+fi
+
+if grep -Fq "shows explicit content-search error instead of empty results when backend search fails" \
+    "$PROJECT_ROOT/src/__tests__/search-dialog.test.tsx"; then
+    pass "message-content search 错误表面锚点已纳入默认前端测试"
+else
+    fail "缺少 message-content search 错误表面锚点测试"
+    ((phase_d_gate_fail++)) || true
+fi
+
+if grep -Fq "sendMessage no longer forwards enabledToolIds that backend does not consume" \
+    "$PROJECT_ROOT/src/__tests__/ipc.test.ts"; then
+    pass "ToolSettings runtime 发送链路锚点已纳入默认前端测试"
+else
+    fail "缺少 ToolSettings runtime 发送链路锚点测试"
+    ((phase_d_gate_fail++)) || true
+fi
+
+if grep -Fq "fn ensure_runtime_idle_rejects_running_session()" \
+    "$PROJECT_ROOT/src-tauri/src/tests/commands_agent.rs" && \
+   grep -Fq "fn resolve_cli_resume_state_uses_source_session_for_forks()" \
+    "$PROJECT_ROOT/src-tauri/src/tests/commands_agent.rs"; then
+    pass "Agent history replay Rust 回归锚点已纳入默认后端测试"
+else
+    fail "缺少 Agent history replay Rust 回归锚点测试"
+    ((phase_d_gate_fail++)) || true
+fi
+
+if (( phase_d_gate_fail == 0 )); then
+    info "Phase D 三个高风险域的关键锚点均已被默认门禁覆盖。"
 fi
 
 # =============================================================================

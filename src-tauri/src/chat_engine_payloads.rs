@@ -114,3 +114,17 @@ pub struct SessionInfo {
     #[serde(default)]
     pub archived: bool,
 }
+
+#[derive(Clone, Serialize, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageSearchResult {
+    pub conversation_id: String,
+    pub conversation_title: String,
+    pub message_id: String,
+    pub role: String,
+    pub snippet: String,
+    pub match_start: usize,
+    pub match_length: usize,
+    #[serde(default)]
+    pub archived: bool,
+}

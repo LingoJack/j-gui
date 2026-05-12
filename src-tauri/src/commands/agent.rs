@@ -1,5 +1,6 @@
 use crate::agent_engine::{AgentCliStartParams, AgentEngine, AgentEvent, AgentJStartParams};
 use crate::agent_session::{self, AgentSessionInfo, AgentTimelineItem, CreateSessionMetaInput};
+use crate::kernel::types::{KernelAgentInterruptResponse, KernelPlanDecision};
 use crate::kernel::{ChatKernel, JcliAdapter};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,6 +17,12 @@ pub(crate) use agent_compat::{
 
 /// Tauri 全局状态中的 AgentEngine 容器。
 pub struct AgentState(pub Arc<Mutex<HashMap<String, AgentEngine>>>);
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct CliResumeState {
+    resume_session_id: Option<String>,
+    fork_session: bool,
+}
 
 fn prune_finished_runtime(runtimes: &mut HashMap<String, AgentEngine>, session_id: &str) {
     let should_remove = runtimes
@@ -40,6 +47,49 @@ fn insert_runtime(
     Ok(())
 }
 
+fn ensure_runtime_idle(
+    runtimes: &mut HashMap<String, AgentEngine>,
+    session_id: &str,
+) -> Result<(), String> {
+    prune_finished_runtime(runtimes, session_id);
+    if runtimes.contains_key(session_id) {
+        return Err(format!(
+            "Agent 会话仍在运行中，无法在运行期间执行该操作: {}",
+            session_id
+        ));
+    }
+    Ok(())
+}
+
+fn resolve_cli_resume_state(session_id: &str) -> Result<CliResumeState, String> {
+    let session = agent_session::list_agent_sessions()?
+        .into_iter()
+        .find(|item| item.id == session_id);
+    let Some(session) = session else {
+        return Ok(CliResumeState::default());
+    };
+
+    if session.resume_at_message_uuid.is_some() {
+        return Ok(CliResumeState::default());
+    }
+
+    if let Some(sdk_session_id) = session.sdk_session_id {
+        return Ok(CliResumeState {
+            resume_session_id: Some(sdk_session_id),
+            fork_session: false,
+        });
+    }
+
+    if let Some(source_sdk_session_id) = session.fork_source_sdk_session_id {
+        return Ok(CliResumeState {
+            resume_session_id: Some(source_sdk_session_id),
+            fork_session: true,
+        });
+    }
+
+    Ok(CliResumeState::default())
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -50,6 +100,7 @@ pub struct AgentStartRequest {
     pub permission_mode_override: Option<String>,
     pub permission_mode: Option<String>,
     pub use_jagent: Option<bool>,
+    pub user_message: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -122,6 +173,24 @@ fn resolve_start_provider<'a>(
         .ok_or("未配置模型提供方".to_string())
 }
 
+fn build_jagent_messages(
+    input: &AgentStartRequest,
+) -> Vec<crate::kernel::types::KernelChatMessage> {
+    input
+        .user_message
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(|message| {
+            vec![crate::kernel::types::KernelChatMessage {
+                role: "user".to_string(),
+                content: message.to_string(),
+                reasoning: None,
+                attachments: None,
+            }]
+        })
+        .unwrap_or_default()
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AgentInterruptAskUserAnswer {
@@ -132,6 +201,7 @@ struct AgentInterruptAskUserAnswer {
     custom_text: Option<String>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 enum AgentInterruptResponse {
@@ -185,6 +255,13 @@ pub fn start_agent(
         None => agent_session::create_agent_session()?,
     };
     agent_session::set_session_stopped_by_user(&sid, false)?;
+    let backend_mode = if use_jagent {
+        Some("jagent")
+    } else {
+        Some("claude-sdk")
+    };
+    agent_session::set_session_backend_mode(&sid, backend_mode)?;
+    let cli_resume = resolve_cli_resume_state(&sid)?;
     let model_id = input
         .model_id
         .as_deref()
@@ -196,7 +273,7 @@ pub fn start_agent(
             kernel: Arc::clone(&*kernel) as Arc<dyn ChatKernel>,
             on_event,
             session_id: sid.clone(),
-            messages: vec![],
+            messages: build_jagent_messages(&input),
             permission_mode: mode,
             system_prompt: None,
         })?;
@@ -210,6 +287,8 @@ pub fn start_agent(
             model: model_id.to_string(),
             api_base: provider.api_base.clone(),
             api_key: provider.api_key.clone(),
+            resume_session_id: cli_resume.resume_session_id,
+            fork_session: cli_resume.fork_session,
         })?;
         let mut guard = state.0.lock().map_err(|e| e.to_string())?;
         insert_runtime(&mut guard, &sid, engine)?;
@@ -227,6 +306,7 @@ pub fn create_agent_session(
         channel_id: input.channel_id.clone(),
         workspace_id: input.workspace_id.clone(),
         permission_mode: Some("bypassPermissions".to_string()),
+        backend_mode: None,
         fork_source_dir: None,
         fork_source_sdk_session_id: None,
         resume_at_message_uuid: None,
@@ -289,8 +369,7 @@ pub(crate) fn respond_agent_interrupt_impl(
         .get_mut(&session_id)
         .ok_or_else(|| format!("Agent 未启动: {}", session_id))?;
     let parsed = parse_interrupt_response(&kind, &response);
-    let content = serialize_interrupt_response(parsed);
-    engine.respond_interrupt(&interrupt_id, &content)
+    engine.respond_interrupt(&interrupt_id, &parsed)
 }
 
 #[tauri::command]
@@ -344,21 +423,19 @@ pub fn respond_ask_user(
     compat::respond_ask_user(state, request)
 }
 
-fn parse_interrupt_response(kind: &str, response: &serde_json::Value) -> AgentInterruptResponse {
+fn parse_interrupt_response(
+    kind: &str,
+    response: &serde_json::Value,
+) -> KernelAgentInterruptResponse {
     match kind {
-        "ask_user" => AgentInterruptResponse::AskUser {
-            answers: parse_ask_user_answers(response),
-            selected_options: parse_selected_options(response),
-            custom_text: response["customText"].as_str().map(|s| s.to_string()),
+        "ask_user" => KernelAgentInterruptResponse::AskUser {
+            result_json: build_ask_user_response_json(response),
         },
-        "plan" => AgentInterruptResponse::Plan {
-            decision: response["decision"]
-                .as_str()
-                .unwrap_or("reject")
-                .to_string(),
+        "plan" => KernelAgentInterruptResponse::Plan {
+            decision: parse_plan_decision(response["decision"].as_str().unwrap_or("reject")),
             feedback: response["feedback"].as_str().map(|s| s.to_string()),
         },
-        _ => AgentInterruptResponse::Permission {
+        _ => KernelAgentInterruptResponse::Permission {
             allowed: response["allowed"].as_bool().unwrap_or(false),
             always_allow: response["alwaysAllow"].as_bool().unwrap_or(false),
         },
@@ -391,43 +468,32 @@ fn parse_selected_options(response: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn serialize_interrupt_response(parsed: AgentInterruptResponse) -> String {
-    match parsed {
-        AgentInterruptResponse::AskUser {
-            answers,
-            selected_options: _,
-            custom_text: _,
-        } if !answers.is_empty() => serde_json::json!({
+fn build_ask_user_response_json(response: &serde_json::Value) -> String {
+    let answers = parse_ask_user_answers(response);
+    if !answers.is_empty() {
+        return serde_json::json!({
             "answers": answers.iter().map(|answer| serde_json::json!({
                 "question_id": answer.question_id,
                 "selected_options": answer.selected_options,
                 "custom_text": answer.custom_text,
             })).collect::<Vec<_>>(),
         })
-        .to_string(),
-        AgentInterruptResponse::AskUser {
-            selected_options,
-            custom_text,
-            ..
-        } => serde_json::json!({
-            "selected_options": selected_options,
-            "custom_text": custom_text,
-        })
-        .to_string(),
-        AgentInterruptResponse::Plan { decision, feedback } => serde_json::json!({
-            "decision": decision,
-            "feedback": feedback,
-        })
-        .to_string(),
-        AgentInterruptResponse::Permission {
-            allowed: true,
-            always_allow: true,
-        } => "always_approved".to_string(),
-        AgentInterruptResponse::Permission {
-            allowed: true,
-            always_allow: false,
-        } => "approved".to_string(),
-        AgentInterruptResponse::Permission { allowed: false, .. } => "denied".to_string(),
+        .to_string();
+    }
+
+    serde_json::json!({
+        "selected_options": parse_selected_options(response),
+        "custom_text": response["customText"].as_str().map(|s| s.to_string()),
+    })
+    .to_string()
+}
+
+fn parse_plan_decision(decision: &str) -> KernelPlanDecision {
+    match decision {
+        "approve" | "approve_auto" => KernelPlanDecision::Approve,
+        "approve_and_clear_context" | "approve_edit" => KernelPlanDecision::ApproveAndClearContext,
+        "feedback" | "deny" | "reject" => KernelPlanDecision::Reject,
+        _ => KernelPlanDecision::Reject,
     }
 }
 
@@ -492,19 +558,33 @@ pub fn move_agent_session_to_workspace(
 }
 
 #[tauri::command]
-pub fn fork_agent_session(input: ForkSessionInput) -> Result<AgentSessionInfo, String> {
+pub fn fork_agent_session(
+    state: tauri::State<'_, AgentState>,
+    input: ForkSessionInput,
+) -> Result<AgentSessionInfo, String> {
+    {
+        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        ensure_runtime_idle(&mut guard, &input.session_id)?;
+    }
     agent_session::fork_agent_session(&input.session_id, input.up_to_message_uuid.as_deref())
 }
 
 #[tauri::command]
-pub fn rewind_session(input: RewindSessionInput) -> Result<RewindSessionResult, String> {
+pub fn rewind_session(
+    state: tauri::State<'_, AgentState>,
+    input: RewindSessionInput,
+) -> Result<RewindSessionResult, String> {
+    {
+        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        ensure_runtime_idle(&mut guard, &input.session_id)?;
+    }
     let remaining_messages =
         agent_session::rewind_agent_session(&input.session_id, &input.assistant_message_uuid)?;
     Ok(RewindSessionResult {
         remaining_messages,
         file_rewind: Some(serde_json::json!({
             "canRewind": false,
-            "error": "当前版本仅回退对话时间线，尚未恢复文件快照"
+            "error": "当前版本仅回退对话时间线，不恢复文件快照"
         })),
     })
 }

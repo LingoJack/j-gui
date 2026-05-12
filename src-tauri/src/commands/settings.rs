@@ -64,6 +64,7 @@ pub struct GuiSettings {
     pub onboarding_completed: bool,
     pub agent_channel_id: Option<String>,
     pub agent_model_id: Option<String>,
+    pub agent_backend_mode: Option<String>,
     #[serde(default)]
     pub agent_channel_ids: Vec<String>,
     pub agent_workspace_id: Option<String>,
@@ -117,6 +118,7 @@ impl Default for GuiSettings {
             onboarding_completed: false,
             agent_channel_id: None,
             agent_model_id: None,
+            agent_backend_mode: None,
             agent_channel_ids: vec![],
             agent_workspace_id: None,
             notifications_enabled: true,
@@ -315,6 +317,7 @@ pub fn update_settings(
                 "onboardingCompleted" => set_bool!(value, settings, onboarding_completed),
                 "agentChannelId" => set_opt_str!(value, settings, agent_channel_id),
                 "agentModelId" => set_opt_str!(value, settings, agent_model_id),
+                "agentBackendMode" => set_opt_str!(value, settings, agent_backend_mode),
                 "agentChannelIds" => set_arr_str!(value, settings, agent_channel_ids),
                 "agentWorkspaceId" => set_opt_str!(value, settings, agent_workspace_id),
                 "notificationsEnabled" => set_bool!(value, settings, notifications_enabled),

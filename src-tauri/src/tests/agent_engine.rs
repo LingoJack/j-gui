@@ -1,12 +1,14 @@
 use super::{
     build_claude_args, json_stream_msg_to_agent_events, parse_sdk_line, persist_sdk_session_id,
-    timeline_items_from_event, AgentEvent,
+    timeline_items_from_event, AgentEngine, AgentEvent,
 };
+use crate::agent_engine::AgentBackend;
 use crate::agent_session;
+use crate::kernel::types::KernelChatMessage;
 
 #[test]
 fn build_claude_args_enables_stream_json_input() {
-    let args = build_claude_args("claude-sonnet-4-6", "bypassPermissions");
+    let args = build_claude_args("claude-sonnet-4-6", "bypassPermissions", None, false);
 
     assert!(args
         .windows(2)
@@ -15,6 +17,32 @@ fn build_claude_args_enables_stream_json_input() {
     assert!(args
         .windows(2)
         .any(|w| w == ["--model", "claude-sonnet-4-6"]));
+}
+
+#[test]
+fn build_claude_args_includes_resume_and_fork_flags() {
+    let args = build_claude_args(
+        "claude-sonnet-4-6",
+        "bypassPermissions",
+        Some("sdk-123"),
+        true,
+    );
+
+    assert!(args
+        .windows(2)
+        .any(|window| window == ["--resume", "sdk-123"]));
+    assert!(args.iter().any(|arg| arg == "--fork-session"));
+    assert!(args
+        .windows(2)
+        .any(|window| window == ["--model", "claude-sonnet-4-6"]));
+}
+
+#[test]
+fn build_claude_args_omits_resume_flags_when_not_requested() {
+    let args = build_claude_args("", "auto", None, false);
+
+    assert!(!args.iter().any(|arg| arg == "--resume"));
+    assert!(!args.iter().any(|arg| arg == "--fork-session"));
 }
 
 #[test]
@@ -175,7 +203,7 @@ fn ask_user_tool_use_routes_to_ask_user_kind() {
 #[test]
 fn json_stream_msg_tool_call_request_converts_to_tool_use() {
     let json = r#"{"type":"toolCallRequest","tools":[{"id":"t1","name":"Bash","arguments":"{\"command\":\"ls\"}"}]}"#;
-    let events = json_stream_msg_to_agent_events(json, "test-sid");
+    let events = json_stream_msg_to_agent_events(json, "test-sid", "bypassPermissions");
     assert_eq!(events.len(), 1);
     match &events[0] {
         AgentEvent::ToolUse {
@@ -194,23 +222,96 @@ fn json_stream_msg_tool_call_request_converts_to_tool_use() {
 #[test]
 fn json_stream_msg_tool_call_request_multiple_tools() {
     let json = r#"{"type":"toolCallRequest","tools":[{"id":"t1","name":"Bash","arguments":"{}"},{"id":"t2","name":"Read","arguments":"{}"}]}"#;
-    let events = json_stream_msg_to_agent_events(json, "test-sid");
+    let events = json_stream_msg_to_agent_events(json, "test-sid", "bypassPermissions");
     assert_eq!(events.len(), 2);
     assert!(matches!(&events[0], AgentEvent::ToolUse { tool_id, .. } if tool_id == "t1"));
     assert!(matches!(&events[1], AgentEvent::ToolUse { tool_id, .. } if tool_id == "t2"));
 }
 
 #[test]
+fn json_stream_msg_tool_call_request_respects_permission_interrupts() {
+    let json = r#"{"type":"toolCallRequest","tools":[{"id":"t1","name":"Bash","arguments":"{\"command\":\"ls\"}"}]}"#;
+    let events = json_stream_msg_to_agent_events(json, "test-sid", "default");
+    assert!(matches!(
+        &events[0],
+        AgentEvent::Interrupt {
+            interrupt_id,
+            kind,
+            tool_name,
+            ..
+        } if interrupt_id == "t1" && kind == "permission" && tool_name == "Bash"
+    ));
+}
+
+#[test]
+fn json_stream_msg_ask_tool_routes_to_ask_user_interrupt() {
+    let json = r#"{"type":"toolCallRequest","tools":[{"id":"ask-1","name":"Ask","arguments":"{\"questions\":[]}"}]}"#;
+    let events = json_stream_msg_to_agent_events(json, "test-sid", "bypassPermissions");
+    assert!(matches!(
+        &events[0],
+        AgentEvent::Interrupt {
+            interrupt_id,
+            kind,
+            tool_name,
+            ..
+        } if interrupt_id == "ask-1" && kind == "ask_user" && tool_name == "Ask"
+    ));
+}
+
+#[test]
+fn json_stream_msg_exit_plan_mode_routes_to_plan_interrupt() {
+    let json = r#"{"type":"toolCallRequest","tools":[{"id":"plan-1","name":"ExitPlanMode","arguments":"{\"allowedPrompts\":[]}"}]}"#;
+    let events = json_stream_msg_to_agent_events(json, "test-sid", "bypassPermissions");
+    assert!(matches!(
+        &events[0],
+        AgentEvent::Interrupt {
+            interrupt_id,
+            kind,
+            tool_name,
+            ..
+        } if interrupt_id == "plan-1" && kind == "plan" && tool_name == "ExitPlanMode"
+    ));
+}
+
+#[test]
 fn json_stream_msg_done_converts_to_done() {
     let json = r#"{"type":"done"}"#;
-    let events = json_stream_msg_to_agent_events(json, "test-sid");
+    let events = json_stream_msg_to_agent_events(json, "test-sid", "bypassPermissions");
     assert_eq!(events, vec![AgentEvent::Done { total_tokens: 0 }]);
+}
+
+#[test]
+fn jagent_send_message_pushes_follow_up_message_into_runtime_queue() {
+    let session_id = agent_session::create_agent_session().expect("create session");
+    let (user_message_tx, user_message_rx) = std::sync::mpsc::sync_channel::<KernelChatMessage>(1);
+    let engine = AgentEngine::test_stub(
+        &session_id,
+        AgentBackend::JAgent {
+            session_id: session_id.clone(),
+            cancel_token: tokio_util::sync::CancellationToken::new(),
+            tool_result_tx: std::sync::mpsc::sync_channel(1).0,
+            user_message_tx,
+            agent_handle: None,
+            bridge_handle: None,
+        },
+    );
+    let mut engine = engine;
+
+    engine
+        .send_message("follow up")
+        .expect("jagent follow-up should enqueue");
+
+    let message = user_message_rx
+        .recv_timeout(std::time::Duration::from_millis(200))
+        .expect("follow-up message should be queued");
+    assert_eq!(message.role, "user");
+    assert_eq!(message.content, "follow up");
 }
 
 #[test]
 fn json_stream_msg_error_converts_to_error() {
     let json = r#"{"type":"error","message":"test error"}"#;
-    let events = json_stream_msg_to_agent_events(json, "test-sid");
+    let events = json_stream_msg_to_agent_events(json, "test-sid", "bypassPermissions");
     assert_eq!(
         events,
         vec![AgentEvent::Error {
@@ -229,21 +330,21 @@ fn json_stream_msg_internal_events_are_ignored() {
         r#"{"type":"compacted","messagesBefore":42}"#,
     ];
     for json in &event_types {
-        let events = json_stream_msg_to_agent_events(json, "test-sid");
+        let events = json_stream_msg_to_agent_events(json, "test-sid", "bypassPermissions");
         assert!(events.is_empty(), "expected no events for type: {}", json);
     }
 }
 
 #[test]
 fn json_stream_msg_invalid_json_returns_empty() {
-    let events = json_stream_msg_to_agent_events("not valid json", "test-sid");
+    let events = json_stream_msg_to_agent_events("not valid json", "test-sid", "bypassPermissions");
     assert!(events.is_empty());
 }
 
 #[test]
 fn json_stream_msg_unknown_type_returns_empty() {
     let json = r#"{"type":"unknown"}"#;
-    let events = json_stream_msg_to_agent_events(json, "test-sid");
+    let events = json_stream_msg_to_agent_events(json, "test-sid", "bypassPermissions");
     assert!(events.is_empty());
 }
 

@@ -1,0 +1,44 @@
+feature: 2026-05-12-session-archive
+roadmap: j-gui-v1
+roadmap_item: session-archive
+created: 2026-05-12
+status: done
+
+steps:
+  - id: step-1
+    paradigm: explore
+    description: "核对 Chat / Agent 归档命令、侧边栏归档视图与 SearchDialog 归档标记是否都已经接通真实后端"
+    exit: 代码断点清单明确
+    status: done
+  - id: step-2
+    paradigm: verification
+    description: "补 session-archive 的 design / acceptance / roadmap 真相，把已实现归档能力从 planned 翻成 done"
+    exit: 文档与 roadmap 状态一致
+    status: done
+  - id: step-3
+    paradigm: verification
+    description: "运行仓库默认合规检查，确认归档闭环未引入回归"
+    exit: bash scripts/check_lint.sh 通过
+    status: done
+
+checks:
+  - id: check-chat-archive-truth
+    description: "Chat 归档动作走正式后端命令并持久化"
+    target: step-1
+    status: passed
+  - id: check-agent-archive-truth
+    description: "Agent 归档动作走正式后端命令并同步归档视图"
+    target: step-1
+    status: passed
+  - id: check-search-archive-sync
+    description: "SearchDialog 结果继续保留 archived 标记并可打开目标会话"
+    target: step-1
+    status: passed
+  - id: check-roadmap-truth
+    description: "session-archive 不再继续被 roadmap 标成 planned"
+    target: step-2
+    status: passed
+  - id: check-full-regression
+    description: "全量检查通过，归档链路未回退"
+    target: step-3
+    status: passed

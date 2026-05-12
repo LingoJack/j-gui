@@ -3,7 +3,7 @@ doc_type: roadmap
 slug: j-gui-v1
 status: active
 created: 2026-05-10
-last_reviewed: 2026-05-11
+last_reviewed: 2026-05-12
 tags: [tauri, desktop, j-cli, chat, agent, proma, closure]
 related_requirements:
   - j-gui-ai-interaction
@@ -105,7 +105,6 @@ type ChatSendRequest = {
   content: string
   systemMessage?: string | null
   thinkingEnabled?: boolean
-  enabledToolIds?: string[]
   attachments?: FileAttachment[]
 }
 ```
@@ -113,6 +112,7 @@ type ChatSendRequest = {
 约束：
 
 - 前端 `ChatView` 组织出的字段，后端要么真实消费，要么从 UI 上移除，不允许长期“组装但不生效”
+- 工具开关当前不再通过单次请求透传；现行真相是 `ToolSettings / ToolSelector -> list_chat_tools / set_tool_enabled -> 全局配置 -> Chat runtime`
 - `send_message` 的输入口径必须与 `ipc.ts` 暴露口径一致
 - 流式事件字段名必须前后端一致，不允许一端写 `content`、另一端按 `delta` 读
 - Chat runtime 必须先做协议选路，再决定 endpoint；不同 `provider/base URL` 不能再一律硬打 `/chat/completions`
@@ -184,13 +184,14 @@ type SearchResult = {
 
 - `list_chat_tools`
 - `set_tool_enabled`
-- `get_tool_config`
-- `set_tool_config`
-- `validate_tool_config`（可选，但若没有则要有等价错误返回）
+- ToolSettings / ToolSelector 共用同一套后端工具真相
+- Chat 发送链路不能再透传后端未消费的 `enabledToolIds`
+- 凭据编辑、自定义工具、连通性测试等未接通能力必须显式隐藏或标 unsupported
 
 约束：
 
 - ToolSettings 的每个开关都必须能映射到真实 runtime 行为
+- 当前 roadmap 不再把工具配置 CRUD 当作本项最低完成标准；若未来要支持，需单独立项或补 design
 - 如果某项能力当前只有 UI，不允许再在 roadmap 中写成 done
 
 ### 5.6 低 Bug 的门禁必须体现在闭环验证上
@@ -288,8 +289,139 @@ type SearchResult = {
 - 旧 roadmap 中的部分 `done` 本质上是“UI 已有”或“基线已搭”，不能再直接复用为当前状态证明
 - 只要 `Agent history replay`、`message-content search`、`ToolSettings runtime closure` 任一未闭环，就不应声称已经达到“低 Bug 且可自己开发自己”的产品标准
 - MCP 仍然保持 Agent runtime 边界，不回流到当前 Chat 主链路
+- `search-content-closure` 在 2026-05-12 已进入 feature 落地：Chat 内容搜索正式补上 `search_conversation_messages` 后端命令，后续重点转向验收证据与排序/体验细节，而不再是“命令是否存在”
 
-## 9. 变更日志
+## 9. 当前进度
+
+### 9.1 总体数字
+
+- roadmap 总条目：`38`
+- 已完成：`35 / 38`（`92.1%`）
+- 进行中：`0 / 38`
+- 已规划未开始：`3 / 38`
+- 最小闭环项（`minimal_loop: true`）：`5 / 5` 已完成
+
+### 9.2 分阶段进度
+
+| Phase | 条目数 | done | in-progress | planned | 说明 |
+|---|---:|---:|---:|---:|---|
+| A 基础底座与已证实闭环 | 24 | 24 | 0 | 0 | 基础底座已清空，后续不再作为主要阻塞 |
+| B P0 能力闭环 | 3 | 3 | 0 | 0 | P0 主链路已收口，后续不再把 Agent 长期工作台列为 v1 的未完成阻塞 |
+| C P1 体验与治理闭环 | 5 | 5 | 0 | 0 | Phase C 已整体收尾，治理真相与此前已完成项都已翻正 |
+| D P1 质量与证据收口 | 3 | 3 | 0 | 0 | Phase D 已完成；质量门禁、Proma 证据骨架与 TDD 收口基线都已翻正 |
+| E P2 自我开发闭环 | 2 | 0 | 0 | 2 | 必须等前面闭环项稳定后再推进 |
+| F 远期 | 1 | 0 | 0 | 1 | 不进入当前 v1 完成度判断 |
+
+### 9.3 当前解锁关系
+
+- `runtime-observability-gates`、`proma-parity-evidence-pass`、`tdd-coverage` 完成后，Phase D 已整体收口
+- 当前已直接解锁的下游主线是：
+  - `dogfooding-self-development-loop`
+- `agent-engine-jagent` 仍保持独立评估项，不被当前 Phase D 阻塞
+
+### 9.4 收尾视角进度
+
+- Phase B（P0）已完成收尾
+  - `stream-protocol-unify`：已完成并已作为当前真相基线
+  - `agent-history-replay-closure`：acceptance 已补，联合复验通过，roadmap 已翻 `done`
+  - `agent-runtime-stability-recovery`：acceptance 已补，联合复验通过，roadmap 已翻 `done`
+- Phase C（P1）已完成收尾
+  - `search-content-closure`：已完成
+  - `governance-bidirectional-sync`：已完成；治理边界、共享 disabled_skills 真相、默认门禁与串行持久化 round-trip 验证均已补齐
+  - `chat-tools-ui`：已随 ToolSettings runtime closure 一并完成
+  - `toolsettings-runtime-closure`：已完成，`enabledToolIds` 伪闭环字段已从 Chat 发送链路移除
+  - `session-archive`：已在 replay / search 可信前提下完成并翻正 roadmap
+
+## 10. 给人看的 Checklist
+
+下面这份 checklist 是给人看的推进清单；`j-gui-v1-items.yaml` 继续只承担机器状态源。
+
+### 10.1 已完成
+
+- [x] `stream-protocol-unify`
+  - Chat / Agent 主协议口径已统一到当前代码真相
+  - Chat runtime 协议选路已收口，不再只靠单一路径假设
+- [x] `search-content-closure`
+  - Chat 内容搜索已有正式后端命令
+  - SearchDialog 结果能继续按 `messageId` 打开到目标消息
+  - requirement / roadmap / acceptance 已同步到当前真相
+- [x] `chat-tools-ui`
+  - ToolSettings / ToolSelector 已作为统一工具入口保留
+  - 不再依赖单次请求工具字段假装 runtime 可用
+- [x] `toolsettings-runtime-closure`
+  - ToolSettings / ToolSelector 与 Chat runtime 的工具口径已统一
+  - `enabledToolIds` 已退出当前发送链路，不再触发 unsupported 断点
+- [x] `session-archive`
+  - Chat / Agent 归档都已接通正式后端命令
+  - archived 视图、搜索结果与打开链路保持一致
+
+### 10.2 当前正在推进
+
+- 无
+- Phase D 已达到 `3 / 3 done`
+
+### 10.3 下一步明确要做
+
+1. 进入 `dogfooding-self-development-loop`
+   - 在已完成的 replay/search/toolsettings/runtime gate/parity evidence 基础上，验证 j-gui 是否能稳定承担“用自己开发自己”的工作流
+2. 视 runtime 复杂度再决定是否推进 `agent-engine-jagent`
+   - 该项是能力增强，不再是 v1 主闭环阻塞
+
+### 10.4 Phase B 最后收尾 Checklist
+
+这部分已完成，不再作为后续阻塞。
+
+- [x] `agent-history-replay-closure` acceptance 已补
+- [x] `agent-runtime-stability-recovery` acceptance 已补
+- [x] Phase B 联合复验已完成
+  - `bun run test src/__tests__/ipc.test.ts`
+  - `bash scripts/check_lint.sh`
+- [x] `agent-history-replay-closure` 与 `agent-runtime-stability-recovery` 已翻 `done`
+
+Phase B 收尾完成的数字目标：
+
+- P0 已达到 `3 / 3 done`
+- roadmap 总完成数已提升到 `31 / 38`
+- `minimal_loop` 已达到 `5 / 5`
+
+### 10.5 Phase C 最后收尾 Checklist
+
+Phase C 收尾已完成。
+
+- [x] `governance-bidirectional-sync` 已收窄成这轮真正要交付的治理范围
+  - 只覆盖 Skills / Hooks / MCP / workspace 的真实持久化链路
+  - `toolsettings-runtime-closure` 已明确拆出
+- [x] `toolsettings-runtime-closure` 已完成并补 acceptance
+  - 最小闭环已覆盖工具列表、启停、可用性与发送链路口径
+  - `chat-tools-ui` 已随之翻为实际完成
+- [x] `session-archive` 已在 replay 与搜索稳定后收口
+  - Chat / Agent 归档、归档视图与搜索结果不再分裂
+- [x] `governance-bidirectional-sync` 已完成最终持久化验证并翻正
+  - Skills 启停的共享 `disabled_skills` 边界已写明，不再按“每个 workspace 各有一份禁用表”误判
+  - 工作区 Skill 内容、workspace MCP、hook disabled 与 CC SDK 导入均已有真实磁盘 round-trip 测试
+  - 这组持久化测试当前通过串行 `ignored` 命令执行；是否并入默认门禁，转入 `runtime-observability-gates`
+  - `search-content-closure`、`toolsettings-runtime-closure`、`session-archive` 已完成，可作为闭环证据点
+
+Phase C 当前判断：
+
+- 已完成：`search-content-closure`、`governance-bidirectional-sync`、`chat-tools-ui`、`toolsettings-runtime-closure`、`session-archive`
+- Phase C 已达到 `5 / 5 done`
+
+### 10.6 推荐执行顺序
+
+1. 先确认 `governance-bidirectional-sync` 缩口后的 acceptance 目标
+2. 立刻推进 `runtime-observability-gates`
+3. 然后集中做 `proma-parity-evidence-pass`
+4. 在质量与证据项收口后，再判断是否进入 `dogfooding-self-development-loop`
+
+## 11. 变更日志
 
 - `2026-05-11`：基于 `project-current-state-audit`、`roadmap-implementation-truth-audit`、`capability-closure-gap-vs-proma` 三份 explore，重写 roadmap 目标、状态语义、主线分组与接口契约。主路线从“功能清单”切换为“能力闭环 + Proma 追平/超越”。
 - `2026-05-10`：建立 `j-gui-v1` roadmap，承接旧的 `j-gui-desktop-app`。
+- `2026-05-12`：`search-content-closure` 按 feature 流程启动并补上 Chat 正式内容搜索命令，同步修正 requirement / acceptance 对“内容搜索排除”的旧表述。
+- `2026-05-12`：`toolsettings-runtime-closure` 完成，Chat 发送链路不再透传 `enabledToolIds`，ToolSettings / ToolSelector 与 runtime 真相统一。
+- `2026-05-12`：`session-archive` 补齐 feature 文档与验收，并把已实现的 Chat / Agent 归档能力从 roadmap `planned` 翻为 `done`。
+- `2026-05-12`：补充 Phase B / C 的收尾视角进度、最后收尾 checklist 与翻状态前门槛，避免继续按“实现差不多”推进。
+- `2026-05-12`：Phase B 完成 acceptance + 联合复验并翻 `done`；同时把 `governance-bidirectional-sync` 缩口为治理真相项，并为 `toolsettings-runtime-closure` 补独立设计输入。
+- `2026-05-12`：`governance-bidirectional-sync` 补齐持久化 round-trip 测试，明确共享 `disabled_skills` 边界，并在默认门禁 + 串行 ignored 验收通过后正式翻 `done`，使 Phase C 达到 `5 / 5 done`。
+- `2026-05-12`：完成 `runtime-observability-gates`、`proma-parity-evidence-pass`、`tdd-coverage`，使 Phase D 达到 `3 / 3 done`；其中 `tdd-coverage` 按当前代码真相翻正旧 coverage 口径，并补上 `chat.rs` 的会话生命周期与 stop-generation 状态锚点。

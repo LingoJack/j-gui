@@ -262,9 +262,13 @@ interface ChatSendInput {
   attachments?: FileAttachment[];
   thinkingEnabled?: true;   // 仅 true 时传
   systemMessage?: string;   // 解析后的系统提示词
-  enabledToolIds?: string[]; // 启用工具 ID 列表
 }
 ```
+
+工具开关真相说明：
+
+- Chat 工具启停不再随单次 `ChatSendInput` 透传。
+- 当前真相是 `ToolSettings / ToolSelector -> list_chat_tools / set_tool_enabled -> 后端全局配置`，Chat runtime 读取该全局配置生效。
 
 ## 4. 关键决策
 

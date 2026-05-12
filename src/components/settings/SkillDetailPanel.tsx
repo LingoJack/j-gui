@@ -28,6 +28,7 @@ export interface SkillDetailPanelProps {
 export function SkillDetailPanel({ skill, workspaceSlug, onSaved }: SkillDetailPanelProps): React.ReactElement {
   const [content, setContent] = React.useState<string | null>(null)
   const [loadingContent, setLoadingContent] = React.useState(false)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
   const currentSlugRef = React.useRef(skill.slug)
 
   const [isEditingMeta, setIsEditingMeta] = React.useState(false)
@@ -42,14 +43,23 @@ export function SkillDetailPanel({ skill, workspaceSlug, onSaved }: SkillDetailP
     setIsEditingMeta(false)
     setIsEditingBody(false)
     setLoadingContent(true)
+    setLoadError(null)
 
     ipc.readSkillContent(workspaceSlug, skill.slug)
       .then((text) => {
-        if (currentSlugRef.current === skill.slug) setContent(text)
+        if (currentSlugRef.current === skill.slug) {
+          setContent(text)
+          setLoadError(null)
+        }
       })
       .catch((err) => {
         console.error('[SkillDetail] 加载内容失败:', err)
-        if (currentSlugRef.current === skill.slug) setContent(null)
+        if (currentSlugRef.current === skill.slug) {
+          const message = err instanceof Error ? err.message : '未知错误'
+          setContent(null)
+          setLoadError(message)
+          toast.error('加载 Skill 内容失败', { description: message })
+        }
       })
       .finally(() => {
         if (currentSlugRef.current === skill.slug) setLoadingContent(false)
@@ -107,6 +117,15 @@ export function SkillDetailPanel({ skill, workspaceSlug, onSaved }: SkillDetailP
 
   if (loadingContent) {
     return <div className="flex items-center justify-center h-full text-sm text-muted-foreground">加载中...</div>
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+        <div className="text-sm font-medium text-foreground">加载 Skill 内容失败</div>
+        <div className="text-xs text-muted-foreground">{loadError}</div>
+      </div>
+    )
   }
 
   const sourceLabel = skill.importSource

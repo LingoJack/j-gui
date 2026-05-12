@@ -1,0 +1,54 @@
+feature: 2026-05-12-toolsettings-runtime-closure
+roadmap: j-gui-v1
+roadmap_item: toolsettings-runtime-closure
+created: 2026-05-12
+status: done
+
+steps:
+  - id: step-1
+    paradigm: explore
+    description: "审计 `ToolSettings` / `ToolSelectorPopover` / `ChatView` / `chat_engine.rs` 之间的工具状态断点"
+    exit: 断点清单明确
+    status: done
+  - id: step-2
+    paradigm: frontend
+    description: "收紧 ToolSettings 与 ToolSelector 的支持面，只保留已接通能力并明确 unsupported surface"
+    exit: bun run test 通过
+    status: done
+  - id: step-3
+    paradigm: backend
+    description: "统一 Chat 发送链路与 `enabledToolIds` 的后端口径，消除前端发送但后端判 unsupported 的断点"
+    exit: cargo test 通过
+    status: done
+  - id: step-4
+    paradigm: verification
+    description: "补工具设置回归测试，覆盖切换、刷新与发送链路"
+    exit: 对应测试通过
+    status: done
+  - id: step-5
+    paradigm: verification
+    description: "运行仓库默认合规检查，确认 ToolSettings runtime closure 未引入回归"
+    exit: bash scripts/check_lint.sh 通过
+    status: done
+
+checks:
+  - id: check-settings-truth
+    description: "ToolSettings 不再暴露未接通的假入口"
+    target: step-2
+    status: passed
+  - id: check-selector-sync
+    description: "ToolSelector 与 ToolSettings 看到的工具状态一致"
+    target: step-2
+    status: passed
+  - id: check-runtime-effect
+    description: "Chat 发送链路与后端对工具字段口径一致"
+    target: step-3
+    status: passed
+  - id: check-tool-regression
+    description: "工具切换、刷新和发送链路有回归测试覆盖"
+    target: step-4
+    status: passed
+  - id: check-full-regression
+    description: "全量检查通过，未引入新的 Chat/Tool 回归"
+    target: step-5
+    status: passed

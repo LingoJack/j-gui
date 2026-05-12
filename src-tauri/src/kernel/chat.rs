@@ -64,6 +64,13 @@ pub trait ChatKernel: Send + Sync {
     fn delete_session(&self, session_id: &str) -> Result<(), KernelError>;
     /// 按索引删除一组 user/assistant 消息。
     fn delete_message(&self, session_id: &str, pair_index: usize) -> Result<(), KernelError>;
+    /// 从指定轮次开始截断全部后续 user/assistant 消息。
+    fn truncate_messages_from(
+        &self,
+        session_id: &str,
+        pair_index: usize,
+        preserve_first_message_attachments: bool,
+    ) -> Result<(), KernelError>;
     /// 清空会话中的全部消息。
     fn clear_session(&self, session_id: &str) -> Result<(), KernelError>;
 
