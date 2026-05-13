@@ -56,6 +56,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { CENTERED_MAIN_CONTENT_CLASS } from "@/lib/layout-shell";
+import { buildMessageInputHint } from "@/lib/input-hints";
 import {
   getActiveAccelerator,
   getAcceleratorDisplay,
@@ -720,9 +721,7 @@ export function AgentView({
                   onPasteFiles={handlePasteFiles}
                   placeholder={
                     agentChannelId && hasAvailableModel
-                      ? sendWithCmdEnter
-                        ? "输入消息... (⌘/Ctrl+Enter 发送，Enter 换行，@ 引用文件，/ 调用 Skill，$ 引用 Chat，# 调用 MCP)"
-                        : "输入消息... (Enter 发送，Shift+Enter 换行，@ 引用文件，/ 调用 Skill，$ 引用 Chat，# 调用 MCP)"
+                      ? buildMessageInputHint(sendWithCmdEnter, 'agent')
                       : !agentChannelId
                         ? "请先在设置中选择 Agent 供应商"
                         : "暂无可用模型，请先在设置中启用渠道"

@@ -58,7 +58,6 @@ export const DEFAULT_SHORTCUTS: ShortcutDefinition[] = [
     defaultWin: "Ctrl+Shift+P",
     category: "global",
     global: true,
-    readonly: true,
   },
   // 应用级
   {

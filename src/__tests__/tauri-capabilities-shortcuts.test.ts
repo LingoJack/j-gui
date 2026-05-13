@@ -40,4 +40,13 @@ describe("desktop shell tauri config", () => {
       "icons/icon.ico",
     ]);
   });
+
+  it("keeps desktop window defaults stable for window-state restore", () => {
+    const mainWindow = tauriConfig.app.windows[0];
+
+    expect(mainWindow.width).toBe(1200);
+    expect(mainWindow.height).toBe(800);
+    expect(mainWindow.minWidth).toBe(800);
+    expect(mainWindow.minHeight).toBe(500);
+  });
 });

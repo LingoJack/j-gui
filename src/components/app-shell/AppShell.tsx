@@ -10,7 +10,7 @@ import * as React from 'react'
 import { atom, useAtomValue } from 'jotai'
 import { LeftSidebar } from './LeftSidebar'
 import { RightSidePanel } from './RightSidePanel'
-import { WindowControls } from './WindowControls'
+import { TopRightWindowControls } from './TopRightWindowControls'
 import { MainArea } from '@/components/tabs/MainArea'
 import { AppShellProvider, type AppShellContextType } from '@/contexts/AppShellContext'
 import { appModeAtom } from '@/atoms/app-mode'
@@ -50,12 +50,14 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
     return activeTab.type === 'agent' ? currentSessionId : currentConversationId
   }, [activeTab, currentConversationId, currentSessionId])
 
+  const panelAtom = React.useMemo(
+    () => (activePanelSessionId ? sessionSidePanelOpenAtom(activePanelSessionId) : null),
+    [activePanelSessionId],
+  )
+  useAtomValue(panelAtom ?? FALLBACK_CLOSED_PANEL_ATOM)
+
   return (
     <AppShellProvider value={contextValue}>
-      {/* 可拖动标题栏区域，用于窗口拖动 */}
-      <div className="titlebar-drag-region fixed top-0 left-0 right-0 h-[50px] z-50" />
-      <WindowControls />
-
       <div className="shell-bg h-screen w-screen flex overflow-hidden bg-gradient-to-br from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">
         {/* 左侧边栏：可折叠，带圆角和内边距 */}
         <div className="p-2 pr-0 relative z-[60]">
@@ -64,6 +66,7 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
 
         {/* 中间容器：relative z-[60] 使其在 z-50 拖动区域之上 */}
         <div className="flex-1 min-w-0 p-2 relative z-[60]">
+          <TopRightWindowControls />
           {/* 主内容区域（TabBar + TabContent） */}
           <MainArea />
         </div>

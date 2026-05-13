@@ -13,3 +13,13 @@ export const shortcutOverridesAtom = atom<ShortcutOverrides>({})
 
 /** 发送消息快捷键模式：true = Cmd/Ctrl+Enter 发送，false = Enter 发送 */
 export const sendWithCmdEnterAtom = atom(false)
+
+export type GlobalShortcutStatus = 'active' | 'conflict' | 'unavailable'
+
+export interface GlobalShortcutRegistrationState {
+  accelerator: string
+  status: GlobalShortcutStatus
+  detail?: string
+}
+
+export const globalShortcutStateAtom = atom<Record<string, GlobalShortcutRegistrationState>>({})

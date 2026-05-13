@@ -30,6 +30,7 @@ import {
 import {
   shortcutOverridesAtom,
   sendWithCmdEnterAtom,
+  globalShortcutStateAtom,
 } from "@/atoms/shortcut-atoms";
 import { draftSessionIdsAtom } from "@/atoms/draft-session-atoms";
 import {
@@ -44,6 +45,8 @@ import { useOpenSession } from "@/hooks/useOpenSession";
 import * as ipc from "@/lib/ipc";
 import {
   initShortcutRegistry,
+  getActiveAccelerator,
+  isShortcutDispatchSuspended,
   updateShortcutOverrides,
 } from "@/lib/shortcut-registry";
 import {
@@ -51,9 +54,7 @@ import {
   isDraftLikeConversation,
 } from "@/lib/session-meta";
 import {
-  matchesShowMainWindowShortcut,
   registerGlobalAppShortcuts,
-  showMainWindow,
 } from "@/lib/global-shortcut-manager";
 import {
   applyZoomCommand,
@@ -75,6 +76,7 @@ export function GlobalShortcuts(): null {
   const setShortcutOverrides = useSetAtom(shortcutOverridesAtom);
   const shortcutOverrides = useAtomValue(shortcutOverridesAtom);
   const setSendWithCmdEnter = useSetAtom(sendWithCmdEnterAtom);
+  const setGlobalShortcutState = useSetAtom(globalShortcutStateAtom);
   const { createChat, createAgent } = useCreateSession();
   const openSession = useOpenSession();
   const conversations = useAtomValue(conversationsAtom);
@@ -109,18 +111,40 @@ export function GlobalShortcuts(): null {
   }, [setShortcutOverrides, setSendWithCmdEnter]);
 
   useEffect(() => {
+    updateShortcutOverrides(shortcutOverrides);
+  }, [shortcutOverrides]);
+
+  useEffect(() => {
     let disposed = false;
     let disposeShortcuts: (() => Promise<void>) | null = null;
 
     registerGlobalAppShortcuts()
-      .then((dispose) => {
+      .then(({ dispose, result }) => {
         if (disposed) {
           void dispose();
           return;
         }
         disposeShortcuts = dispose;
+        setGlobalShortcutState((prev) => ({
+          ...prev,
+          "show-main-window": {
+            accelerator: result.accelerator,
+            status: result.success ? "active" : "conflict",
+            detail: result.reason,
+          },
+        }));
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        setGlobalShortcutState((prev) => ({
+          ...prev,
+          "show-main-window": {
+            accelerator: getActiveAccelerator("show-main-window"),
+            status: "unavailable",
+            detail: error instanceof Error ? error.message : String(error),
+          },
+        }));
+      });
 
     return () => {
       disposed = true;
@@ -128,15 +152,11 @@ export function GlobalShortcuts(): null {
         void disposeShortcuts();
       }
     };
-  }, []);
-
-  // 配置变更时同步到注册表
-  useEffect(() => {
-    updateShortcutOverrides(shortcutOverrides);
-  }, [shortcutOverrides]);
+  }, [setGlobalShortcutState, shortcutOverrides]);
 
   useEffect(() => {
     const handleZoomShortcut = (event: KeyboardEvent) => {
+      if (isShortcutDispatchSuspended()) return;
       const command = getZoomCommandFromEvent(event);
       if (!command) return;
       event.preventDefault();
@@ -147,21 +167,6 @@ export function GlobalShortcuts(): null {
     window.addEventListener("keydown", handleZoomShortcut, true);
     return () => {
       window.removeEventListener("keydown", handleZoomShortcut, true);
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleShowMainWindowShortcut = (event: KeyboardEvent) => {
-      if (!matchesShowMainWindowShortcut(event)) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-      void showMainWindow().catch(console.error);
-    };
-
-    window.addEventListener("keydown", handleShowMainWindowShortcut, true);
-    return () => {
-      window.removeEventListener("keydown", handleShowMainWindowShortcut, true);
     };
   }, []);
 

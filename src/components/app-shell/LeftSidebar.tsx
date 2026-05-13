@@ -1236,6 +1236,9 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
         transitionDuration: `${SIDEBAR_WIDTH_TRANSITION_MS}ms`,
       }}
     >
+      <div className="pointer-events-none absolute inset-0">
+        <div className="h-full w-full titlebar-drag-region" />
+      </div>
       {sidebarCollapsed && (
       <div
         aria-hidden={false}
@@ -1251,9 +1254,9 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
               <button
                 aria-label="展开侧边栏"
                 onClick={() => setSidebarCollapsed(false)}
-                className="p-2 rounded-[10px] text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground transition-colors titlebar-no-drag"
+                className="size-[36px] flex items-center justify-center rounded-[10px] text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground transition-colors titlebar-no-drag"
               >
-                <PanelLeftOpen size={18} />
+                <PanelLeftOpen size={18} strokeWidth={2.2} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">展开侧边栏</TooltipContent>
@@ -1308,7 +1311,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
         {/* macOS 需要避开左上角红绿灯，其他平台不占用这块空间。 */}
         <div className={cn(isMac ? 'pt-[30px]' : 'pt-1')}>
           {/* 模式切换器 + 折叠按钮 */}
-          <div className="flex items-start gap-1.5 px-3">
+          <div className="flex items-stretch gap-1.5 px-3">
             <div className="flex-1 min-w-0">
               <ModeSwitcher />
             </div>
@@ -1317,9 +1320,9 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
                 <button
                   aria-label="收起侧边栏"
                   onClick={() => setSidebarCollapsed(true)}
-                  className="mt-2 size-[36px] flex-shrink-0 flex items-center justify-center rounded-[10px] bg-muted text-foreground/40 hover:bg-foreground/[0.08] hover:text-foreground/60 transition-colors titlebar-no-drag"
+                  className="h-[44px] w-[44px] flex-shrink-0 flex items-center justify-center rounded-xl bg-muted text-foreground/40 hover:bg-foreground/[0.08] hover:text-foreground/60 transition-colors titlebar-no-drag"
                 >
-                  <PanelLeftClose size={14} />
+                  <PanelLeftClose size={17} />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right">收起侧边栏</TooltipContent>

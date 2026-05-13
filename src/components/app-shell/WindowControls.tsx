@@ -3,8 +3,13 @@ import { Minus, Square, X } from 'lucide-react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { detectIsMac, detectIsWindows } from '@/lib/platform'
 import { cn } from '@/lib/utils'
+import { hideMainAppWindow } from '@/lib/window-presence'
 
-export function WindowControls(): React.ReactElement | null {
+interface WindowControlsProps {
+  className?: string
+}
+
+export function WindowControls({ className }: WindowControlsProps): React.ReactElement | null {
   const isWindows = React.useMemo(() => detectIsWindows(), [])
   const isMac = React.useMemo(() => detectIsMac(), [])
   const hasTauriWindow = React.useMemo(() => hasTauriWindowContext(), [])
@@ -58,8 +63,12 @@ export function WindowControls(): React.ReactElement | null {
   if (!isWindows || isMac || !hasTauriWindow) return null
 
   return (
-    <div className="pointer-events-none fixed top-0 right-0 z-[80] flex h-[50px] items-start pr-2 pt-2">
-      <div className="pointer-events-auto flex items-center gap-1 titlebar-no-drag">
+    <div
+      className={cn(
+        'flex h-full items-center justify-end gap-0.5 titlebar-no-drag',
+        className,
+      )}
+    >
         <WindowControlButton
           ariaLabel="最小化窗口"
           onClick={() => {
@@ -85,17 +94,12 @@ export function WindowControls(): React.ReactElement | null {
         </WindowControlButton>
         <WindowControlButton
           ariaLabel="关闭窗口"
-          danger
           onClick={() => {
-            const appWindow = appWindowRef.current
-            if (appWindow) {
-              void appWindow.close()
-            }
+            void hideMainAppWindow()
           }}
         >
           <X className="size-3.5" />
         </WindowControlButton>
-      </div>
     </div>
   )
 }
@@ -110,7 +114,6 @@ interface WindowControlButtonProps {
 function WindowControlButton({
   ariaLabel,
   children,
-  danger = false,
   onClick,
 }: WindowControlButtonProps): React.ReactElement {
   return (
@@ -118,9 +121,8 @@ function WindowControlButton({
       type="button"
       aria-label={ariaLabel}
       className={cn(
-        'flex size-8 items-center justify-center rounded-lg border border-border/60 bg-background/75 text-foreground/70 shadow-sm backdrop-blur transition-colors',
+        'flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-full bg-transparent text-foreground/70 transition-colors',
         'hover:bg-foreground/[0.06] hover:text-foreground',
-        danger && 'hover:border-red-500/40 hover:bg-red-500/12 hover:text-red-600',
       )}
       onClick={onClick}
     >

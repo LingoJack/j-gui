@@ -24,6 +24,9 @@ let currentOverrides: ShortcutOverrides = {}
 /** 是否已初始化 */
 let initialized = false
 
+/** 快捷键录制等临时场景下，暂停窗口内快捷键分发 */
+let shortcutDispatchSuspended = false
+
 // ===== 快捷键匹配 =====
 
 interface ParsedAccelerator {
@@ -99,6 +102,7 @@ function rebuildCache(): void {
 function dispatchShortcut(e: KeyboardEvent): void {
   // 忽略输入法组合过程
   if (e.isComposing) return
+  if (shortcutDispatchSuspended) return
 
   for (const [id, parsed] of parsedCache) {
     if (matchesParsed(e, parsed)) {
@@ -161,6 +165,20 @@ export function registerShortcut(
 export function updateShortcutOverrides(overrides: ShortcutOverrides): void {
   currentOverrides = overrides
   rebuildCache()
+}
+
+/**
+ * 暂停/恢复窗口内快捷键分发
+ *
+ * 录制新快捷键时需要临时静默现有快捷键，避免按键被当前应用拦截。
+ */
+export function setShortcutDispatchSuspended(suspended: boolean): void {
+  shortcutDispatchSuspended = suspended
+}
+
+/** 当前窗口内快捷键是否处于暂停分发状态 */
+export function isShortcutDispatchSuspended(): boolean {
+  return shortcutDispatchSuspended
 }
 
 /**

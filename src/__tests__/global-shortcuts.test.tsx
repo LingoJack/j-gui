@@ -25,6 +25,7 @@ import {
   currentAgentWorkspaceIdAtom,
 } from "@/atoms/agent-atoms";
 import * as globalShortcutManager from "@/lib/global-shortcut-manager";
+import * as shortcutRegistry from "@/lib/shortcut-registry";
 import * as zoomShortcuts from "@/lib/zoom-shortcuts";
 
 const shortcutHandlers = new Map<string, () => void>();
@@ -54,15 +55,19 @@ vi.mock("@/hooks/useOpenSession", () => ({
 
 vi.mock("@/lib/shortcut-registry", () => ({
   initShortcutRegistry: vi.fn(),
+  getActiveAccelerator: vi.fn(() => "Ctrl+Shift+P"),
+  isShortcutDispatchSuspended: vi.fn(() => false),
   updateShortcutOverrides: vi.fn(),
 }));
 
 vi.mock("@/lib/global-shortcut-manager", () => ({
-  registerGlobalAppShortcuts: vi.fn(async () => async () => {}),
-  matchesShowMainWindowShortcut: vi.fn(
-    (event: KeyboardEvent) =>
-      event.ctrlKey && event.shiftKey && event.code === "KeyP",
-  ),
+  registerGlobalAppShortcuts: vi.fn(async () => ({
+    dispose: async () => {},
+    result: {
+      accelerator: "Ctrl+Shift+P",
+      success: true,
+    },
+  })),
   showMainWindow: vi.fn(),
 }));
 
@@ -166,23 +171,6 @@ describe("GlobalShortcuts", () => {
     expect(store.get(sidebarCollapsedAtom)).toBe(false);
   });
 
-  it("intercepts ctrl+shift+p before browser print and forwards to showMainWindow", async () => {
-    renderShortcuts();
-    const event = new KeyboardEvent("keydown", {
-      key: "p",
-      code: "KeyP",
-      ctrlKey: true,
-      shiftKey: true,
-      bubbles: true,
-      cancelable: true,
-    });
-
-    window.dispatchEvent(event);
-
-    expect(event.defaultPrevented).toBe(true);
-    expect(globalShortcutManager.showMainWindow).toHaveBeenCalledTimes(1);
-  });
-
   it("intercepts ctrl+plus zoom shortcuts and forwards zoom command", async () => {
     vi.mocked(zoomShortcuts.getZoomCommandFromEvent).mockReturnValue("in");
 
@@ -199,5 +187,24 @@ describe("GlobalShortcuts", () => {
 
     expect(event.defaultPrevented).toBe(true);
     expect(zoomShortcuts.applyZoomCommand).toHaveBeenCalledWith("in");
+  });
+
+  it("does not react to window-level shortcuts while shortcut recording is suspended", async () => {
+    vi.mocked(shortcutRegistry.isShortcutDispatchSuspended).mockReturnValue(true);
+
+    renderShortcuts();
+    const event = new KeyboardEvent("keydown", {
+      key: "=",
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(zoomShortcuts.applyZoomCommand).not.toHaveBeenCalled();
+    vi.mocked(shortcutRegistry.isShortcutDispatchSuspended).mockReturnValue(false);
   });
 });

@@ -349,7 +349,7 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
       <div
         className={cn(
           'w-[320px] h-full flex flex-col titlebar-no-drag',
-          isWindows ? 'pt-[34px]' : 'pt-0.5',
+          'pt-0',
           shouldAnimate && 'transition-opacity duration-300',
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none',
         )}
@@ -357,6 +357,14 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
           {/* 文件浏览内容 */}
           {workspaceSlug ? (
             <div className="flex-1 min-h-0 flex flex-col">
+                  <div className="tabbar-bg relative flex h-[34px] flex-shrink-0 items-center rounded-t-[18px] border-b border-border/50 px-3 overflow-hidden">
+                    <div className="absolute inset-0 rounded-t-[18px] titlebar-drag-region" />
+                    <div className="relative z-[1] flex min-w-0 flex-1 items-center gap-2">
+                      <span className="select-none text-[12px] font-medium text-muted-foreground pointer-events-none">
+                        {mode === 'chat' ? '聊天工作区' : '工作区'}
+                      </span>
+                    </div>
+                  </div>
                   {/* ===== 会话文件区（仅当 sessionPath 存在时显示） ===== */}
                   {sessionPath && (
                     <>

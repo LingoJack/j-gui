@@ -13,7 +13,21 @@ mod kernel;
 
 use commands::agent::AgentState;
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::menu::{MenuBuilder, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Manager, Runtime, WindowEvent};
+use tauri_plugin_window_state::Builder as WindowStateBuilder;
+
+const TRAY_SHOW_ID: &str = "tray-show-main-window";
+const TRAY_QUIT_ID: &str = "tray-quit-app";
+
+fn show_main_window<R: Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
 
 macro_rules! register_invoke_handler {
     ($builder:expr) => {
@@ -155,13 +169,66 @@ macro_rules! register_invoke_handler {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let tray_available = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let tray_available_for_setup = Arc::clone(&tray_available);
+    let tray_available_for_events = Arc::clone(&tray_available);
+
     let app = register_invoke_handler!(tauri::Builder::default()
+        .plugin(WindowStateBuilder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
+        .on_window_event(move |window, event| {
+            if window.label() != "main" {
+                return;
+            }
+
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if tray_available_for_events.load(std::sync::atomic::Ordering::Relaxed) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
+        .setup(move |app| {
+            let show_item = MenuItem::with_id(app, TRAY_SHOW_ID, "显示主界面", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, TRAY_QUIT_ID, "退出 J Gui", true, None::<&str>)?;
+            let tray_menu = MenuBuilder::new(app)
+                .item(&show_item)
+                .separator()
+                .item(&quit_item)
+                .build()?;
+
+            let mut tray_builder = TrayIconBuilder::with_id("main")
+                .menu(&tray_menu)
+                .tooltip("J Gui")
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button,
+                        button_state,
+                        ..
+                    } = event
+                    {
+                        if button == MouseButton::Left && button_state == MouseButtonState::Up {
+                            show_main_window(tray.app_handle());
+                        }
+                    }
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            if let Err(error) = tray_builder.build(app) {
+                eprintln!("tray initialization failed, continue without tray: {error}");
+                tray_available_for_setup.store(false, std::sync::atomic::Ordering::Relaxed);
+            } else {
+                tray_available_for_setup.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+
             #[cfg(target_os = "windows")]
             {
                 if let Some(window) = app.get_webview_window("main") {
@@ -169,6 +236,13 @@ pub fn run() {
                 }
             }
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            if event.id() == TRAY_SHOW_ID {
+                show_main_window(app);
+            } else if event.id() == TRAY_QUIT_ID {
+                app.exit(0);
+            }
         })
         .manage(AgentState(Arc::new(Mutex::new(
             std::collections::HashMap::new()

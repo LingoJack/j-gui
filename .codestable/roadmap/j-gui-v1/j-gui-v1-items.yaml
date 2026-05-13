@@ -368,6 +368,14 @@ items:
     minimal_loop: false
     notes: 当前虽已有 workspace/j-cli/global 多来源入口，但 discoverability、来源提示、切换反馈和 Hooks 生命周期表达仍偏弱；参考 Proma/Codex 的体验做增强，但不回退到自管平台。
 
+  - slug: agent-hooks-config-integration
+    description: Agent Hooks 配置集成——把独立 Hooks 治理并入 Agent 配置，按后端支持矩阵与工作区边界提供类型化添加、启停与来源管理
+    depends_on: [agent-backend-switch-ux-hardening, agent-governance-surface-hardening]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 只暴露当前 Agent backend 明确支持的 hook 类型；需要同时区分全局/user/workspace 来源与 unsupported 状态，不对未支持的后端伪造“可添加 Hook”能力。
+
   - slug: system-prompt-runtime-hardening
     description: 系统提示词运行时硬化——补默认提示词覆写/恢复默认、默认值本地化 truth，以及增强选项的真实后端消费语义
     depends_on: [product-friction-audit]
@@ -391,6 +399,14 @@ items:
     feature: null
     minimal_loop: false
     notes: 需要明确区分 j-gui 本体、Claude Code CLI、npm 安装链路与 Shell tool 能力；Node 仅按安装方式/扩展工具链相关信息展示，不再作为统一硬前提。
+
+  - slug: appearance-theme-customization
+    description: 外观主题自定义——在保留预设主题基础上开放受控的颜色、字体、对比度与界面密度项，并提供预览、复制/导入与重置
+    depends_on: [settings-experience-hardening, visual-layout-polish]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 首版只开放受主题 token 约束的安全项，如强调色、背景/前景、UI/代码字体、对比度、侧栏透明度与字号；不做任意 CSS 注入，也不把可读性校验留给用户自己兜底。
 
   - slug: dogfooding-blocker-burn-down
     description: 真实使用阻塞清零——按产品摩擦审计和自开发 workflow 暴露的高频阻塞逐条收口到可日常稳定复现

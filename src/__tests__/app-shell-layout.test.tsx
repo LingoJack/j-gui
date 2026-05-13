@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { AppShell } from '@/components/app-shell/AppShell'
 import { appModeAtom } from '@/atoms/app-mode'
-import { currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
+import { agentSidePanelOpenMapAtom, currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
 import { currentConversationIdAtom } from '@/atoms/chat-atoms'
 import { activeTabIdAtom, tabsAtom } from '@/atoms/tab-atoms'
 
@@ -21,9 +21,14 @@ const tauriWindowMock = vi.hoisted(() => ({
   minimize: vi.fn(async () => {}),
   toggleMaximize: vi.fn(async () => {}),
   close: vi.fn(async () => {}),
+  hide: vi.fn(async () => {}),
   isMaximized: vi.fn(async () => false),
   setDecorations: vi.fn(async (_decorations: boolean) => {}),
   onResized: vi.fn(async () => () => {}),
+  onCloseRequested: vi.fn(async () => () => {}),
+  unminimize: vi.fn(async () => {}),
+  show: vi.fn(async () => {}),
+  setFocus: vi.fn(async () => {}),
 }))
 
 vi.mock('@/lib/platform', () => ({
@@ -36,9 +41,14 @@ vi.mock('@tauri-apps/api/window', () => ({
     minimize: tauriWindowMock.minimize,
     toggleMaximize: tauriWindowMock.toggleMaximize,
     close: tauriWindowMock.close,
+    hide: tauriWindowMock.hide,
     isMaximized: tauriWindowMock.isMaximized,
     setDecorations: tauriWindowMock.setDecorations,
     onResized: tauriWindowMock.onResized,
+    onCloseRequested: tauriWindowMock.onCloseRequested,
+    unminimize: tauriWindowMock.unminimize,
+    show: tauriWindowMock.show,
+    setFocus: tauriWindowMock.setFocus,
   }),
 }))
 
@@ -73,10 +83,16 @@ describe('AppShell layout guards', () => {
     tauriWindowMock.minimize.mockClear()
     tauriWindowMock.toggleMaximize.mockClear()
     tauriWindowMock.close.mockClear()
+    tauriWindowMock.hide.mockClear()
     tauriWindowMock.isMaximized.mockClear()
     tauriWindowMock.onResized.mockClear()
+    tauriWindowMock.onCloseRequested.mockClear()
+    tauriWindowMock.unminimize.mockClear()
+    tauriWindowMock.show.mockClear()
+    tauriWindowMock.setFocus.mockClear()
     tauriWindowMock.isMaximized.mockResolvedValue(false)
     tauriWindowMock.onResized.mockResolvedValue(() => {})
+    tauriWindowMock.onCloseRequested.mockResolvedValue(() => {})
   })
 
   it('does not keep the right panel visible when there is no active tab', () => {
@@ -107,6 +123,24 @@ describe('AppShell layout guards', () => {
     expect(screen.getByTestId('right-side-panel')).toBeInTheDocument()
   })
 
+  it('falls back to the main-area window controls when the right panel is collapsed', () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(currentConversationIdAtom, 'chat-1')
+    store.set(currentAgentSessionIdAtom, null)
+    store.set(tabsAtom, [
+      { id: 'tab-chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
+    ])
+    store.set(activeTabIdAtom, 'tab-chat-1')
+    store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', false]]))
+
+    renderShell(store)
+
+    expect(screen.getByTestId('right-side-panel')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '最小化窗口' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '最小化窗口' }).closest('.tabbar-bg')).not.toBeNull()
+  })
+
   it('renders desktop window controls on Windows and wires the window actions', async () => {
     const store = createStore()
     store.set(appModeAtom, 'chat')
@@ -128,7 +162,7 @@ describe('AppShell layout guards', () => {
     expect(tauriWindowMock.onResized).toHaveBeenCalledTimes(1)
     expect(tauriWindowMock.minimize).toHaveBeenCalledTimes(1)
     expect(tauriWindowMock.toggleMaximize).toHaveBeenCalledTimes(1)
-    expect(tauriWindowMock.close).toHaveBeenCalledTimes(1)
+    expect(tauriWindowMock.hide).toHaveBeenCalledTimes(1)
   })
 
   it('does not render custom window controls on macOS and does not disable decorations', () => {

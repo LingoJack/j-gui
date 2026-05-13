@@ -16,7 +16,7 @@ import {
   SettingsRow,
   SettingsSection,
 } from './primitives'
-import { shortcutOverridesAtom, sendWithCmdEnterAtom } from '@/atoms/shortcut-atoms'
+import { shortcutOverridesAtom, sendWithCmdEnterAtom, globalShortcutStateAtom } from '@/atoms/shortcut-atoms'
 import {
   DEFAULT_SHORTCUTS,
   SHORTCUT_CATEGORY_LABELS,
@@ -31,8 +31,13 @@ import {
   getAcceleratorDisplay,
   getActiveAccelerator,
   isMac,
+  setShortcutDispatchSuspended,
   updateShortcutOverrides,
 } from '@/lib/shortcut-registry'
+import {
+  probeGlobalShortcutRegistration,
+  setGlobalShortcutHandlingSuspended,
+} from '@/lib/global-shortcut-manager'
 import * as ipc from '@/lib/ipc'
 
 interface ShortcutRecorderProps {
@@ -74,9 +79,33 @@ function ShortcutRecorder({
   const [pendingAccelerator, setPendingAccelerator] = React.useState('')
   const [conflictLabel, setConflictLabel] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
+  const captureActive = recording || !!pendingAccelerator
 
   React.useEffect(() => {
-    if (!recording) return
+    setShortcutDispatchSuspended(captureActive)
+    setGlobalShortcutHandlingSuspended(captureActive)
+    return () => {
+      setShortcutDispatchSuspended(false)
+      setGlobalShortcutHandlingSuspended(false)
+    }
+  }, [captureActive])
+
+  const handleSave = React.useCallback(async () => {
+    if (!pendingAccelerator || conflictLabel || saving) return
+    setSaving(true)
+    try {
+      const saved = await onSave(shortcut.id, pendingAccelerator)
+      if (saved) {
+        setPendingAccelerator('')
+        setConflictLabel(null)
+      }
+    } finally {
+      setSaving(false)
+    }
+  }, [conflictLabel, onSave, pendingAccelerator, saving, shortcut.id])
+
+  React.useEffect(() => {
+    if (!captureActive) return
 
     const handleKeyDown = (event: KeyboardEvent): void => {
       event.preventDefault()
@@ -86,6 +115,13 @@ function ShortcutRecorder({
         setRecording(false)
         setPendingAccelerator('')
         setConflictLabel(null)
+        return
+      }
+
+      if (event.key === 'Enter' && pendingAccelerator) {
+        if (!pendingAccelerator || conflictLabel || saving) return
+        setRecording(false)
+        void handleSave()
         return
       }
 
@@ -123,21 +159,7 @@ function ShortcutRecorder({
 
     window.addEventListener('keydown', handleKeyDown, true)
     return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [recording, shortcut.id])
-
-  const handleSave = React.useCallback(async () => {
-    if (!pendingAccelerator || conflictLabel || recording || saving) return
-    setSaving(true)
-    try {
-      const saved = await onSave(shortcut.id, pendingAccelerator)
-      if (saved) {
-        setPendingAccelerator('')
-        setConflictLabel(null)
-      }
-    } finally {
-      setSaving(false)
-    }
-  }, [conflictLabel, onSave, pendingAccelerator, recording, saving, shortcut.id])
+  }, [captureActive, conflictLabel, handleSave, pendingAccelerator, recording, saving, shortcut.id])
 
   if (recording || pendingAccelerator) {
     return (
@@ -207,6 +229,7 @@ function groupShortcuts(): Map<ShortcutCategory, ShortcutDefinition[]> {
 export function ShortcutSettings(): React.ReactElement {
   const [overrides, setOverrides] = useAtom(shortcutOverridesAtom)
   const [sendWithCmdEnter, setSendWithCmdEnter] = useAtom(sendWithCmdEnterAtom)
+  const [globalShortcutState, setGlobalShortcutState] = useAtom(globalShortcutStateAtom)
 
   const grouped = React.useMemo(groupShortcuts, [])
   const hasOverrides = Object.keys(overrides).length > 0
@@ -219,6 +242,22 @@ export function ShortcutSettings(): React.ReactElement {
   }, [setOverrides])
 
   const handleSaveShortcut = React.useCallback(async (shortcutId: string, accelerator: string): Promise<boolean> => {
+    if (shortcutId === 'show-main-window') {
+      const registration = await probeGlobalShortcutRegistration(accelerator)
+      if (!registration.success) {
+        setGlobalShortcutState((prev) => ({
+          ...prev,
+          [shortcutId]: {
+            accelerator,
+            status: 'conflict',
+            detail: registration.reason,
+          },
+        }))
+        toast.error('该全局快捷键当前不可用')
+        return false
+      }
+    }
+
     const platformKey = isMac ? 'mac' : 'win'
     const nextOverrides: ShortcutOverrides = {
       ...overrides,
@@ -237,7 +276,7 @@ export function ShortcutSettings(): React.ReactElement {
       toast.error('快捷键保存失败')
       return false
     }
-  }, [overrides, saveOverrides])
+  }, [overrides, saveOverrides, setGlobalShortcutState])
 
   const handleResetShortcut = React.useCallback(async (shortcutId: string) => {
     const nextOverrides = { ...overrides }
@@ -274,13 +313,27 @@ export function ShortcutSettings(): React.ReactElement {
     }
   }, [setSendWithCmdEnter])
 
-  const categoryOrder: ShortcutCategory[] = ['app', 'navigation', 'edit']
+  const categoryOrder: ShortcutCategory[] = ['global', 'app', 'navigation', 'edit']
 
   return (
     <div className="space-y-6">
       <SettingsSection
         title="快捷键管理"
         description="仅展示当前真实可用的快捷键，改动会立即写入设置。"
+        action={hasOverrides ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs text-muted-foreground"
+            onClick={() => {
+              void handleResetAll()
+            }}
+          >
+            <RotateCcw className="mr-1 size-3.5" />
+            恢复全部默认
+          </Button>
+        ) : null}
       >
         <SettingsCard>
           <SettingsRow
@@ -325,23 +378,6 @@ export function ShortcutSettings(): React.ReactElement {
         </SettingsCard>
       </SettingsSection>
 
-      {hasOverrides && (
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 text-xs text-muted-foreground"
-            onClick={() => {
-              void handleResetAll()
-            }}
-          >
-            <RotateCcw className="mr-1 size-3.5" />
-            恢复全部默认
-          </Button>
-        </div>
-      )}
-
       {categoryOrder.map((category) => {
         const shortcuts = grouped.get(category)
         if (!shortcuts || shortcuts.length === 0) return null
@@ -357,13 +393,13 @@ export function ShortcutSettings(): React.ReactElement {
                 .map((shortcut) => {
                   const currentAccelerator = getActiveAccelerator(shortcut.id)
                   const isCustomized = !!overrides[shortcut.id]
-                  const isEditable = !shortcut.readonly && !shortcut.global
+                  const isEditable = !shortcut.readonly
 
                   return (
                     <SettingsRow
                       key={shortcut.id}
                       label={shortcut.name}
-                      description={shortcut.description}
+                      description={buildShortcutDescription(shortcut.description, shortcut.id, globalShortcutState)}
                     >
                       <div className="flex items-center gap-2">
                         {isEditable ? (
@@ -393,11 +429,6 @@ export function ShortcutSettings(): React.ReactElement {
                             <span className="rounded-md bg-muted px-2.5 py-1 text-xs font-mono text-foreground/70">
                               {getAcceleratorDisplay(currentAccelerator)}
                             </span>
-                            {shortcut.global && (
-                              <span className="text-xs text-muted-foreground">
-                                暂不可改
-                              </span>
-                            )}
                           </div>
                         )}
                       </div>
@@ -410,4 +441,17 @@ export function ShortcutSettings(): React.ReactElement {
       })}
     </div>
   )
+}
+
+function buildShortcutDescription(
+  baseDescription: string,
+  shortcutId: string,
+  globalShortcutState: Record<string, { status: 'active' | 'conflict' | 'unavailable'; detail?: string }>,
+): string {
+  const state = globalShortcutState[shortcutId]
+  if (!state || state.status === 'active') return baseDescription
+  if (state.status === 'conflict') {
+    return `${baseDescription} 当前与系统或其他应用冲突，已自动停用。`
+  }
+  return `${baseDescription} 当前不可用。`
 }

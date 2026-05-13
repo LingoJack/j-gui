@@ -103,13 +103,15 @@ export function AppearanceSettings(): React.ReactElement {
     const mode = value as ThemeMode
     setThemeMode(mode)
     updateThemeMode(mode)
-    // 切换回普通模式时，重置特殊风格
-    if (mode !== 'special') {
-      setThemeStyle('default')
-      updateThemeStyle('default')
-      applyThemeToDOM(mode, 'default', systemIsDark)
+    if (mode === 'special') {
+      const restoredStyle = themeStyle !== 'default' ? themeStyle : 'slate-light'
+      setThemeStyle(restoredStyle)
+      void updateThemeStyle(restoredStyle)
+      applyThemeToDOM('special', restoredStyle, systemIsDark)
+      return
     }
-  }, [setThemeMode, setThemeStyle, systemIsDark])
+    applyThemeToDOM(mode, themeStyle, systemIsDark)
+  }, [setThemeMode, setThemeStyle, systemIsDark, themeStyle])
 
   /** 选择特殊风格 */
   const handleStyleSelect = React.useCallback((style: ThemeStyle) => {

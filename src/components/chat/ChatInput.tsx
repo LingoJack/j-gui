@@ -40,6 +40,7 @@ import {
   useConversationThinkingEnabled,
 } from '@/hooks/useConversationSettings'
 import { getEffectiveChatWorkspaceId } from '@/lib/chat-workspace'
+import { buildMessageInputHint } from '@/lib/input-hints'
 import { cn } from '@/lib/utils'
 import { fileToBase64 } from '@/lib/file-utils'
 import { sendWithCmdEnterAtom } from '@/atoms/shortcut-atoms'
@@ -292,7 +293,7 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
             onChange={setContent}
             onSubmit={handleSend}
             onPasteFiles={handlePasteFiles}
-            placeholder={sendWithCmdEnter ? '输入消息... (⌘/Ctrl+Enter 发送，Enter 换行)' : '输入消息... (Enter 发送，Shift+Enter 换行)'}
+            placeholder={buildMessageInputHint(sendWithCmdEnter, 'chat')}
             autoFocusTrigger={conversationId}
             workspacePath={workspaceFilesPath}
             workspaceSlug={workspaceSlug}
