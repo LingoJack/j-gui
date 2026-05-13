@@ -1,0 +1,198 @@
+audit: product-friction
+date: 2026-05-12
+status: current
+
+findings:
+  - id: pf-001
+    area: chat
+    severity: P1
+    kind: interaction
+    reproduction:
+      - 打开 Chat 会话
+      - 发送消息并观察输入区、工具区和流式反馈
+      - 对照 parity 证据检查工具活动提示和迁移到 Agent 的入口
+    expected: Chat 主路径除了文本流式外，还应清楚暴露工具活动状态，并在需要时给出迁移到 Agent 的可见入口。
+    actual: Chat 主体闭环已在，但 Chat 工具活动提示和 Agent 推荐入口仍在 parity 证据中保持 Fail/Partial，主路径仍有可见体验缺口。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/chat-experience-partial.md"
+    targetRoadmapItem: core-workflow-ux-hardening
+
+  - id: pf-002
+    area: agent
+    severity: P0
+    kind: state-feedback
+    reproduction:
+      - 打开 Agent 会话
+      - 观察无回应处理、停止路径和审批/AskUser/Plan 相关 UI
+      - 对照 parity 清单和历史审计
+    expected: 用户应能明确看懂 Agent 当前是否卡住、能否停止、为何等待，以及下一步如何继续。
+    actual: Agent 无独立停止/无回应处理长期是高风险区；parity 证据里无回应处理、审批 UI、Context 用量等仍为 Fail/Partial。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/agent-experience-partial.md; .codestable/audits/2026-05-09-post-parity-regression/index.md"
+    targetRoadmapItem: agent-workbench-polish
+    forcedFallback: terminal
+
+  - id: pf-003
+    area: agent
+    severity: P1
+    kind: interaction
+    reproduction:
+      - 打开 Agent 会话
+      - 检查 slash runtime 选择、权限审批、工具结果阅读和历史恢复边界
+    expected: 工作台应让用户理解 runtime、审批、工具调用和恢复边界，而不是只有事件流存在。
+    actual: parity 证据里 slash runtime 选择、Permission/AskUser/ExitPlanMode、Context 用量均未达 Pass，恢复虽闭环但可操作性仍粗糙。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/agent-experience-partial.md"
+    targetRoadmapItem: agent-workbench-polish
+
+  - id: pf-004
+    area: search
+    severity: P1
+    kind: ui-detail
+    reproduction:
+      - 打开全局搜索
+      - 检查结果高亮、归档标识、键盘导航和打开结果后的上下文定位
+    expected: 搜索除了后端闭环外，还应把归档状态和结果细节清楚展示。
+    actual: 搜索后端闭环已收口，但 parity 证据仍把归档标识记为 Fail，多项展示细节仍是 Partial。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/search-navigation-partial.md"
+    targetRoadmapItem: core-workflow-ux-hardening
+
+  - id: pf-005
+    area: settings
+    severity: P1
+    kind: state-feedback
+    reproduction:
+      - 打开 Settings
+      - 切换左侧导航，修改配置，观察保存、失败、unsupported 和来源提示
+    expected: 用户应知道设置是否保存、为何失败、哪些能力不支持，以及配置来自哪里。
+    actual: Settings 主体与工具 runtime 已闭环，但 parity 证据里 Dialog 外观、导航、脏状态保护、Chat 工具和多处可理解性细节仍为 Partial/Fail。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/settings-console-partial.md"
+    targetRoadmapItem: settings-experience-hardening
+
+  - id: pf-006
+    area: tabs
+    severity: P0
+    kind: functional-break
+    reproduction:
+      - 多开 tab
+      - 关闭最后一个 tab，观察空态
+      - 对照历史回归审计
+    expected: 标签关闭后应允许真实无 tab 状态，并呈现明确欢迎/空态。
+    actual: 历史审计明确记录最后 tab 关闭后自动补新 tab，无 tab 状态不可达；这会干扰主工作流。
+    evidence: ".codestable/audits/2026-05-09-post-parity-regression/index.md; .codestable/acceptance/proma-parity/2026-05-12/tabs-workspace-partial.md"
+    targetRoadmapItem: core-workflow-ux-hardening
+    forcedFallback: manual-file-edit
+
+  - id: pf-007
+    area: tabs
+    severity: P2
+    kind: visual-layout
+    reproduction:
+      - 在多 tab 场景下观察 hover 预览、拖拽重排、横向滚动与欢迎页视觉表现
+    expected: Tabs 应具备稳定的预览和工作区视觉反馈。
+    actual: parity 证据里 hover 预览、拖拽重排和欢迎页均未达 Pass，但这类问题目前不直接阻断任务。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/tabs-workspace-partial.md"
+    targetRoadmapItem: visual-layout-polish
+
+  - id: pf-008
+    area: file-context
+    severity: P0
+    kind: functional-break
+    reproduction:
+      - 在 Agent 工作流里尝试添加目录、做文件 mention、依赖右侧文件上下文继续任务
+    expected: 单工作区模型下也应提供等价的目录添加、文件 mention 和 SidePanel 联动。
+    actual: parity 证据中目录添加和文件 mention 仍为 Fail，单工作区文件上下文不足以承担日常开发使用。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/file-context-partial.md; .codestable/reference/proma-parity-acceptance.md"
+    targetRoadmapItem: agent-workbench-polish
+    forcedFallback: manual-file-edit
+
+  - id: pf-009
+    area: layout
+    severity: P2
+    kind: visual-layout
+    reproduction:
+      - 观察三栏布局、右侧面板、标题栏拖动区域、设置浮窗和侧栏密度
+    expected: 桌面工作台应在密度、层级、滚动和非拖动区域上保持稳定可读。
+    actual: parity 证据中 Shell、Sidebar、Settings 的多项视觉与层级细节仍为 Partial，说明布局层仍有持续摩擦。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/shell-sidebar-partial.md; .codestable/acceptance/proma-parity/2026-05-12/settings-console-partial.md"
+    targetRoadmapItem: visual-layout-polish
+
+  - id: pf-010
+    area: chat
+    severity: P2
+    kind: state-feedback
+    reproduction:
+      - 在 Chat 模式下切换 tab
+      - 观察草稿、上下文和输入恢复状态
+      - 对照历史回归审计
+    expected: tab 切换后草稿和输入上下文应稳定恢复。
+    actual: 历史审计中 Chat 草稿切换 tab 后不恢复被记为 P2，说明日常使用仍有低级但持续的状态反馈摩擦。
+    evidence: ".codestable/audits/2026-05-09-post-parity-regression/index.md"
+    targetRoadmapItem: core-workflow-ux-hardening
+
+  - id: pf-011
+    area: search
+    severity: P2
+    kind: interaction
+    reproduction:
+      - 使用键盘操作搜索
+      - 观察 IME、上下键、Enter、Esc 和结果打开后的连贯性
+    expected: 搜索应在键盘和中文输入法场景下保持稳定。
+    actual: parity 证据里 IME 与键盘导航仍是 Partial，目前未看到阻断级问题，但交互一致性未收口。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/search-navigation-partial.md"
+    targetRoadmapItem: visual-layout-polish
+
+  - id: pf-012
+    area: settings
+    severity: P2
+    kind: visual-layout
+    reproduction:
+      - 打开 Settings
+      - 观察左导航、右内容区、脏状态保护和原语一致性
+    expected: 设置应有统一、稳定的表单视觉原语和导航反馈。
+    actual: parity 证据里 UI 原语、导航和脏状态保护仍有明显细节债，但不直接阻断保存主路径。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/settings-console-partial.md"
+    targetRoadmapItem: visual-layout-polish
+
+  - id: pf-013
+    area: agent
+    severity: P1
+    kind: ui-detail
+    reproduction:
+      - 观察 Agent Header、右侧文件面板按钮、文件变化提示和任务进度区
+    expected: Agent 工作台顶部和进度区应提供清晰的工作区反馈和入口。
+    actual: parity 证据里 AgentHeader、TaskProgress、BackgroundTasks、文件变化提示仍未达 Pass，长期工作台信号不足。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/agent-experience-partial.md"
+    targetRoadmapItem: agent-workbench-polish
+
+  - id: pf-014
+    area: file-context
+    severity: P1
+    kind: interaction
+    reproduction:
+      - 打开右侧面板并尝试递归浏览、理解当前路径和文件上下文范围
+    expected: 右侧文件上下文应有明确路径反馈和递归浏览能力。
+    actual: parity 证据里文件树虽存在，但目录添加、mention、单工作区等价承接仍未完整，SidePanel 体验可信度不足。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/file-context-partial.md"
+    targetRoadmapItem: agent-workbench-polish
+
+  - id: pf-015
+    area: layout
+    severity: P1
+    kind: ui-detail
+    reproduction:
+      - 观察顶部 titlebar 拖动区与交互控件的冲突边界
+      - 检查三栏面板在窄宽度下的滚动与层级
+    expected: 可拖动区域不应抢占按钮/输入可点击性，窄宽度下也应保持层级与滚动稳定。
+    actual: parity 证据把窗口拖动区和三栏细节持续记为 Partial，说明桌面壳细节仍会影响操作顺畅度。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/shell-sidebar-partial.md"
+    targetRoadmapItem: visual-layout-polish
+
+  - id: pf-016
+    area: chat
+    severity: P1
+    kind: interaction
+    reproduction:
+      - 在 Chat 与 Agent 间切换任务意图
+      - 观察是否有清晰迁移入口或推荐
+    expected: 当 Chat 已不适合继续时，应有明确的迁移到 Agent 的入口或推荐信号。
+    actual: parity 证据中 Agent 推荐入口仍为 Fail，导致用户需要自己判断并手动切模式。
+    evidence: ".codestable/acceptance/proma-parity/2026-05-12/chat-experience-partial.md"
+    targetRoadmapItem: core-workflow-ux-hardening

@@ -44,10 +44,6 @@ class SettingsErrorBoundary extends React.Component<
 export function SettingsDialog(): React.ReactElement {
   const [open, setOpen] = useAtom(settingsOpenAtom)
 
-  React.useEffect(() => {
-    console.log('[SettingsDialog] open =', open)
-  }, [open])
-
   return (
     <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
       <DialogPrimitive.Portal>
@@ -56,6 +52,7 @@ export function SettingsDialog(): React.ReactElement {
         />
         <DialogPrimitive.Content
           className="fixed left-[50%] top-[50%] z-[100] translate-x-[-50%] translate-y-[-50%] w-[85vw] max-w-[992px] h-[85vh] max-h-[752px] bg-dialog text-dialog-foreground shadow-2xl rounded-xl overflow-hidden titlebar-no-drag transition-all duration-100 data-[state=open]:opacity-100 data-[state=open]:scale-100 data-[state=closed]:opacity-0 data-[state=closed]:scale-[0.98]"
+          aria-describedby={undefined}
         >
           <DialogPrimitive.Title className="sr-only">设置</DialogPrimitive.Title>
           <SettingsErrorBoundary>

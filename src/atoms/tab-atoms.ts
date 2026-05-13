@@ -41,6 +41,15 @@ export interface PersistedTabState {
   activeTabId: string | null
 }
 
+function getDefaultTabTitle(type: TabType): string {
+  return type === 'agent' ? '新 Agent 会话' : '新对话'
+}
+
+export function normalizeTabTitle(type: TabType, title: string | null | undefined): string {
+  const trimmed = title?.trim()
+  return trimmed ? trimmed : getDefaultTabTitle(type)
+}
+
 // ===== 核心 Atoms =====
 
 /** 所有打开的标签页列表（有序，控制 TabBar 显示顺序） */
@@ -130,7 +139,7 @@ export function openTab(
     id: item.sessionId,
     type: item.type,
     sessionId: item.sessionId,
-    title: item.title,
+    title: normalizeTabTitle(item.type, item.title),
   }
 
   return {
@@ -184,6 +193,6 @@ export function updateTabTitle(
   title: string,
 ): TabItem[] {
   return tabs.map((t) =>
-    t.sessionId === sessionId ? { ...t, title } : t
+    t.sessionId === sessionId ? { ...t, title: normalizeTabTitle(t.type, title) } : t
   )
 }

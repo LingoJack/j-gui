@@ -1,19 +1,83 @@
 use serde::{Deserialize, Serialize};
-use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+#[cfg(test)]
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 #[path = "agent_session_meta.rs"]
 mod agent_session_meta;
 #[path = "agent_session_replay.rs"]
 mod agent_session_replay;
+#[path = "agent_session_storage.rs"]
+mod agent_session_storage;
+#[path = "agent_storage_guard.rs"]
+mod agent_storage_guard;
 use agent_session_meta::AgentSessionMetaRecord;
 pub(crate) use agent_session_meta::CreateSessionMetaInput;
 pub use agent_session_replay::{search_agent_session_messages, timeline_to_sdk_messages};
+use agent_session_storage::{
+    append_timeline_item_with_lock, delete_session_dir, infer_title_from_transcript, read_timeline,
+    transcript_message_count, transcript_updated_at, write_timeline,
+};
 
 static AGENT_SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
 static AGENT_TRANSCRIPT_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+fn agent_test_env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+#[cfg(test)]
+fn agent_test_data_dir_override() -> &'static Mutex<Option<PathBuf>> {
+    static OVERRIDE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+    OVERRIDE.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(test)]
+pub(crate) struct TestEnvGuard {
+    _lock: std::sync::MutexGuard<'static, ()>,
+    root: PathBuf,
+}
+
+#[cfg(test)]
+impl TestEnvGuard {
+    pub(crate) fn new(slug: &str) -> Self {
+        let lock = agent_test_env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("j-gui-agent-{slug}-{unique}"));
+        let data_root = root.join(".jdata");
+        if let Err(err) = std::fs::create_dir_all(&data_root) {
+            panic!("创建 Agent 测试数据目录失败: {}", err);
+        }
+        let mut override_guard = agent_test_data_dir_override()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *override_guard = Some(data_root);
+        drop(override_guard);
+
+        Self { _lock: lock, root }
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestEnvGuard {
+    fn drop(&mut self) {
+        let mut override_guard = agent_test_data_dir_override()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *override_guard = None;
+        drop(override_guard);
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -92,7 +156,7 @@ pub struct AgentMessageSearchResult {
     pub archived: bool,
 }
 
-fn validate_session_id(id: &str) -> Result<(), String> {
+pub(crate) fn validate_session_id(id: &str) -> Result<(), String> {
     if id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') && !id.is_empty() {
         Ok(())
     } else {
@@ -101,6 +165,15 @@ fn validate_session_id(id: &str) -> Result<(), String> {
 }
 
 fn data_dir() -> PathBuf {
+    #[cfg(test)]
+    {
+        let override_guard = agent_test_data_dir_override()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(path) = override_guard.clone() {
+            return path;
+        }
+    }
     crate::kernel::home_dir().join(".jdata")
 }
 
@@ -206,49 +279,7 @@ pub fn create_agent_session_with_meta(input: CreateSessionMetaInput) -> Result<S
 
 /// 向指定 Agent 会话的 transcript 追加一条时间线记录。
 pub fn append_timeline_item(session_id: &str, item: &AgentTimelineItem) -> Result<(), String> {
-    validate_session_id(session_id)?;
-    let _guard = AGENT_TRANSCRIPT_LOCK
-        .lock()
-        .map_err(|e| format!("锁定 Agent transcript 失败: {}", e))?;
-    let path = agent_sessions_dir()
-        .join(session_id)
-        .join("transcript.jsonl");
-    let line = serde_json::to_string(item).map_err(|e| e.to_string())?;
-    use std::io::Write;
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .map_err(|e| format!("打开 transcript 失败: {}", e))?;
-    writeln!(file, "{}", line).map_err(|e| format!("写入 transcript 失败: {}", e))?;
-    Ok(())
-}
-
-fn transcript_path(session_id: &str) -> PathBuf {
-    session_dir(session_id).join("transcript.jsonl")
-}
-
-fn read_timeline(session_id: &str) -> Result<Vec<AgentTimelineItem>, String> {
-    let path = transcript_path(session_id);
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    Ok(content
-        .lines()
-        .filter(|line| !line.is_empty())
-        .filter_map(|line| serde_json::from_str(line).ok())
-        .collect())
-}
-
-fn write_timeline(session_id: &str, items: &[AgentTimelineItem]) -> Result<(), String> {
-    let path = transcript_path(session_id);
-    let mut content = String::new();
-    for item in items {
-        content.push_str(&serde_json::to_string(item).map_err(|e| e.to_string())?);
-        content.push('\n');
-    }
-    std::fs::write(path, content).map_err(|e| e.to_string())
+    append_timeline_item_with_lock(&AGENT_TRANSCRIPT_LOCK, session_id, item)
 }
 
 /// 回填最近一次匹配工具调用的输出和完成状态。
@@ -315,39 +346,10 @@ pub fn list_agent_sessions() -> Result<Vec<AgentSessionInfo>, String> {
         let created_at = meta.created_at;
         // 如果 meta 中还没有标题，则尝试从首条用户消息自动推导
         if title.is_none() {
-            let ts_path = entry.path().join("transcript.jsonl");
-            if ts_path.exists() {
-                if let Ok(file) = std::fs::File::open(&ts_path) {
-                    for line in BufReader::new(file).lines().map_while(Result::ok) {
-                        if let Ok(item) = serde_json::from_str::<serde_json::Value>(&line) {
-                            if item["kind"].as_str() == Some("user_message") {
-                                if let Some(c) = item["content"].as_str() {
-                                    let preview: String = c.chars().take(24).collect();
-                                    title = Some(preview);
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+            title = infer_title_from_transcript(&id);
         }
-        let transcript_path = entry.path().join("transcript.jsonl");
-        let message_count = if transcript_path.exists() {
-            std::fs::File::open(&transcript_path)
-                .ok()
-                .map(|f| BufReader::new(f).lines().count())
-                .unwrap_or(0)
-        } else {
-            0
-        };
-        let updated_at = transcript_path
-            .metadata()
-            .ok()
-            .and_then(|m| m.modified().ok())
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(created_at);
+        let message_count = transcript_message_count(&id);
+        let updated_at = transcript_updated_at(&id, created_at);
         sessions.push(AgentSessionInfo {
             id,
             title,
@@ -395,14 +397,10 @@ pub fn update_session_title(session_id: &str, title: &str) -> Result<(), String>
 /// 删除指定 Agent 会话目录及其持久化数据。
 pub fn delete_agent_session(session_id: &str) -> Result<(), String> {
     validate_session_id(session_id)?;
-    let dir = session_dir(session_id);
     let _guard = AGENT_TRANSCRIPT_LOCK
         .lock()
         .map_err(|e| format!("锁定 Agent transcript 失败: {}", e))?;
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    delete_session_dir(session_id)
 }
 
 fn toggle_meta_bool(session_id: &str, field: &str) -> Result<bool, String> {
@@ -565,26 +563,5 @@ pub fn rewind_agent_session(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn toggle_manual_working_agent_session_persists_meta() {
-        let session_id = create_agent_session().expect("create session");
-
-        let first = toggle_manual_working_agent_session(&session_id).expect("toggle on");
-        assert!(first.manual_working);
-
-        let listed = list_agent_sessions().expect("list sessions");
-        let persisted = listed
-            .into_iter()
-            .find(|session| session.id == session_id)
-            .expect("session should exist");
-        assert!(persisted.manual_working);
-
-        let second = toggle_manual_working_agent_session(&session_id).expect("toggle off");
-        assert!(!second.manual_working);
-
-        delete_agent_session(&session_id).expect("cleanup session");
-    }
-}
+#[path = "tests/agent_session.rs"]
+mod tests;

@@ -159,6 +159,8 @@ export interface AppSettings {
   agentChannelIds?: string[]
   /** Agent 当前工作区 ID */
   agentWorkspaceId?: string
+  /** Chat 当前工作区 ID */
+  chatWorkspaceId?: string
   /** 是否已完成 Onboarding 流程 */
   onboardingCompleted?: boolean
   /** 是否跳过了环境检测 */

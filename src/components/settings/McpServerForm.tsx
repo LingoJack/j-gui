@@ -208,9 +208,6 @@ export function McpServerForm({ server, workspaceSlug, onSaved, onCancel }: McpS
       const config = await ipc.getWorkspaceMcpConfig(workspaceSlug)
       const entry = buildEntry(true) // 保存时包含测试结果
 
-      // 日志记录实际保存的状态
-      console.log(`[MCP 表单] 保存 MCP: ${serverName}, enabled: ${entry.enabled}, testResult: ${testResult?.success}`)
-
       const newConfig: WorkspaceMcpConfig = {
         servers: {
           ...config.servers,

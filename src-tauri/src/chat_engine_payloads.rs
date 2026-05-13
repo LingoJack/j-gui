@@ -35,6 +35,24 @@ pub(super) fn parse_context_length(
     }
 }
 
+pub(super) fn parse_context_dividers(
+    value: Option<&serde_json::Value>,
+) -> Result<Vec<String>, String> {
+    match value {
+        None | Some(serde_json::Value::Null) => Ok(Vec::new()),
+        Some(serde_json::Value::Array(items)) => items
+            .iter()
+            .map(|item| {
+                item.as_str()
+                    .filter(|value| !value.trim().is_empty())
+                    .map(ToString::to_string)
+                    .ok_or_else(|| format!("contextDividers 项必须是非空字符串，收到: {}", item))
+            })
+            .collect(),
+        Some(other) => Err(format!("contextDividers 必须是字符串数组，收到: {}", other)),
+    }
+}
+
 pub(super) fn parse_image_attachments(
     value: Option<&serde_json::Value>,
 ) -> Result<Vec<KernelFileAttachment>, String> {
@@ -93,12 +111,14 @@ pub enum ChatEvent {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageInfo {
+    pub id: String,
     pub role: String,
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Vec<KernelFileAttachment>>,
+    pub created_at: u64,
     pub timestamp: u64,
 }
 
@@ -108,11 +128,18 @@ pub struct SessionInfo {
     pub id: String,
     pub title: Option<String>,
     pub message_count: usize,
+    pub created_at: u64,
     pub updated_at: u64,
     #[serde(default)]
     pub pinned: bool,
     #[serde(default)]
     pub archived: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_dividers: Option<Vec<String>>,
 }
 
 #[derive(Clone, Serialize, PartialEq, Eq, Debug)]
@@ -127,4 +154,15 @@ pub struct MessageSearchResult {
     pub match_length: usize,
     #[serde(default)]
     pub archived: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatReferenceContext {
+    pub conversation_id: String,
+    pub conversation_title: String,
+    pub message_count: usize,
+    pub included_message_count: usize,
+    pub omitted_message_count: usize,
+    pub prompt: String,
 }

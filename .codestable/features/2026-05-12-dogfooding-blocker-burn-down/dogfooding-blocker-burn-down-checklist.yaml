@@ -1,0 +1,45 @@
+feature: 2026-05-12-dogfooding-blocker-burn-down
+roadmap: j-gui-v1
+roadmap_item: dogfooding-blocker-burn-down
+created: 2026-05-12
+status: draft
+
+steps:
+  - id: step-1
+    paradigm: planning
+    title: 筛选真实 dogfooding 阻塞
+    status: pending
+    description: "从产品摩擦台账和主路径硬化结果筛选会迫使用户 fallback 的问题。"
+    exit: 每条阻塞都有 sourceFinding 和 forcedFallback。
+
+  - id: step-2
+    paradigm: planning
+    title: 确认 burn-down 批次
+    status: pending
+    description: "按频率和严重度选择 3-5 条阻塞作为一个修复批次。"
+    exit: 批次范围明确且不包含新功能愿望。
+
+  - id: step-3
+    paradigm: implementation
+    title: 逐条清零阻塞
+    status: pending
+    description: "按批次修复阻塞，并保持每条可独立验证。"
+    exit: 每条阻塞路径不再迫使用户 fallback。
+
+  - id: step-4
+    paradigm: acceptance
+    title: 复验并写验收
+    status: pending
+    description: "按 dogfooding 路径复验，记录已清零项和残余风险。"
+    exit: acceptance 完成。
+
+checks:
+  - id: check-source
+    target: step-1
+    description: "所有阻塞必须来源于 product-friction-audit 或已完成硬化验收。"
+    status: pending
+
+  - id: check-no-scope-expansion
+    target: step-2
+    description: "不把远程访问、双后端、移动端或新功能愿望混入 burn-down。"
+    status: pending

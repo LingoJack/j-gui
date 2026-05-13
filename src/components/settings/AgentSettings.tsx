@@ -106,7 +106,9 @@ interface ExternalSkill {
 
 export function AgentSettings(): React.ReactElement {
   const workspaces = useAtomValue(agentWorkspacesAtom);
-  const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom);
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useAtom(
+    currentAgentWorkspaceIdAtom,
+  );
   const agentChannelId = useAtomValue(agentChannelIdAtom);
   const [agentBackendMode, setAgentBackendMode] = useAtom(agentBackendModeAtom);
   const setAgentSessions = useSetAtom(agentSessionsAtom);
@@ -115,7 +117,9 @@ export function AgentSettings(): React.ReactElement {
   const setSettingsOpen = useSetAtom(settingsOpenAtom);
   const setAppMode = useSetAtom(appModeAtom);
 
-  const currentWorkspace = workspaces.find((w) => w.id === currentWorkspaceId);
+  const effectiveWorkspaceId = currentWorkspaceId ?? workspaces[0]?.id ?? null;
+  const currentWorkspace =
+    workspaces.find((w) => w.id === effectiveWorkspaceId) ?? null;
   const workspaceSlug = currentWorkspace?.slug ?? "";
 
   // 标签页和视图状态
@@ -354,18 +358,30 @@ export function AgentSettings(): React.ReactElement {
     }
   };
 
-  if (!currentWorkspace) {
+  if (workspaces.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <FolderOpen size={48} className="text-muted-foreground/50 mb-4" />
         <p className="text-sm text-muted-foreground">
-          请先在 Agent 模式下选择或创建一个工作区
+          请先创建一个 Agent 工作区
         </p>
       </div>
     );
   }
 
   const configDirName = import.meta.env.DEV ? "jgui-dev" : "jgui";
+
+  const handleWorkspaceChange = async (workspaceId: string): Promise<void> => {
+    const previousWorkspaceId = currentWorkspaceId;
+    setCurrentWorkspaceId(workspaceId);
+    try {
+      await ipc.updateSettings({ agentWorkspaceId: workspaceId });
+    } catch (error) {
+      console.error("[Agent 设置] 保存当前工作区失败:", error);
+      setCurrentWorkspaceId(previousWorkspaceId);
+      toast.error("保存当前工作区失败");
+    }
+  };
 
   const buildMcpPrompt = (): string => {
     const configPath = `~/${configDirName}/agent-workspaces/${workspaceSlug}/mcp.json`;
@@ -468,7 +484,7 @@ ${skillList}
       const session = await ipc.createAgentSession(
         undefined,
         agentChannelId,
-        currentWorkspaceId ?? undefined,
+        effectiveWorkspaceId ?? undefined,
       );
       const sessions = await ipc.listAgentSessions();
       setAgentSessions(sessions);
@@ -658,6 +674,41 @@ ${skillList}
   return (
     <div className="space-y-4">
       <SettingsSection
+        title="工作区范围"
+        description="这里直接选择当前要查看和配置的工作区，不需要先回到会话列表切一次。"
+      >
+        <SettingsCard divided={false}>
+          <div className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-sm font-medium text-foreground">
+                当前工作区
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Skills、工作区 MCP 和工作区文件都会跟随这里的选择刷新。
+              </div>
+            </div>
+            <div className="w-full md:w-[260px]">
+              <Select
+                value={currentWorkspace?.id ?? ""}
+                onValueChange={(value) => void handleWorkspaceChange(value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="选择工作区" />
+                </SelectTrigger>
+                <SelectContent>
+                  {workspaces.map((workspace) => (
+                    <SelectItem key={workspace.id} value={workspace.id}>
+                      {workspace.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection
         title="Agent 后端模式"
         description="决定新启动的 Agent 默认走 Claude Code 原生会话，还是走 j-cli 的 agent loop。"
       >
@@ -789,9 +840,9 @@ ${skillList}
                   <TooltipContent side="bottom" className="max-w-xs text-xs">
                     j-gui Agent 内置 Skills Finder，你可以在 Agent 模式下要求
                     j-gui 帮你联网查找某类 Skills
-                    并安装到当前的工作区使用；也可以跟 j-gui Agent
+                    并安装到当前工作区使用；也可以跟 j-gui Agent
                     一起探讨，利用 j-gui Agent 内置的 Skills Creator
-                    来一起创建高质量可复用的 Skills 到当前的工作区
+                    来一起创建高质量可复用的 Skills 到当前工作区
                   </TooltipContent>
                 </Tooltip>
                 <Button
@@ -832,6 +883,13 @@ ${skillList}
               </div>
             ) : (
               <>
+                <SettingsCard divided={false}>
+                  <div className="px-4 py-3 text-sm text-muted-foreground">
+                    下方的 j-cli / 全局 Skills 已经可以被 Agent 直接调用。
+                    只有当你想把它们固化为当前工作区私有版本、单独编辑或跟仓库一起迁移时，才需要复制到当前工作区。
+                  </div>
+                </SettingsCard>
+
                 {/* 工作区 Skills 主从视图 */}
                 {skillsLoadError ? (
                   <SettingsCard divided={false}>
@@ -876,7 +934,7 @@ ${skillList}
                       ) : (
                         <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
                           {skills.length === 0
-                            ? "暂无 Skill — 可从下方 j-cli/全局来源导入"
+                            ? "当前工作区还没有私有 Skill，可直接使用下方 j-cli / 全局 Skills，或按需复制到当前工作区"
                             : "选择一个 Skill 查看详情"}
                         </div>
                       )}
@@ -1235,7 +1293,6 @@ function ExternalSkillsSection({
   skills,
   importingExternal,
   onImport,
-  onSelect,
 }: ExternalSkillsSectionProps): React.ReactElement {
   return (
     <div className="pt-4">
@@ -1287,7 +1344,7 @@ function ExternalSkillsSection({
                   onClick={() => void onImport(skill.dirPath, skill.name)}
                   disabled={importingExternal !== null}
                 >
-                  {importingExternal === slug ? "导入中..." : "导入到工作区"}
+                  {importingExternal === slug ? "复制中..." : "复制到当前工作区"}
                 </Button>
               </div>
             </SettingsCard>

@@ -4,6 +4,8 @@
 #![deny(unused_must_use)]
 
 mod agent_engine;
+mod agent_retry;
+mod agent_runtime_recovery;
 mod agent_session;
 mod chat_engine;
 mod commands;
@@ -45,9 +47,13 @@ macro_rules! register_invoke_handler {
             commands::chat::delete_session,
             commands::chat::get_session_messages,
             commands::chat::search_conversation_messages,
+            commands::chat::build_chat_reference_context,
             commands::chat::delete_message,
             commands::chat::truncate_messages_from,
             commands::chat::clear_session,
+            commands::chat::update_conversation_title,
+            commands::chat::update_conversation_model,
+            commands::chat::update_context_dividers,
             commands::chat::stop_generation,
             commands::chat::toggle_pin_conversation,
             commands::chat::toggle_archive_conversation,
@@ -60,12 +66,26 @@ macro_rules! register_invoke_handler {
             commands::config::set_system_prompt,
             commands::files::open_file_dialog,
             commands::files::open_folder_dialog,
+            commands::files::move_file,
+            commands::files::open_file,
+            commands::files_workspace::preview_file,
             commands::files::save_attachment,
+            commands::files_workspace::save_files_to_agent_session,
+            commands::files_workspace::save_files_to_workspace_files,
             commands::files::read_attachment,
+            commands::files_workspace::read_attached_file,
             commands::files::delete_attachment,
             commands::files::list_directory,
+            commands::files_workspace::list_attached_directory,
             commands::files::delete_file,
             commands::files::rename_file,
+            commands::files_workspace::rename_attached_file,
+            commands::files_workspace::move_attached_file,
+            commands::files_workspace::open_attached_file,
+            commands::files::show_in_folder,
+            commands::files_workspace::show_attached_in_folder,
+            commands::files_workspace::check_paths_type,
+            commands::files_workspace::search_workspace_files,
             commands::files::attach_directory,
             commands::files::detach_directory,
             commands::files::attach_workspace_directory,
@@ -83,6 +103,8 @@ macro_rules! register_invoke_handler {
             commands::settings::delete_agent_workspace,
             commands::settings::reorder_agent_workspaces,
             commands::settings::check_environment,
+            commands::settings::get_runtime_status,
+            commands::settings::get_storage_stats,
             commands::settings::get_system_prompts,
             commands::settings::get_system_prompt_config,
             commands::settings::create_system_prompt,

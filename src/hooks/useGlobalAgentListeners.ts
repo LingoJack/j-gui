@@ -24,9 +24,6 @@ import {
   recentlyModifiedPathsAtom,
   RECENTLY_MODIFIED_TTL_MS,
   applyAgentEvent,
-  liveMessagesMapAtom,
-  agentSessionModelMapAtom,
-  agentModelIdAtom,
   agentPermissionModeMapAtom,
   stoppedByUserSessionsAtom,
   agentPlanModeSessionsAtom,
@@ -47,7 +44,7 @@ import { tabsAtom, activeTabIdAtom, openTab, updateTabTitle } from '@/atoms/tab-
 import type { AgentStreamState } from '@/atoms/agent-atoms'
 import type { NotificationSoundType } from '@/types/settings'
 import { toast } from 'sonner'
-import type { AgentStreamEvent, AgentStreamCompletePayload, AgentEvent, AgentStreamPayload, SDKAssistantMessage, SDKUserMessage, SDKSystemMessage, SDKContentBlock, SDKUserContentBlock } from '@jgui/shared'
+import type { AgentStreamEvent, AgentStreamCompletePayload, AgentEvent, AgentStreamPayload, SDKAssistantMessage, SDKUserMessage, SDKSystemMessage, SDKContentBlock, SDKUserContentBlock, JguiPermissionMode } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 
 // React 19 移除了 unstable_batchedUpdates，自动批处理已经是默认行为
@@ -294,9 +291,7 @@ export function useGlobalAgentListeners(): void {
       store.set(currentAgentSessionIdAtom, sessionId)
       const sessions = store.get(agentSessionsAtom)
       const session = sessions.find((s) => s.id === sessionId)
-      if (session?.workspaceId) {
-        store.set(currentAgentWorkspaceIdAtom, session.workspaceId)
-      }
+      store.set(currentAgentWorkspaceIdAtom, session?.workspaceId ?? null)
     }
 
     /** 读取会话标题 */
@@ -457,7 +452,6 @@ export function useGlobalAgentListeners(): void {
             })
           } else if (event.type === 'prompt_suggestion') {
             // 存储提示建议到 atom
-            console.log(`[GlobalAgentListeners] 收到建议: sessionId=${sessionId}, suggestion="${event.suggestion.slice(0, 50)}..."`)
             store.set(agentPromptSuggestionsAtom, (prev) => {
               const map = new Map(prev)
               map.set(sessionId, event.suggestion)
@@ -526,15 +520,14 @@ export function useGlobalAgentListeners(): void {
               return next
             })
             // 同步更新按会话隔离的权限模式选择器
-            store.set(agentPermissionModeMapAtom, (prev: Map<string, import('@jgui/shared').JguiPermissionMode>) => {
+            store.set(agentPermissionModeMapAtom, (prev: Map<string, JguiPermissionMode>) => {
               const next = new Map(prev)
               next.set(sessionId, 'plan')
               return next
             })
           } else if (event.type === 'permission_mode_changed') {
             // 权限模式变更（如 Plan 模式退出时切换到完全自动）
-            console.log(`[GlobalAgentListeners] 权限模式变更: ${event.mode}`)
-            store.set(agentPermissionModeMapAtom, (prev: Map<string, import('@jgui/shared').JguiPermissionMode>) => {
+            store.set(agentPermissionModeMapAtom, (prev: Map<string, JguiPermissionMode>) => {
               const next = new Map(prev)
               next.set(sessionId, event.mode)
               return next
@@ -548,7 +541,6 @@ export function useGlobalAgentListeners(): void {
     // ===== 2. 流式完成 =====
     const cleanupComplete = ipc.onAgentStreamComplete(
       (data: AgentStreamCompletePayload) => {
-        console.log(`[FLASH-DEBUG] STREAM_COMPLETE for session=${data.sessionId.slice(0, 8)}, stoppedByUser=${data.stoppedByUser}, resultSubtype=${data.resultSubtype}`)
         unstable_batchedUpdates(() => {
         // 发送桌面通知（任务完成，始终播放提示音）
         const enabled = store.get(notificationsEnabledAtom)

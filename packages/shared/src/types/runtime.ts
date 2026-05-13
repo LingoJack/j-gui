@@ -157,6 +157,38 @@ export interface RuntimeStatus {
 }
 
 /**
+ * 单类存储目录的只读统计
+ */
+export interface StorageBucketStats {
+  /** 统计目标路径 */
+  path: string
+  /** 路径当前是否存在 */
+  exists: boolean
+  /** 递归统计到的文件数 */
+  fileCount: number
+  /** 递归统计到的目录数（不含根目录自身） */
+  directoryCount: number
+  /** 递归累计字节数 */
+  totalBytes: number
+}
+
+/**
+ * GUI 自管目录的只读存储统计
+ */
+export interface StorageStats {
+  /** Agent sessions 目录统计 */
+  agentSessions: StorageBucketStats
+  /** 附件目录统计 */
+  attachments: StorageBucketStats
+  /** 工作区目录统计 */
+  workspaces: StorageBucketStats
+  /** 临时目录统计 */
+  tempFiles: StorageBucketStats
+  /** 本次统计时间戳 */
+  checkedAt: number
+}
+
+/**
  * 运行时初始化选项
  */
 export interface RuntimeInitOptions {

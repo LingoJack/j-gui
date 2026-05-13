@@ -10,7 +10,12 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { Pencil, Check, X, PanelRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { agentSessionsAtom, agentSidePanelOpenMapAtom, workspaceFilesVersionAtom } from '@/atoms/agent-atoms'
+import {
+  agentSessionsAtom,
+  agentSidePanelOpenMapAtom,
+  sessionSidePanelOpenAtom,
+  recentlyModifiedPathsAtom,
+} from '@/atoms/agent-atoms'
 import * as ipc from '@/lib/ipc'
 
 /** AgentHeader 属性接口 */
@@ -27,11 +32,10 @@ export function AgentHeader({ sessionId }: AgentHeaderProps): React.ReactElement
   const inputRef = React.useRef<HTMLInputElement>(null)
 
   // 文件面板切换状态
-  const sidePanelOpenMap = useAtomValue(agentSidePanelOpenMapAtom)
   const setSidePanelOpenMap = useSetAtom(agentSidePanelOpenMapAtom)
-  const filesVersion = useAtomValue(workspaceFilesVersionAtom)
-  const isPanelOpen = sidePanelOpenMap.get(sessionId) ?? true
-  const hasFileChanges = filesVersion > 0
+  const recentlyModifiedMap = useAtomValue(recentlyModifiedPathsAtom)
+  const isPanelOpen = useAtomValue(sessionSidePanelOpenAtom(sessionId))
+  const hasFileChanges = (recentlyModifiedMap.get(sessionId)?.size ?? 0) > 0
 
   const togglePanel = React.useCallback(() => {
     setSidePanelOpenMap((prev) => {

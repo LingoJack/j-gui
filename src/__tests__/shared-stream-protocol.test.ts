@@ -3,12 +3,14 @@ import { resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { decodeAgentStreamEvent, decodeChatStreamEvent } from '@/lib/ipc-stream-protocol'
 import type {
+  AgentSendInput,
+  AgentStreamDecodeEvent,
+  AgentStreamPayload,
   ChatRequestInput,
   ChatStreamDecodeEvent,
   ChatStreamPayload,
   ChatUnsupportedFieldsPayload,
 } from '@jgui/shared'
-import type { AgentSendInput, AgentStreamDecodeEvent, AgentStreamPayload } from '@jgui/shared'
 
 describe('shared stream protocol types', () => {
   it('routes decode helper shapes through shared type references', () => {
@@ -258,6 +260,75 @@ describe('shared stream protocol types', () => {
           },
         },
       },
+    })
+  })
+
+  it('parses legacy runtime agent events into canonical shared shapes', () => {
+    expect(
+      decodeAgentStreamEvent(
+        { ModelResolved: { model: 'claude-sonnet-4-6' } },
+        'agent-1'
+      )
+    ).toEqual({
+      kind: 'payload',
+      sessionId: 'agent-1',
+      payload: {
+        kind: 'jgui_event',
+        event: {
+          type: 'model_resolved',
+          model: 'claude-sonnet-4-6',
+        },
+      },
+    })
+
+    expect(
+      decodeAgentStreamEvent(
+        { Retrying: { attempt: 1, maxAttempts: 3, delayMs: 1000, error: 'timeout' } },
+        'agent-1'
+      )
+    ).toEqual({
+      kind: 'payload',
+      sessionId: 'agent-1',
+      payload: {
+        kind: 'jgui_event',
+        event: {
+          type: 'retry',
+          status: 'starting',
+          attempt: 1,
+          maxAttempts: 3,
+          delaySeconds: 1,
+          reason: 'timeout',
+        },
+      },
+    })
+
+    expect(
+      decodeAgentStreamEvent(
+        { event: 'compacting' },
+        'agent-1'
+      )
+    ).toEqual({
+      kind: 'payload',
+      sessionId: 'agent-1',
+      payload: {
+        kind: 'sdk_message',
+        message: {
+          type: 'system',
+          subtype: 'compacting',
+          session_id: 'agent-1',
+        },
+      },
+    })
+
+    expect(
+      decodeAgentStreamEvent(
+        { event: 'cancelled' },
+        'agent-1'
+      )
+    ).toEqual({
+      kind: 'complete',
+      sessionId: 'agent-1',
+      resultSubtype: 'cancelled',
     })
   })
 

@@ -7,6 +7,7 @@
 
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
+import type { SetStateAction, WritableAtom } from 'jotai'
 import { useConversationId, useConversationIdOptional } from '@/contexts/session-context'
 import {
   selectedModelAtom,
@@ -25,7 +26,7 @@ import {
 
 // ===== 通用映射读写辅助 =====
 
-type MapAtom<T> = import('jotai').WritableAtom<Map<string, T>, [import('jotai').SetStateAction<Map<string, T>>], void>
+type MapAtom<T> = WritableAtom<Map<string, T>, [SetStateAction<Map<string, T>>], void>
 
 function useMapValue<T>(mapAtom: MapAtom<T>, key: string, defaultValue: T): T {
   const map = useAtomValue(mapAtom)

@@ -1,0 +1,45 @@
+feature: 2026-05-12-visual-layout-polish
+roadmap: j-gui-v1
+roadmap_item: visual-layout-polish
+created: 2026-05-12
+status: draft
+
+steps:
+  - id: step-1
+    paradigm: planning
+    title: 从摩擦台账定义布局修复批次
+    status: pending
+    description: "筛选 visual-layout/ui-detail finding，要求每条都有截图或复现。"
+    exit: 修复批次有 finding 回指和视觉证据。
+
+  - id: step-2
+    paradigm: ui
+    title: 按 defect 和 viewport 聚类
+    status: pending
+    description: "把 overflow、overlap、truncation、density、focus、scroll、button-state 分类。"
+    exit: 每个批次边界明确。
+
+  - id: step-3
+    paradigm: ui
+    title: 最小修复布局问题
+    status: pending
+    description: "做局部样式或结构修复，不扩大为换肤或设计系统重写。"
+    exit: 对应 finding 可验证通过。
+
+  - id: step-4
+    paradigm: verification
+    title: 补截图或手动复验
+    status: pending
+    description: "为每条 layout finding 补 before/after 或手动验收记录。"
+    exit: 每条 P0/P1 finding 有验证证据。
+
+checks:
+  - id: check-evidence
+    target: step-1
+    description: "所有实现任务必须回指 product-friction-audit finding，并有视觉证据。"
+    status: pending
+
+  - id: check-no-reskin
+    target: step-3
+    description: "不做全局换肤，不重写设计系统。"
+    status: pending

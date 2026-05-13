@@ -137,9 +137,6 @@ export function applyThemeToDOM(themeMode: ThemeMode, themeStyle: ThemeStyle = '
     return
   }
 
-  console.log(
-  )
-
   // 只修改确实需要变的 class
   if (currentStyleClass !== targetStyleClass) {
     if (currentStyleClass) {

@@ -20,6 +20,7 @@ import { ChatHeader } from './ChatHeader'
 import { ChatMessages } from './ChatMessages'
 import { ChatInput } from './ChatInput'
 import { AgentRecommendBanner } from './AgentRecommendBanner'
+import { ChatToolActivityIndicator } from './ChatToolActivityIndicator'
 import { PromptEditorSidebar } from './PromptEditorSidebar'
 import type { InlineEditSubmitPayload } from './ChatMessageItem'
 import {
@@ -35,7 +36,7 @@ import {
   channelsAtom,
 } from '@/atoms/chat-atoms'
 import type { PendingAttachment, ChatPendingMessage } from '@/atoms/chat-atoms'
-import { promptConfigAtom, promptSidebarOpenAtom, conversationPromptIdAtom, resolveSystemMessage, selectedPromptIdAtom } from '@/atoms/system-prompt-atoms'
+import { promptConfigAtom, promptSidebarOpenAtom, resolveSystemMessage } from '@/atoms/system-prompt-atoms'
 import { userProfileAtom } from '@/atoms/user-profile'
 import { ConversationProvider } from '@/contexts/session-context'
 import {
@@ -47,6 +48,7 @@ import {
 import { registerPendingTitle } from '@/hooks/useGlobalChatListeners'
 import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
 import { cn } from '@/lib/utils'
+import { CENTERED_MAIN_CONTENT_CLASS } from '@/lib/layout-shell'
 import * as ipc from '@/lib/ipc'
 import type {
   ChatMessage,
@@ -84,6 +86,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
 
   // ===== 全局 atom（映射结构，按 conversationId 读取） =====
   const conversations = useAtomValue(conversationsAtom)
+  const setConversations = useSetAtom(conversationsAtom)
   const channels = useAtomValue(channelsAtom)
   const setDraftSessionIds = useSetAtom(draftSessionIdsAtom)
   const streamingStates = useAtomValue(streamingStatesAtom)
@@ -95,6 +98,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
   const promptConfig = useAtomValue(promptConfigAtom)
   const userProfile = useAtomValue(userProfileAtom)
   const promptSidebarOpen = useAtomValue(promptSidebarOpenAtom)
+  const pendingRecommendation = useAtomValue(pendingAgentRecommendationAtom)
   const setPendingRecommendation = useSetAtom(pendingAgentRecommendationAtom)
   const [chatPendingMessage, setChatPendingMessage] = React.useState<ChatPendingMessage | null>(null)
   const externalPendingAttachments = useAtomValue(pendingAttachmentsAtom)
@@ -122,6 +126,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
   const toolActivities = streamState?.toolActivities ?? []
   const chatError = chatStreamErrors.get(conversationId) ?? null
   const refreshVersion = refreshMap.get(conversationId) ?? 0
+  const canMigrateToAgent = messages.length > 0 || isStreaming
 
   // ===== 对话切换时重置状态 =====
   React.useEffect(() => {
@@ -232,10 +237,11 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
     const newDividers = currentDividers.filter((id) => messageIdSet.has(id))
     if (newDividers.length !== currentDividers.length) {
       setContextDividers(newDividers)
-      await ipc.updateContextDividers(convId, newDividers)
+      const updated = await ipc.updateContextDividers(convId, newDividers)
+      setConversations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
     }
     return newDividers
-  }, [])
+  }, [setConversations])
 
   /** 发送消息 */
   const handleSend = React.useCallback(async (
@@ -262,9 +268,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
     // 判断是否为第一条消息（发送前历史为空）
     const messageCountBeforeSend = options?.messageCountBeforeSend ?? messages.length
     const isFirstMessage = messageCountBeforeSend === 0
-    console.log('[ChatView] 发送消息 - isFirstMessage:', isFirstMessage, 'messageCountBeforeSend:', messageCountBeforeSend, 'conversationId:', conversationId)
     if (isFirstMessage && content) {
-      console.log('[ChatView] 设置待生成标题:', { conversationId, userMessage: content.slice(0, 50) })
       registerPendingTitle(conversationId, {
         userMessage: content,
         channelId: selectedModel.channelId,
@@ -385,6 +389,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
     channels,
     setChatStreamErrors,
     setStreamingStates,
+    setDraftSessionIds,
   ])
 
   // ===== 自动发送快速任务消息 =====
@@ -577,19 +582,23 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
     }
 
     setContextDividers(newDividers)
-    ipc
-      .updateContextDividers(conversationId, newDividers)
+    ipc.updateContextDividers(conversationId, newDividers)
+      .then((updated) => {
+        setConversations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
+      })
       .catch(console.error)
-  }, [conversationId, messages, contextDividers])
+  }, [conversationId, messages, contextDividers, setConversations])
 
   /** 删除分隔线 */
   const handleDeleteDivider = React.useCallback((messageId: string): void => {
     const newDividers = contextDividers.filter((id) => id !== messageId)
     setContextDividers(newDividers)
-    ipc
-      .updateContextDividers(conversationId, newDividers)
+    ipc.updateContextDividers(conversationId, newDividers)
+      .then((updated) => {
+        setConversations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
+      })
       .catch(console.error)
-  }, [conversationId, contextDividers])
+  }, [conversationId, contextDividers, setConversations])
 
   /** 加载全部历史消息（向上滚动时触发） */
   const handleLoadMore = React.useCallback(async (): Promise<void> => {
@@ -599,16 +608,20 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
   }, [conversationId])
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full min-h-0 flex-1 overflow-hidden">
       {/* 主内容区域 */}
       <div className="flex flex-col h-full flex-1 min-w-0 overflow-hidden">
         {/* Header 在 max-w 外，按钮可到达最右侧 */}
-        <ChatHeader conversation={conversation} />
-        <div className="flex flex-col flex-1 w-full max-w-[min(72rem,100%)] mx-auto overflow-hidden min-h-0">
+        <ChatHeader
+          conversation={conversation}
+          canMigrateToAgent={canMigrateToAgent && !pendingRecommendation}
+        />
+        <div className={CENTERED_MAIN_CONTENT_CLASS}>
           {/* 中间：消息区域 */}
           <div className="flex-1 min-h-0">
             <ChatMessages
               conversationId={conversationId}
+              fallbackModelId={conversation?.modelId ?? selectedModel?.modelId ?? null}
               messages={messages}
               messagesLoaded={messagesLoaded}
               streaming={isStreaming}
@@ -651,6 +664,20 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
             </div>
           )}
 
+          {toolActivities.length > 0 && (
+            <div className="mx-4 mb-3 rounded-xl border border-border/60 bg-card/70 px-4 py-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-foreground">工具活动</div>
+                  <div className="text-xs text-muted-foreground">
+                    当前消息正在调用工具，执行进度会在这里持续更新。
+                  </div>
+                </div>
+              </div>
+              <ChatToolActivityIndicator activities={toolActivities} isStreaming={isStreaming} />
+            </div>
+          )}
+
           {/* Agent 模式推荐横幅 */}
           <AgentRecommendBanner />
 
@@ -670,7 +697,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
       {/* 提示词编辑侧栏 */}
       <div className={cn(
         'relative flex-shrink-0 transition-[width] duration-300 ease-in-out overflow-hidden titlebar-drag-region',
-        promptSidebarOpen ? 'w-[300px] border-l' : 'w-10'
+        promptSidebarOpen ? 'w-[300px] border-l' : 'w-0'
       )}>
         <div className={cn(
           'w-[300px] h-full transition-opacity duration-200 titlebar-no-drag',

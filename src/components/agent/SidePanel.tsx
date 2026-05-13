@@ -6,7 +6,7 @@
  */
 
 import * as React from 'react'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { X, FolderOpen, ExternalLink, RefreshCw, ChevronRight, MoreHorizontal, FolderSearch, Pencil, FolderInput, Info, FolderHeart, MessageSquarePlus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -17,20 +17,36 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import {
+  buildCompactDisplayPath,
+  getDisplayPathBasename,
+  normalizeDisplayPath,
+} from '@/lib/path-display'
+import { getEffectiveChatWorkspaceId } from '@/lib/chat-workspace'
 import { FileBrowser, FileDropZone, FileTypeIcon } from '@/components/file-browser'
 import {
   agentSidePanelOpenMapAtom,
+  sessionSidePanelOpenAtom,
   workspaceFilesVersionAtom,
+  recentlyModifiedPathsAtom,
   currentAgentWorkspaceIdAtom,
   agentWorkspacesAtom,
+  agentSessionsAtom,
   agentAttachedDirectoriesMapAtom,
   workspaceAttachedDirectoriesMapAtom,
   agentPendingFilesAtom,
 } from '@/atoms/agent-atoms'
 import { pendingAttachmentsAtom, type PendingAttachment } from '@/atoms/chat-atoms'
-import { currentConversationIdAtom } from '@/atoms/chat-atoms'
-import { detectIsWindows } from '@/lib/platform'
+import { currentConversationIdAtom, currentChatWorkspaceIdAtom } from '@/atoms/chat-atoms'
+import { detectIsMac, detectIsWindows } from '@/lib/platform'
 import type { FileEntry, AgentPendingFile } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 
@@ -42,12 +58,22 @@ interface SidePanelProps {
 
 export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelProps): React.ReactElement {
   // per-session 侧面板状态（默认打开）
-  const sidePanelOpenMap = useAtomValue(agentSidePanelOpenMapAtom)
   const setSidePanelOpenMap = useSetAtom(agentSidePanelOpenMapAtom)
   const isWindows = React.useMemo(() => detectIsWindows(), [])
+  const isMac = React.useMemo(() => detectIsMac(), [])
+  const openLocationLabel = isWindows
+    ? '在资源管理器中打开'
+    : isMac
+      ? '在 Finder 中打开'
+      : '打开所在目录'
+  const openWorkspaceLocationLabel = isWindows
+    ? '在资源管理器中打开工作区文件目录'
+    : isMac
+      ? '在 Finder 中打开工作区文件目录'
+      : '打开工作区文件目录'
 
-  const isOpen = sidePanelOpenMap.get(sessionId) ?? true
-  const panelTitle = mode === 'chat' ? '聊天工作区文件' : '工作区文件'
+  const isOpen = useAtomValue(sessionSidePanelOpenAtom(sessionId))
+  const panelTitle = mode === 'chat' ? '聊天工作区' : '工作区文件'
 
   // 动画标志：渲染阶段直接计算，同一会话内 isOpen 变化时启用过渡动画，切换会话时即时显示
   const prevIsOpenRef = React.useRef(isOpen)
@@ -70,11 +96,24 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
 
   const filesVersion = useAtomValue(workspaceFilesVersionAtom)
   const setFilesVersion = useSetAtom(workspaceFilesVersionAtom)
+  const recentlyModifiedMap = useAtomValue(recentlyModifiedPathsAtom)
 
   // 派生当前工作区 slug（用于 FileDropZone IPC 调用）
   const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
+  const [currentChatWorkspaceId, setCurrentChatWorkspaceId] = useAtom(currentChatWorkspaceIdAtom)
   const workspaces = useAtomValue(agentWorkspacesAtom)
-  const workspaceSlug = workspaces.find((w) => w.id === currentWorkspaceId)?.slug ?? null
+  const agentSessions = useAtomValue(agentSessionsAtom)
+  const effectiveWorkspaceId = React.useMemo(() => {
+    if (mode === 'chat') {
+      return getEffectiveChatWorkspaceId(currentChatWorkspaceId, workspaces)
+    }
+    const sessionWorkspaceId = agentSessions.find((session) => session.id === sessionId)?.workspaceId
+    // 右侧面板的文件根必须优先跟随当前会话，避免手动切了左侧工作区后把活动会话指到错误目录。
+    if (sessionWorkspaceId) return sessionWorkspaceId
+    if (currentWorkspaceId) return currentWorkspaceId
+    return workspaces[0]?.id ?? null
+  }, [mode, currentChatWorkspaceId, currentWorkspaceId, agentSessions, sessionId, workspaces])
+  const workspaceSlug = workspaces.find((w) => w.id === effectiveWorkspaceId)?.slug ?? null
 
   // 附加目录列表（会话级）
   const attachedDirsMap = useAtomValue(agentAttachedDirectoriesMapAtom)
@@ -84,21 +123,21 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
   // 附加目录列表（工作区级）
   const wsAttachedDirsMap = useAtomValue(workspaceAttachedDirectoriesMapAtom)
   const setWsAttachedDirsMap = useSetAtom(workspaceAttachedDirectoriesMapAtom)
-  const wsAttachedDirs = currentWorkspaceId ? (wsAttachedDirsMap.get(currentWorkspaceId) ?? []) : []
+  const wsAttachedDirs = effectiveWorkspaceId ? (wsAttachedDirsMap.get(effectiveWorkspaceId) ?? []) : []
 
   // 加载工作区级附加目录
   React.useEffect(() => {
-    if (!workspaceSlug || !currentWorkspaceId) return
+    if (!workspaceSlug || !effectiveWorkspaceId) return
     ipc.getWorkspaceDirectories(workspaceSlug)
       .then((dirs) => {
         setWsAttachedDirsMap((prev) => {
           const map = new Map(prev)
-          map.set(currentWorkspaceId, dirs)
+          map.set(effectiveWorkspaceId, dirs)
           return map
         })
       })
       .catch(console.error)
-  }, [workspaceSlug, currentWorkspaceId, setWsAttachedDirsMap])
+  }, [workspaceSlug, effectiveWorkspaceId, setWsAttachedDirsMap])
 
   // === 会话级：附加/移除目录 ===
 
@@ -149,14 +188,14 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
   // === 工作区级：附加/移除目录 ===
 
   const attachWorkspaceDir = React.useCallback(async (dirPath: string) => {
-    if (!workspaceSlug || !currentWorkspaceId) return
+    if (!workspaceSlug || !effectiveWorkspaceId) return
     const updated = await ipc.attachWorkspaceDirectory({ workspaceSlug, directoryPath: dirPath })
     setWsAttachedDirsMap((prev) => {
       const map = new Map(prev)
-      map.set(currentWorkspaceId, updated)
+      map.set(effectiveWorkspaceId, updated)
       return map
     })
-  }, [workspaceSlug, currentWorkspaceId, setWsAttachedDirsMap])
+  }, [workspaceSlug, effectiveWorkspaceId, setWsAttachedDirsMap])
 
   const handleAttachWorkspaceFolder = React.useCallback(async () => {
     try {
@@ -180,24 +219,25 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
   }, [attachWorkspaceDir])
 
   const handleDetachWorkspaceDirectory = React.useCallback(async (dirPath: string) => {
-    if (!workspaceSlug || !currentWorkspaceId) return
+    if (!workspaceSlug || !effectiveWorkspaceId) return
     try {
       await ipc.detachWorkspaceDirectory(workspaceSlug, dirPath)
       setWsAttachedDirsMap((prev) => {
         const map = new Map(prev)
-        const updated = (map.get(currentWorkspaceId) ?? []).filter((path) => path !== dirPath)
-        if (updated.length > 0) { map.set(currentWorkspaceId, updated) } else { map.delete(currentWorkspaceId) }
+        const updated = (map.get(effectiveWorkspaceId) ?? []).filter((path) => path !== dirPath)
+        if (updated.length > 0) { map.set(effectiveWorkspaceId, updated) } else { map.delete(effectiveWorkspaceId) }
         return map
       })
     } catch (error) {
       console.error('[SidePanel] 移除工作区附加目录失败:', error)
     }
-  }, [workspaceSlug, currentWorkspaceId, setWsAttachedDirsMap])
+  }, [workspaceSlug, effectiveWorkspaceId, setWsAttachedDirsMap])
 
   // 文件上传完成后递增版本号，触发 FileBrowser 刷新
   const handleFilesUploaded = React.useCallback(() => {
+    setIsOpen(true)
     setFilesVersion((prev) => prev + 1)
-  }, [setFilesVersion])
+  }, [setFilesVersion, setIsOpen])
 
   // 手动刷新文件列表
   const handleRefresh = React.useCallback(() => {
@@ -209,6 +249,10 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
   const setPendingFiles = useSetAtom(agentPendingFilesAtom)
   const currentConversationId = useAtomValue(currentConversationIdAtom)
   const setPendingAttachments = useSetAtom(pendingAttachmentsAtom)
+  const handleChatWorkspaceChange = React.useCallback((workspaceId: string) => {
+    setCurrentChatWorkspaceId(workspaceId)
+    ipc.updateSettings({ chatWorkspaceId: workspaceId }).catch(console.error)
+  }, [setCurrentChatWorkspaceId])
   const handleAddToChat = React.useCallback(async (entry: FileEntry) => {
     if (mode === 'chat') {
       if (!currentConversationId) return
@@ -263,17 +307,17 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
       if (previewUrl) URL.revokeObjectURL(previewUrl)
       console.error('[SidePanel] 添加文件到聊天失败:', error)
     }
-  }, [pendingFiles, setPendingFiles, sessionId, workspaceSlug, mode, currentConversationId, setPendingAttachments])
+  }, [pendingFiles, setPendingFiles, mode, currentConversationId, setPendingAttachments])
 
   // 面包屑：显示根路径最后两段
   const breadcrumb = React.useMemo(() => {
     if (!sessionPath) return ''
-    const parts = sessionPath.split('/').filter(Boolean)
-    return parts.length > 2 ? `.../${parts.slice(-2).join('/')}` : sessionPath
+    return buildCompactDisplayPath(sessionPath)
   }, [sessionPath])
 
   // 工作区文件目录路径
   const [workspaceFilesPath, setWorkspaceFilesPath] = React.useState<string | null>(null)
+  const hasWorkspaceMountedSources = wsAttachedDirs.length > 0 || !!workspaceFilesPath
   React.useEffect(() => {
     if (!workspaceSlug) {
       setWorkspaceFilesPath(null)
@@ -282,14 +326,16 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
     ipc.getWorkspaceFilesPath(workspaceSlug).then(setWorkspaceFilesPath).catch(() => setWorkspaceFilesPath(null))
   }, [workspaceSlug])
 
-  // 自动打开：文件变化时（仅在有 sessionPath 时）
-  const prevFilesVersionRef = React.useRef(filesVersion)
+  // 自动打开：仅响应当前会话自己的文件写入脉冲，避免其他会话的文件变化串扰到这里。
+  const sessionFileChanges = recentlyModifiedMap.get(sessionId)
+  const sessionFileChangeCount = sessionFileChanges?.size ?? 0
+  const prevSessionFileChangeCountRef = React.useRef(sessionFileChangeCount)
   React.useEffect(() => {
-    if (filesVersion > prevFilesVersionRef.current && sessionPath) {
+    if (sessionFileChangeCount > prevSessionFileChangeCountRef.current && sessionPath) {
       setIsOpen(true)
     }
-    prevFilesVersionRef.current = filesVersion
-  }, [filesVersion, sessionPath, setIsOpen])
+    prevSessionFileChangeCountRef.current = sessionFileChangeCount
+  }, [sessionFileChangeCount, sessionPath, setIsOpen])
 
   return (
     <div
@@ -325,7 +371,10 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                             <p>{mode === 'chat' ? '当前聊天可快速引用的工作区文件' : '当前会话的专属文件，仅本次对话的 Agent 可以访问'}</p>
                           </TooltipContent>
                         </Tooltip>
-                        <span className="text-[10px] text-muted-foreground/75 truncate flex-1" title={sessionPath}>
+                        <span
+                          className="text-[10px] text-muted-foreground/75 truncate flex-1"
+                          title={normalizeDisplayPath(sessionPath)}
+                        >
                           {breadcrumb}
                         </span>
                         <Tooltip>
@@ -341,7 +390,7 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
-                            <p>在 Finder 中打开</p>
+                            <p>{openLocationLabel}</p>
                           </TooltipContent>
                         </Tooltip>
                         <Tooltip>
@@ -394,7 +443,7 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                           {attachedDirs.length > 0 && (
                             <div className="text-[11px] font-medium text-muted-foreground mb-1 px-3 pt-2">工作文件（存储于该工作区目录）</div>
                           )}
-                          <FileBrowser rootPath={sessionPath} hideToolbar embedded hideEmpty={attachedDirs.length > 0} onAddToChat={handleAddToChat} />
+                          <FileBrowser sessionId={sessionId} rootPath={sessionPath} hideToolbar embedded hideEmpty={attachedDirs.length > 0} onAddToChat={handleAddToChat} />
                         </>
                         {/* 会话文件拖拽上传区域 */}
                         <FileDropZone
@@ -405,35 +454,26 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                           onAttachFolder={handleAttachFolder}
                           onFoldersDropped={handleSessionFoldersDropped}
                         />
-                      </div>
-                      {/* ===== 分隔线 ===== */}
-                      <div className="mx-3 my-3 border-t border-muted-foreground/20" />
-                    </>
-                  )}
+                    </div>
+                    {/* ===== 分隔线 ===== */}
+                    <div className="mx-3 my-3 border-t border-muted-foreground/20" />
+                  </>
+                )}
 
-                  {/* ===== 顶部关闭按钮（仅在无 sessionPath 时显示，有 sessionPath 时关闭按钮在会话文件区标题栏） ===== */}
-                  {!sessionPath && (
-                    <div className="flex items-center justify-between px-3 h-[36px] flex-shrink-0">
-                      <div className="flex items-center gap-1">
-                        <FolderHeart className="size-3 text-muted-foreground" />
-                        <span className="text-[11px] font-medium text-muted-foreground">{panelTitle}</span>
-                      </div>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 flex-shrink-0 rounded-full"
-                            onClick={() => setIsOpen((prev) => !prev)}
-                          >
-                            <X className="size-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                          <p>关闭侧面板</p>
-                        </TooltipContent>
-                      </Tooltip>
+                  {mode === 'chat' && workspaces.length > 0 && (
+                    <div className="px-3 pb-2">
+                      <Select value={effectiveWorkspaceId ?? undefined} onValueChange={handleChatWorkspaceChange}>
+                        <SelectTrigger className="h-8 rounded-xl text-xs">
+                          <SelectValue placeholder="选择聊天工作区" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {workspaces.map((workspace) => (
+                            <SelectItem key={workspace.id} value={workspace.id} className="text-xs">
+                              {workspace.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   )}
 
@@ -465,7 +505,25 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
-                            <p>在 Finder 中打开工作区文件目录</p>
+                            <p>{openWorkspaceLocationLabel}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {!sessionPath && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 flex-shrink-0 rounded-full"
+                              onClick={() => setIsOpen((prev) => !prev)}
+                            >
+                              <X className="size-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            <p>关闭侧面板</p>
                           </TooltipContent>
                         </Tooltip>
                       )}
@@ -482,13 +540,51 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                           onAddToChat={handleAddToChat}
                         />
                       )}
+                      {!hasWorkspaceMountedSources && (
+                        <div className="px-3 py-3">
+                          <div className="rounded-2xl border border-dashed border-border/70 bg-muted/25 px-4 py-4">
+                            <div className="text-sm font-medium text-foreground">
+                              {mode === 'chat' ? '这里是聊天可引用的文件区' : '默认工作区已就绪'}
+                            </div>
+                            <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                              {mode === 'chat'
+                                ? '先附加一个常用文件夹，后面在 Chat 里用 @ 或拖拽时都能直接引用。'
+                                : 'Agent 新会话会默认落在这里。先附加一个常用文件夹，后续同工作区下的会话都能继续复用。'}
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 rounded-full px-3 text-xs"
+                                onClick={handleAttachWorkspaceFolder}
+                              >
+                                <FolderHeart className="mr-1 size-3.5" />
+                                {mode === 'chat' ? '附加文件夹' : '添加工作区文件夹'}
+                              </Button>
+                              {sessionPath && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 rounded-full px-3 text-xs"
+                                  onClick={handleAttachFolder}
+                                >
+                                  <FolderOpen className="mr-1 size-3.5" />
+                                  仅附加到当前会话
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       {/* 工作区文件浏览器 */}
                       {workspaceFilesPath && (
                         <>
                           {wsAttachedDirs.length > 0 && (
                             <div className="text-[11px] font-medium text-muted-foreground mb-1 px-3 pt-2">工作文件（存储于该工作区目录）</div>
                           )}
-                          <FileBrowser rootPath={workspaceFilesPath} hideToolbar embedded hideEmpty={wsAttachedDirs.length > 0} onAddToChat={handleAddToChat} />
+                          <FileBrowser sessionId={sessionId} rootPath={workspaceFilesPath} hideToolbar embedded hideEmpty={wsAttachedDirs.length > 0} onAddToChat={handleAddToChat} />
                         </>
                       )}
                       {/* 工作区文件拖拽上传区域 */}
@@ -524,8 +620,8 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                       </TooltipContent>
                     </Tooltip>
                   </div>
-                  <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">
-                    请选择工作区
+                  <div className="flex-1 flex items-center justify-center px-6 text-center text-xs leading-5 text-muted-foreground">
+                    工作区仍在初始化。正常情况下会自动进入默认工作区，无需先手动新建。
                   </div>
                 </div>
               )}
@@ -604,7 +700,7 @@ function AttachedDirTree({ dirPath, sessionId, onDetach, selectedPaths, onSelect
   const [children, setChildren] = React.useState<FileEntry[]>([])
   const [loaded, setLoaded] = React.useState(false)
 
-  const dirName = dirPath.split('/').filter(Boolean).pop() || dirPath
+  const dirName = getDisplayPathBasename(dirPath)
 
   // 当 refreshVersion 变化时，已展开的目录自动重新加载
   React.useEffect(() => {
@@ -641,7 +737,7 @@ function AttachedDirTree({ dirPath, sessionId, onDetach, selectedPaths, onSelect
           )}
         />
         <FileTypeIcon name={dirName} isDirectory isOpen={expanded} />
-        <span className="text-xs truncate flex-1" title={dirPath}>
+        <span className="text-xs truncate flex-1" title={normalizeDisplayPath(dirPath)}>
           {dirName}
         </span>
         <Button

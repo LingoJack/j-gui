@@ -58,7 +58,7 @@ export function ContextSettingsPopover(): React.ReactElement {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip open={open ? false : undefined}>
+      <Tooltip>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <Button type="button" variant="ghost" size="icon" className="h-8 w-8">

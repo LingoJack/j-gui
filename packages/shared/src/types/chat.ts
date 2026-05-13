@@ -43,6 +43,12 @@ export interface AttachmentSaveResult {
 
 /** 文件选择对话框结果 */
 export interface FileDialogResult {
+  /** 用户是否取消 */
+  canceled?: boolean
+  /** 原始系统路径列表 */
+  filePaths?: string[]
+  /** 单选目录时返回的目录路径 */
+  path?: string
   /** 选择的文件列表 */
   files: Array<{
     filename: string
@@ -158,6 +164,24 @@ export interface MessageSearchResult {
   matchLength: number
   /** 是否已归档 */
   archived?: boolean
+}
+
+/**
+ * Agent 引用 Chat 会话时使用的上下文载荷
+ */
+export interface ChatReferenceContext {
+  /** 被引用的对话 ID */
+  conversationId: string
+  /** 对话标题 */
+  conversationTitle: string
+  /** 原始总消息数 */
+  messageCount: number
+  /** 实际纳入上下文的消息数 */
+  includedMessageCount: number
+  /** 因长度裁剪而省略的消息数 */
+  omittedMessageCount: number
+  /** 发送给 Agent 的格式化上下文文本 */
+  prompt: string
 }
 
 // ===== 消息发送 =====

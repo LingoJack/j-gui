@@ -352,7 +352,7 @@ export interface AssistantTurnRendererProps {
   sessionModelId?: string
 }
 
-export function AssistantTurnRenderer({ turn, allMessages, basePath, onFork, onRewind, onRetry, onRetryInNewSession, onCompact, isStreaming, stoppedByUser, sessionModelId }: AssistantTurnRendererProps): React.ReactElement | null {
+export function AssistantTurnRenderer({ turn, allMessages, basePath, onFork, onRewind, onRetry, onRetryInNewSession, onCompact, isStreaming, stoppedByUser }: AssistantTurnRendererProps): React.ReactElement | null {
   const channels = useAtomValue(channelsAtom)
   // 收集所有 assistant 消息的内容块，保留 parent_tool_use_id 关联
   interface EnrichedBlock {
@@ -360,23 +360,39 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, onFork, onR
     parentToolUseId?: string | null
   }
 
-  const enrichedBlocks: EnrichedBlock[] = []
-  let hasError = false
-  let errorContent: SDKAssistantMessage | null = null
+  const { enrichedBlocks, hasError, errorContent, agentToolIds } = React.useMemo(() => {
+    const nextEnrichedBlocks: EnrichedBlock[] = []
+    const nextAgentToolIds = new Set<string>()
+    let nextHasError = false
+    let nextErrorContent: SDKAssistantMessage | null = null
 
-  for (const aMsg of turn.assistantMessages) {
-    if (aMsg.error) {
-      hasError = true
-      errorContent = aMsg
-      continue
-    }
-    const blocks = aMsg.message?.content
-    if (Array.isArray(blocks)) {
-      for (const block of blocks) {
-        enrichedBlocks.push({ block, parentToolUseId: aMsg.parent_tool_use_id })
+    for (const aMsg of turn.assistantMessages) {
+      if (aMsg.error) {
+        nextHasError = true
+        nextErrorContent = aMsg
+        continue
+      }
+      const blocks = aMsg.message?.content
+      if (Array.isArray(blocks)) {
+        for (const block of blocks) {
+          nextEnrichedBlocks.push({ block, parentToolUseId: aMsg.parent_tool_use_id })
+          if (block.type === 'tool_use') {
+            const tu = block as { name: string; id: string }
+            if (tu.name === 'Agent' || tu.name === 'Task') {
+              nextAgentToolIds.add(tu.id)
+            }
+          }
+        }
       }
     }
-  }
+
+    return {
+      enrichedBlocks: nextEnrichedBlocks,
+      hasError: nextHasError,
+      errorContent: nextErrorContent,
+      agentToolIds: nextAgentToolIds,
+    }
+  }, [turn.assistantMessages])
 
   // 从 turnMessages 中提取 result 消息的耗时和用量
   const { durationMs, usage } = extractTurnUsage(turn.turnMessages)
@@ -390,29 +406,22 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, onFork, onR
   })
   const showStoppedBadge = stoppedByUser || isInterruptedTurn
 
-  // 构建 Agent/Task tool_use → 子代理内容块映射
-  const agentToolIds = new Set<string>()
-  for (const eb of enrichedBlocks) {
-    if (eb.block.type === 'tool_use') {
-      const tu = eb.block as { name: string; id: string }
-      if (tu.name === 'Agent' || tu.name === 'Task') {
-        agentToolIds.add(tu.id)
+  const { childBlocksMap, topLevelBlocks } = React.useMemo(() => {
+    const nextChildBlocksMap = new Map<string, SDKContentBlock[]>()
+    const nextTopLevelBlocks: SDKContentBlock[] = []
+
+    for (const eb of enrichedBlocks) {
+      if (eb.parentToolUseId && agentToolIds.has(eb.parentToolUseId)) {
+        const children = nextChildBlocksMap.get(eb.parentToolUseId) ?? []
+        children.push(eb.block)
+        nextChildBlocksMap.set(eb.parentToolUseId, children)
+      } else {
+        nextTopLevelBlocks.push(eb.block)
       }
     }
-  }
 
-  const childBlocksMap = new Map<string, SDKContentBlock[]>()
-  const topLevelBlocks: SDKContentBlock[] = []
-
-  for (const eb of enrichedBlocks) {
-    if (eb.parentToolUseId && agentToolIds.has(eb.parentToolUseId)) {
-      const children = childBlocksMap.get(eb.parentToolUseId) ?? []
-      children.push(eb.block)
-      childBlocksMap.set(eb.parentToolUseId, children)
-    } else {
-      topLevelBlocks.push(eb.block)
-    }
-  }
+    return { childBlocksMap: nextChildBlocksMap, topLevelBlocks: nextTopLevelBlocks }
+  }, [agentToolIds, enrichedBlocks])
 
   // 检测是否有主要内容（text 块），用于决定 tool/thinking 是否 dimmed
   const hasTextContent = topLevelBlocks.some(

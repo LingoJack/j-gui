@@ -219,22 +219,10 @@ export async function fetchTitle(
   fetchFn: typeof globalThis.fetch = fetch,
 ): Promise<string | null> {
   try {
-    console.log('[fetchTitle] 发送请求:', {
-      url: request.url,
-      provider: adapter.providerType,
-      bodyPreview: request.body.slice(0, 200),
-    })
-
     const response = await fetchFn(request.url, {
       method: 'POST',
       headers: request.headers,
       body: request.body,
-    })
-
-    console.log('[fetchTitle] 收到响应:', {
-      status: response.status,
-      statusText: response.statusText,
-      ok: response.ok,
     })
 
     if (!response.ok) {
@@ -247,13 +235,7 @@ export async function fetchTitle(
     }
 
     const data: unknown = await response.json()
-    console.log('[fetchTitle] 解析响应体:', {
-      provider: adapter.providerType,
-      dataPreview: JSON.stringify(data).slice(0, 500),
-    })
-
     const title = adapter.parseTitleResponse(data)
-    console.log('[fetchTitle] 解析标题结果:', { title })
     return title
   } catch (error) {
     console.error('[fetchTitle] 异常:', error)

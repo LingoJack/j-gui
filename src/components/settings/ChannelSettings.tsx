@@ -9,7 +9,7 @@
 
 import * as React from 'react'
 import { useAtom, useSetAtom } from 'jotai'
-import { Plus, Pencil, Trash2, ExternalLink } from 'lucide-react'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -59,7 +59,7 @@ export function ChannelSettings(): React.ReactElement {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [setGlobalChannels])
 
   React.useEffect(() => {
     loadChannels()
@@ -347,4 +347,3 @@ function AgentProviderRow({ channel, enabled, onToggle }: AgentProviderRowProps)
     </SettingsRow>
   )
 }
-

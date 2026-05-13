@@ -1,6 +1,6 @@
 roadmap: j-gui-v1
 created: 2026-05-10
-last_reviewed: 2026-05-12
+last_reviewed: 2026-05-13
 
 items:
   # ===== Phase A: 基础底座与已证实闭环 =====
@@ -287,28 +287,173 @@ items:
     minimal_loop: false
     notes: 2026-05-12 完成——已按当前代码真相翻正旧 coverage 口径，并补 chat 命令层的会话生命周期与 stop-generation 状态锚点；本项完成代表建立持续收口基线，不代表全仓命令层测试已补平
 
-  # ===== Phase E: P2 自我开发闭环与超越 Proma =====
-  - slug: agent-engine-jagent
-    description: 评估并集成 j-agent 原生后端，减少 CLI 兼容层复杂度
-    depends_on: [channel-model-unify, stream-protocol-unify]
+  # ===== Phase E: P0/P1 产品体验硬化 =====
+  - slug: product-friction-audit
+    description: 产品摩擦审计——按真实桌面使用路径盘点 UI 细节、交互摩擦、状态反馈和功能断点，形成可复现问题清单
+    depends_on: [runtime-observability-gates, proma-parity-evidence-pass]
+    status: done
+    feature: 2026-05-12-product-friction-audit
+    minimal_loop: false
+    notes: 2026-05-12 完成——七个区域的产品摩擦台账、P0/P1/P2 分级和后续 roadmap 映射已落到 `.codestable/acceptance/product-friction/2026-05-12/`；当前仍缺更强截图/录屏资产，但不影响本项作为后续体验硬化的事实输入。
+
+  - slug: core-workflow-ux-hardening
+    description: 核心工作流体验硬化——收口 Chat/Agent 日常输入、停止、重试、错误提示、滚动、焦点、快捷键和恢复体验
+    depends_on: [product-friction-audit]
+    status: done
+    feature: 2026-05-12-core-workflow-ux-hardening
+    minimal_loop: false
+    notes: 2026-05-12 第一批实现已完成 pf-006、pf-001、pf-016、pf-004 四条主路径 finding：最后 tab 空态、Chat 工具活动提示、Chat->Agent 迁移入口、搜索结果归档标识与细节。
+
+  - slug: settings-experience-hardening
+    description: 设置体验硬化——让 Settings 中保存、失败、unsupported、凭据、工具状态和来源提示都能被用户理解
+    depends_on: [product-friction-audit, toolsettings-runtime-closure, governance-bidirectional-sync, agent-governance-surface-hardening, system-prompt-runtime-hardening, about-update-surface-refresh, environment-configuration-surface]
     status: planned
     feature: null
     minimal_loop: false
-    notes: 价值在于更强控制力与更少兼容层；不应先于当前闭环问题
+    notes: 目标不是新增更多设置项，而是把已有设置区从“能落盘”推进到“用户知道发生了什么”。
+
+  - slug: agent-workbench-polish
+    description: Agent 工作台打磨——收口 timeline、权限请求、工具调用、文件上下文、停止/继续工作和历史恢复的可读性与可操作性
+    depends_on: [product-friction-audit, agent-history-replay-closure, agent-runtime-stability-recovery]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 聚焦 Agent 作为长期工作台的体验可信度，不重新设计 Agent runtime。
+
+  - slug: visual-layout-polish
+    description: 视觉与布局细节打磨——集中处理布局密度、溢出、按钮状态、滚动区域、文本截断、焦点态和响应式问题
+    depends_on: [product-friction-audit]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 以审计截图和复现步骤驱动，不做全局换肤或营销式重设计。
+
+  - slug: shortcut-system-hardening
+    description: 快捷键系统硬化——修全局快捷键与缩放快捷键真 bug，消除浏览器默认行为回退，统一文案、渲染进程注册与主进程能力真相
+    depends_on: [product-friction-audit, core-workflow-ux-hardening]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 当前证据显示渲染进程有 keydown 注册表，但未看到“显示主窗口”类主进程全局快捷键落地；Ctrl+Shift+P 会落到 Windows 打印页面，Ctrl++ / Ctrl+- / Ctrl+0 只出现在提示文案中，尚未形成真实能力。
+
+  - slug: sidebar-performance-hardening
+    description: 侧边栏性能硬化——继续按 explore 证据拆 LeftSidebar / SessionListItems / main 壳层订阅，解决展开收起不够丝滑的结构性卡顿
+    depends_on: [product-friction-audit, core-workflow-ux-hardening]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 当前主因仍是 mega-component 体量、atom 订阅面、折叠展开重渲染范围和同步持久化写入，不应先把问题归咎为动画曲线。
+
+  - slug: desktop-shell-platform-polish
+    description: 桌面壳层平台打磨——图标切到 J logo，并按平台收口窗口控制、titlebar 与桌面壳交互真相
+    depends_on: [product-friction-audit]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: Windows 侧重点是自定义最小化/最大化/关闭；macOS 侧重点是保留系统红绿灯与 overlay/titlebar 行为。Windows 机器不能把 macOS 效果直接视为已验证。
+
+  - slug: agent-backend-switch-ux-hardening
+    description: Agent 后端切换交互硬化——把 Claude SDK / JAgent 收口成直接、可感知、可回滚的 backend mode 切换，而不是与模型供应商设置混淆
+    depends_on: [product-friction-audit, core-workflow-ux-hardening]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 当前 Agent 输入区里的 Claude SDK/JAgent 已对应 agentBackendMode，但用户侧仍容易误读成模型提供商设置；需补状态反馈、失败回滚、当前模式说明与禁用态真相。
+
+  - slug: agent-governance-surface-hardening
+    description: Agent 外部工具治理面硬化——增强 Skills / MCP / Hooks 的全局与工作区来源可见性、导入反馈、跨来源识别与管理体验
+    depends_on: [product-friction-audit, governance-bidirectional-sync]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 当前虽已有 workspace/j-cli/global 多来源入口，但 discoverability、来源提示、切换反馈和 Hooks 生命周期表达仍偏弱；参考 Proma/Codex 的体验做增强，但不回退到自管平台。
+
+  - slug: system-prompt-runtime-hardening
+    description: 系统提示词运行时硬化——补默认提示词覆写/恢复默认、默认值本地化 truth，以及增强选项的真实后端消费语义
+    depends_on: [product-friction-audit]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 当前 builtin prompt 仍只读，appendDateTimeAndUserName 只有开关和静态文案；需把“默认是否可改、怎么恢复、后端到底有没有消费”做成真实能力。
+
+  - slug: about-update-surface-refresh
+    description: 关于/更新页刷新——补齐 j-gui、内嵌 j-cli、本地 j CLI、本机 Claude Code CLI 版本、运行时、项目信息与更中性的更新状态表达
+    depends_on: [product-friction-audit]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 当前 AboutSettings 仍偏薄；需要显式暴露“当前 Claude Code Agent 模式实际调用的本机 Claude Code CLI 版本”，并把“已是最新”从成功绿改为更中性的状态色，不照搬 Proma 的版本历史/更新中心。
+
+  - slug: environment-configuration-surface
+    description: 环境配置页——提供 Shell 显式选择、fallback 规则、推荐 shell，以及 Node/Git/Bun/Git Bash/WSL/PowerShell 的状态与失败原因
+    depends_on: [product-friction-audit]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 需要明确区分 j-gui 本体、Claude Code CLI、npm 安装链路与 Shell tool 能力；Node 仅按安装方式/扩展工具链相关信息展示，不再作为统一硬前提。
+
+  - slug: dogfooding-blocker-burn-down
+    description: 真实使用阻塞清零——按产品摩擦审计和自开发 workflow 暴露的高频阻塞逐条收口到可日常稳定复现
+    depends_on: [product-friction-audit, core-workflow-ux-hardening]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 不再排到远程/后端演进之后；先处理真实使用中迫使用户退回外部终端或手工补救的阻塞。
+
+  # ===== Phase F: P2 自我开发闭环与超越 Proma =====
+  - slug: agent-engine-jagent
+    description: 盘清现有 j-agent 分支与 CLI 主路径的契约差距，给出 go/no-go 与落地边界，避免把“已有分支”误当成“已可替换”
+    depends_on: [channel-model-unify, stream-protocol-unify, proma-backend-capability-absorption]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 已有旧 design 与代码分支可复用，但 roadmap 先要求重新核对当前代码真相、切换成本、阻塞缺口与退出标准；不默认承诺一定切主后端
+
+  - slug: proma-backend-capability-absorption
+    description: Proma 后端能力吸收——把 explore 已证实值得迁的恢复状态机、事件语义、存储防线、环境探测与磁盘治理转成 j-gui Rust 主线
+    depends_on: [runtime-observability-gates, proma-parity-evidence-pass, dogfooding-blocker-burn-down]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 先补 CLI backend 编排层，再决定更深的 JAgent parity；明确不 1:1 复制 Electron AgentOrchestrator，也不把 workspace/skills/MCP 自管平台整体搬回当前 runtime。
+
+  - slug: frontend-domain-reorganization
+    description: 前端领域化重组——按 shell/chat/agent/settings/bootstrap 等领域收拢 src，持续拆 main.tsx、LeftSidebar、AgentSettings 等 mega-surface
+    depends_on: [sidebar-performance-hardening, desktop-shell-platform-polish, agent-governance-surface-hardening, system-prompt-runtime-hardening, about-update-surface-refresh, environment-configuration-surface]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 目标是根桌面应用按领域组织和订阅范围收口，不是现在先做多 crate 硬拆；后续移动端立项时再演进到 apps/desktop + apps/mobile-*。
+
+  - slug: agent-backend-parity-hardening
+    description: 双后端并存收口——backend mode、错误暴露、可观测性、回退边界与设置真相统一
+    depends_on: [agent-engine-jagent, runtime-observability-gates]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 只在确认要继续保留 CLI/j-agent 双路径时推进；目标是消除“设置可切但行为不等价”的伪多后端
 
   - slug: dogfooding-self-development-loop
-    description: 自开发闭环——让 j-gui 能稳定承担“用自己开发自己”的日常工作流
+    description: 自开发 workflow matrix——定义并验证“用自己开发自己”的核心日常链路与成功标准
     depends_on: [agent-history-replay-closure, toolsettings-runtime-closure, search-content-closure, runtime-observability-gates, proma-parity-evidence-pass]
     status: planned
     feature: null
     minimal_loop: false
-    notes: “超越 Proma”的首个落点不是更多功能，而是更可靠的自使用能力
+    notes: 至少覆盖打开项目、发起 Chat/Agent、文件改动、搜索回溯、历史恢复、继续工作、归档复盘；以真实工作流矩阵和证据记录为准，不以单条 happy path 演示为准
 
-  # ===== Phase F: 远期 =====
-  - slug: remote-mobile-access
-    description: 桌面远程服务 + 移动端远程访问
-    depends_on: [kernel-trait-abstraction]
+  - slug: remote-access-integration
+    description: 复用 j-cli 已有 Web/LAN 远程能力，把现成远程访问链路集成进 j-gui，而不是在 GUI 侧重新发明远程协议
+    depends_on: [dogfooding-self-development-loop, runtime-observability-gates]
     status: planned
     feature: null
     minimal_loop: false
-    notes: 远期保留，不参与当前 v1 能力闭环判断
+    notes: 依据 j-cli 当前 `src/command/chat/remote/`、嵌入式 remote.html、二维码启动与局域网 Web 文档；重点是 GUI 入口、运行时状态、会话衔接和验收边界
+
+  # ===== Phase G: 远期 =====
+  - slug: mobile-remote-experience
+    description: 在现有远程访问稳定复用后，再讨论移动端作为桌面端控制器的交互、认证、隔离，以及更完整的原生远程产品化体验
+    depends_on: [remote-access-integration]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 远期保留；当前不承诺账号体系、云同步、多人协作或完整移动端产品化，也不把手机浏览器可连等同于移动端产品已成立。若未来扩到 iOS/Android/HarmonyOS 原生客户端，优先方向是共享 Rust core + 原生 UI（SwiftUI / Compose / ArkUI）+ 绑定层，并在立项时演进到 apps/desktop + apps/mobile-* + packages/* 的 repo 结构，而不是现在先做多 crate 硬拆。

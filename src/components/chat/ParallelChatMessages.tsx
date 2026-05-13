@@ -28,8 +28,8 @@ import {
   ReasoningTrigger,
   ReasoningContent,
 } from '@/components/ai-elements/reasoning'
-import { streamingModelAtom } from '@/atoms/chat-atoms'
-import { getModelLogo } from '@/lib/model-logo'
+import { channelsAtom, streamingModelAtom } from '@/atoms/chat-atoms'
+import { resolveAssistantBranding } from '@/lib/model-logo'
 import type { ChatMessage } from '@jgui/shared'
 
 /** 消息段落（按分隔线分割） */
@@ -43,6 +43,8 @@ interface ParallelChatMessagesProps {
   messages: ChatMessage[]
   /** 当前对话 ID（用于迁移到 Agent 模式） */
   conversationId?: string
+  /** 当前对话选中的模型 ID，用于给历史 assistant 消息补回模型身份 */
+  fallbackModelId?: string | null
   streaming: boolean
   streamingContent: string
   streamingReasoning: string
@@ -128,6 +130,7 @@ interface MessageColumnProps {
   allMessages: ChatMessage[]
   /** 当前对话 ID（用于迁移到 Agent 模式） */
   conversationId?: string
+  fallbackModelId?: string | null
   onDeleteMessage?: (messageId: string) => Promise<void>
   onResendMessage?: (message: ChatMessage) => Promise<void>
   onStartInlineEdit?: (message: ChatMessage) => void
@@ -146,6 +149,7 @@ function MessageColumn({
   messages,
   allMessages,
   conversationId,
+  fallbackModelId = null,
   onDeleteMessage,
   onResendMessage,
   onStartInlineEdit,
@@ -159,7 +163,12 @@ function MessageColumn({
   startedAt,
 }: MessageColumnProps): React.ReactElement {
   const streamingModel = useAtomValue(streamingModelAtom)
+  const channels = useAtomValue(channelsAtom)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const streamingBranding = useMemo(
+    () => resolveAssistantBranding(streamingModel ?? '', channels),
+    [streamingModel, channels],
+  )
 
   // 消息加载后自动滚动到底部（两列都滚到最新消息）
   useEffect(() => {
@@ -189,6 +198,7 @@ function MessageColumn({
           <ChatMessageItem
             key={message.id}
             message={message}
+            fallbackModelId={fallbackModelId}
             conversationId={conversationId}
             allMessages={allMessages}
             onDeleteMessage={onDeleteMessage}
@@ -204,12 +214,12 @@ function MessageColumn({
         {side === 'assistant' && (streaming || streamingContent || streamingReasoning) && (
           <Message from="assistant">
             <MessageHeader
-              model={streamingModel ?? undefined}
+              model={streamingBranding.label}
               time={formatMessageTime(Date.now())}
               logo={
                 <img
-                  src={getModelLogo(streamingModel ?? '')}
-                  alt="AI"
+                  src={streamingBranding.logo}
+                  alt={streamingBranding.label}
                   className="size-[35px] rounded-[25%] object-cover"
                 />
               }
@@ -240,6 +250,7 @@ function MessageColumn({
 export function ParallelChatMessages({
   messages,
   conversationId,
+  fallbackModelId = null,
   streaming,
   streamingContent,
   streamingReasoning,
@@ -293,6 +304,7 @@ export function ParallelChatMessages({
               messages={userMessages}
               allMessages={messages}
               conversationId={conversationId}
+              fallbackModelId={fallbackModelId}
               onDeleteMessage={onDeleteMessage}
               onResendMessage={onResendMessage}
               onStartInlineEdit={onStartInlineEdit}
@@ -314,6 +326,7 @@ export function ParallelChatMessages({
               messages={assistantMessages}
               allMessages={messages}
               conversationId={conversationId}
+              fallbackModelId={fallbackModelId}
               onDeleteMessage={onDeleteMessage}
               onResendMessage={onResendMessage}
               onStartInlineEdit={onStartInlineEdit}
@@ -358,10 +371,11 @@ export function ParallelChatMessages({
                     </span>
                   </div>
                 )}
-                <MessageColumn
-                  messages={segment.userMessages}
-                  allMessages={messages}
-                  conversationId={conversationId}
+                  <MessageColumn
+                    messages={segment.userMessages}
+                    allMessages={messages}
+                    conversationId={conversationId}
+                    fallbackModelId={fallbackModelId}
                   onDeleteMessage={onDeleteMessage}
                   onResendMessage={onResendMessage}
                   onStartInlineEdit={onStartInlineEdit}
@@ -381,10 +395,11 @@ export function ParallelChatMessages({
                     </span>
                   </div>
                 )}
-                <MessageColumn
-                  messages={segment.assistantMessages}
-                  allMessages={messages}
-                  conversationId={conversationId}
+                  <MessageColumn
+                    messages={segment.assistantMessages}
+                    allMessages={messages}
+                    conversationId={conversationId}
+                    fallbackModelId={fallbackModelId}
                   onDeleteMessage={onDeleteMessage}
                   onResendMessage={onResendMessage}
                   onStartInlineEdit={onStartInlineEdit}

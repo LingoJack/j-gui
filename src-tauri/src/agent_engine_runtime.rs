@@ -136,9 +136,14 @@ pub(crate) fn timeline_items_from_event(mode: &str, event: &AgentEvent) -> Vec<A
             tool_name,
             tool_input,
         )],
-        AgentEvent::Done { .. } | AgentEvent::ToolResult { .. } | AgentEvent::Error { .. } => {
-            Vec::new()
-        }
+        AgentEvent::Done { .. }
+        | AgentEvent::ToolResult { .. }
+        | AgentEvent::Error { .. }
+        | AgentEvent::Cancelled
+        | AgentEvent::Compacting
+        | AgentEvent::CompactComplete
+        | AgentEvent::ModelResolved { .. }
+        | AgentEvent::Retrying { .. } => Vec::new(),
     }
 }
 

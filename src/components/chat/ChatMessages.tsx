@@ -45,10 +45,10 @@ import {
 import { useSmoothStream } from '@jgui/ui'
 import { ScrollPositionManager } from '@/hooks/useScrollPositionMemory'
 import { useConversationParallelMode } from '@/hooks/useConversationSettings'
-import { getModelLogo } from '@/lib/model-logo'
+import { resolveAssistantBranding } from '@/lib/model-logo'
 import { userProfileAtom } from '@/atoms/user-profile'
 import { tabMinimapCacheAtom } from '@/atoms/tab-atoms'
-import { chatMessageTargetAtom } from '@/atoms/chat-atoms'
+import { channelsAtom, chatMessageTargetAtom } from '@/atoms/chat-atoms'
 import type { ChatMessage, ChatToolActivity } from '@jgui/shared'
 
 // ===== 滚动到顶部加载更多 =====
@@ -119,6 +119,8 @@ function ScrollTopLoader({ hasMore, loading, onLoadMore }: ScrollTopLoaderProps)
 interface ChatMessagesProps {
   /** 当前对话 ID */
   conversationId: string
+  /** 当前对话选中的模型 ID，用于给历史 assistant 消息补回模型身份 */
+  fallbackModelId?: string | null
   /** 消息列表 */
   messages: ChatMessage[]
   /** 消息是否已完成首次 IPC 加载 */
@@ -164,6 +166,7 @@ function EmptyState(): React.ReactElement {
 
 export function ChatMessages({
   conversationId,
+  fallbackModelId = null,
   messages,
   messagesLoaded,
   streaming,
@@ -184,8 +187,13 @@ export function ChatMessages({
   onLoadMore,
 }: ChatMessagesProps): React.ReactElement {
   const userProfile = useAtomValue(userProfileAtom)
+  const channels = useAtomValue(channelsAtom)
   const setMinimapCache = useSetAtom(tabMinimapCacheAtom)
   const [messageTarget, setMessageTarget] = useAtom(chatMessageTargetAtom)
+  const streamingBranding = React.useMemo(
+    () => resolveAssistantBranding(streamingModel ?? '', channels),
+    [streamingModel, channels],
+  )
 
   // 平滑流式输出：将高频更新转为逐字渲染
   const { displayedContent: rawSmoothContent } = useSmoothStream({
@@ -325,9 +333,9 @@ export function ChatMessages({
       role: m.role as MinimapItem['role'],
       preview: m.content.slice(0, 200),
       avatar: m.role === 'user' ? userProfile.avatar : undefined,
-      model: m.model,
+      model: m.model ?? fallbackModelId ?? undefined,
     })),
-    [messages, userProfile.avatar]
+    [messages, userProfile.avatar, fallbackModelId]
   )
 
   // 同步 minimap 缓存到 Tab 级别（供 Tab hover 预览使用）
@@ -347,6 +355,7 @@ export function ChatMessages({
       <ParallelChatMessages
         messages={messages}
         conversationId={conversationId}
+        fallbackModelId={fallbackModelId}
         streaming={streaming}
         streamingContent={smoothContent}
         streamingReasoning={smoothReasoning}
@@ -389,6 +398,7 @@ export function ChatMessages({
                 <div data-message-id={renderMessageId}>
                   <ChatMessageItem
                     message={msg}
+                    fallbackModelId={fallbackModelId}
                     conversationId={conversationId}
                     isStreaming={false}
                     isLastAssistant={false}
@@ -415,12 +425,12 @@ export function ChatMessages({
             {(streaming || smoothContent || smoothReasoning) && (
               <Message from="assistant">
                 <MessageHeader
-                  model={streamingModel ?? undefined}
+                  model={streamingBranding.label}
                   time={formatMessageTime(Date.now())}
                   logo={
                     <img
-                      src={getModelLogo(streamingModel ?? '')}
-                      alt="AI"
+                      src={streamingBranding.logo}
+                      alt={streamingBranding.label}
                       className="size-[35px] rounded-[25%] object-cover"
                     />
                   }

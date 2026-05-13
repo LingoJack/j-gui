@@ -371,6 +371,11 @@ export const currentSessionSidePanelOpenAtom = atom<boolean>((get) => {
   return get(agentSidePanelOpenMapAtom).get(currentId) ?? true;
 });
 
+/** 指定会话的侧面板是否打开（派生只读，避免整个 Map 变化触发无关会话重渲染） */
+export const sessionSidePanelOpenAtom = atomFamily((sessionId: string) =>
+  atom<boolean>((get) => get(agentSidePanelOpenMapAtom).get(sessionId) ?? true),
+);
+
 /** 当前会话的工作路径映射 — sessionId -> path */
 export const agentSessionPathMapAtom: PrimitiveAtom<Map<string, string>> = atom<
   Map<string, string>
@@ -1153,7 +1158,7 @@ export interface BackgroundTask {
  * 按 sessionId 隔离，每个会话独立管理后台任务。
  * 任务完成后从列表中移除（只显示运行中任务）。
  */
-export const backgroundTasksAtomFamily = atomFamily((sessionId: string) =>
+export const backgroundTasksAtomFamily = atomFamily((_sessionId: string) =>
   atom<BackgroundTask[]>([]),
 );
 

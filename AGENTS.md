@@ -137,7 +137,16 @@ src-tauri/              Rust 后端（commands/ + kernel/ + agent_engine.rs）
   - jcli API 签名变化 → 仅修改 adapter 内部实现（trait 签名保持稳定）
   - jcli 新增功能 → trait 加方法（带默认 Unsupported 实现）→ adapter 实现 → 前端按需加 UI
   - trait 签名变更必须有 deprecation 周期
-- **Git 排除**：`.codestable/` `.claude/` 不提交
+- **Git 提交文案**（强制）：
+  - 默认遵循 Conventional Commits 的中文适配：`<type>(<scope>): <description>`
+  - `type` 保持英文：`feat`、`fix`、`docs`、`refactor`、`perf`、`test`、`chore`、`ci`、`revert`
+  - `scope` 和 `description` 默认使用中文；`scope` 写受影响模块，`description` 写明确动宾短语
+  - 除约定保留的 `type` 外，subject 其余部分默认全部中文，不写英文短句式标题
+  - `description` 控制在单行短句内，不写句号，不写“更新代码”“修复问题”“调整一下”这类空泛文案
+  - 文档或 CodeStable 产物优先用 `docs(...)`；涉及 `.codestable/` 的提交可用 `docs(codestable): ...`
+  - 多主题改动在条件允许时优先拆分 commit；必须合并提交时，文案应覆盖这次提交的主闭环，不要罗列零碎细节
+  - 涉及不兼容变更时，使用 `!` 或 `BREAKING CHANGE:` 明确标注
+- **Git 排除**：`.claude/` 不提交；`.codestable/` 是否提交以当前任务指令为准，不要沿用旧结论擅自排除
 
 ### 任务完成验证（强制）
 

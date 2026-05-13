@@ -4,17 +4,17 @@
  * 在没有会话时展示：
  * 1. 个性化时段问候
  * 2. 平台感知的小提示
- * 3. Chat/Agent 模式切换标签页
+ * 3. 简短正文提示，提醒模式切换留在左上角
  */
 
 import * as React from 'react'
-import { useAtomValue, useAtom } from 'jotai'
-import { Lightbulb, MessageSquare, Bot } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { useAtomValue } from 'jotai'
+import { Lightbulb } from 'lucide-react'
 import { userProfileAtom } from '@/atoms/user-profile'
-import { appModeAtom, type AppMode } from '@/atoms/app-mode'
-import { themeStyleAtom } from '@/atoms/theme'
+import { resolvedThemeAtom } from '@/atoms/theme'
 import { getRandomTip, getPlatform, type Tip } from '@/lib/tips'
+import JDarkLogo from '../../../logo/J-dark.png'
+import JWhiteLogo from '../../../logo/J-white.png'
 
 /** 根据小时返回时段问候 */
 function getGreeting(hour: number): string {
@@ -24,16 +24,9 @@ function getGreeting(hour: number): string {
   return '晚上好'
 }
 
-/** 模式配置 */
-const MODE_CONFIG: Record<AppMode, { icon: React.ReactNode; label: string }> = {
-  chat: { icon: <MessageSquare size={15} />, label: 'Chat' },
-  agent: { icon: <Bot size={15} />, label: 'Agent' },
-}
-
 export function WelcomeEmptyState(): React.ReactElement {
   const userProfile = useAtomValue(userProfileAtom)
-  const [mode, setMode] = useAtom(appModeAtom)
-  const themeStyle = useAtomValue(themeStyleAtom)
+  const resolvedTheme = useAtomValue(resolvedThemeAtom)
 
   // 稳定的随机提示（组件挂载时选一条）
   const [tip] = React.useState<Tip>(() => getRandomTip(getPlatform()))
@@ -41,58 +34,32 @@ export function WelcomeEmptyState(): React.ReactElement {
   const hour = new Date().getHours()
   const greeting = getGreeting(hour)
   const displayName = userProfile.userName || '用户'
-
-  // 森息晨光主题下选中按钮使用主色
-  const selectedColor = themeStyle === 'forest-light' ? '#3f8361' : undefined
-
-  /** 切换模式：仅切换模式，不创建新会话 */
-  const handleModeSwitch = React.useCallback((targetMode: AppMode): void => {
-    if (targetMode === mode) return
-    setMode(targetMode)
-  }, [mode, setMode])
+  const brandLogo = resolvedTheme === 'dark' ? JWhiteLogo : JDarkLogo
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 px-4 animate-in fade-in duration-500">
-      {/* 问候语 */}
-      <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-        {displayName}，{greeting}
-      </h1>
-
-      {/* 提示语 */}
-      <div className="flex items-center gap-2.5 rounded-full bg-muted/50 px-4 py-2 text-[13px] text-muted-foreground">
-        <Lightbulb size={14} className="flex-shrink-0 text-amber-500/80" />
-        <span>{tip.text}</span>
+    <div className="w-full space-y-5 animate-in fade-in duration-500">
+      <img
+        src={brandLogo}
+        alt="j-gui"
+        className="h-14 w-14 rounded-2xl object-contain"
+      />
+      <div className="space-y-3">
+        <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground/70">
+          工作台已就绪
+        </p>
+        <div className="space-y-2">
+          <h1 className="text-[30px] font-semibold tracking-tight text-foreground">
+            {displayName}，{greeting}
+          </h1>
+          <p className="max-w-[520px] text-sm leading-6 text-muted-foreground">
+            从左上角切换 Chat 或 Agent，正文只保留当前可执行的入口，不再重复堆模式说明。
+          </p>
+        </div>
       </div>
 
-      {/* 模式切换标签页 */}
-      <div className="relative flex rounded-xl bg-muted/60 p-1">
-        {/* 滑动背景指示器 */}
-        <div
-          className={cn(
-            'absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-lg bg-background shadow-sm transition-transform duration-300 ease-in-out',
-            mode === 'agent' ? 'translate-x-0' : 'translate-x-full',
-          )}
-        />
-        {(['agent', 'chat'] as const).map((m) => {
-          const config = MODE_CONFIG[m]
-          const isSelected = mode === m
-          return (
-            <button
-              key={m}
-              onClick={() => handleModeSwitch(m)}
-              style={isSelected && selectedColor ? { color: selectedColor } : undefined}
-              className={cn(
-                'relative z-[1] flex items-center gap-1.5 rounded-lg px-5 py-1.5 text-[13px] font-medium transition-colors duration-200',
-                isSelected
-                  ? 'text-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {config.icon}
-              {config.label}
-            </button>
-          )
-        })}
+      <div className="inline-flex max-w-full items-center gap-2.5 rounded-full border border-border/60 bg-muted/35 px-4 py-2 text-[13px] text-muted-foreground">
+        <Lightbulb size={14} className="flex-shrink-0 text-amber-500/80" />
+        <span className="truncate">{tip.text}</span>
       </div>
     </div>
   )

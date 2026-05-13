@@ -1,9 +1,12 @@
 use super::{
-    build_claude_args, json_stream_msg_to_agent_events, parse_sdk_line, persist_sdk_session_id,
+    build_claude_args, cli_events_show_visible_progress, cli_startup_error_from_events,
+    json_stream_msg_to_agent_events, parse_sdk_line, persist_sdk_session_id,
     timeline_items_from_event, AgentEngine, AgentEvent,
 };
 use crate::agent_engine::AgentBackend;
+use crate::agent_runtime_recovery::{classify_recovery, RecoveryAction};
 use crate::agent_session;
+use crate::agent_session::TestEnvGuard;
 use crate::kernel::types::KernelChatMessage;
 
 #[test]
@@ -46,6 +49,45 @@ fn build_claude_args_omits_resume_flags_when_not_requested() {
 }
 
 #[test]
+fn cli_startup_error_is_extracted_before_visible_output() {
+    let error = cli_startup_error_from_events(&[AgentEvent::Error {
+        message: "rate limited".to_string(),
+    }]);
+    assert_eq!(error.as_deref(), Some("rate limited"));
+    assert!(!cli_events_show_visible_progress(&[AgentEvent::Retrying {
+        attempt: 1,
+        max_attempts: 3,
+        delay_seconds: 1,
+        reason: "rate limited".to_string(),
+    }]));
+}
+
+#[test]
+fn cli_visible_progress_starts_after_first_renderable_event() {
+    assert!(cli_events_show_visible_progress(&[
+        AgentEvent::AssistantContent {
+            text: "hello".to_string(),
+        }
+    ]));
+    assert!(cli_events_show_visible_progress(&[AgentEvent::Done {
+        total_tokens: 1,
+        result_subtype: Some("success".to_string()),
+    }]));
+}
+
+#[test]
+fn classify_recovery_handles_resume_and_transient_failures() {
+    let invalid_resume = classify_recovery("No conversation found for resume session", true);
+    assert_eq!(invalid_resume.action, RecoveryAction::RetryWithoutResume);
+
+    let transient = classify_recovery("HTTP 429 rate limit exceeded", false);
+    assert_eq!(transient.action, RecoveryAction::RetrySameResume);
+
+    let fatal = classify_recovery("permission denied", false);
+    assert_eq!(fatal.action, RecoveryAction::Fail);
+}
+
+#[test]
 fn parse_sdk_line_reads_assistant_text() {
     let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}"#;
 
@@ -59,9 +101,33 @@ fn parse_sdk_line_reads_assistant_text() {
 
 #[test]
 fn parse_sdk_line_ignores_non_renderable_events() {
-    let line = r#"{"type":"system","subtype":"init"}"#;
+    let line = r#"{"type":"system","subtype":"noop"}"#;
 
     assert_eq!(parse_sdk_line(line), Vec::<AgentEvent>::new());
+}
+
+#[test]
+fn parse_sdk_line_reads_model_resolved_system_event() {
+    let line = r#"{"type":"system","subtype":"init","model":"claude-sonnet-4-6"}"#;
+
+    assert_eq!(
+        parse_sdk_line(line),
+        vec![AgentEvent::ModelResolved {
+            model: "claude-sonnet-4-6".to_string()
+        }]
+    );
+}
+
+#[test]
+fn parse_sdk_line_reads_compaction_system_events() {
+    assert_eq!(
+        parse_sdk_line(r#"{"type":"system","subtype":"compacting"}"#),
+        vec![AgentEvent::Compacting]
+    );
+    assert_eq!(
+        parse_sdk_line(r#"{"type":"system","subtype":"compact_boundary"}"#),
+        vec![AgentEvent::CompactComplete]
+    );
 }
 
 #[test]
@@ -70,7 +136,10 @@ fn parse_sdk_line_reads_success_result() {
 
     assert_eq!(
         parse_sdk_line(line),
-        vec![AgentEvent::Done { total_tokens: 42 }]
+        vec![AgentEvent::Done {
+            total_tokens: 42,
+            result_subtype: Some("success".to_string()),
+        }]
     );
 }
 
@@ -277,11 +346,18 @@ fn json_stream_msg_exit_plan_mode_routes_to_plan_interrupt() {
 fn json_stream_msg_done_converts_to_done() {
     let json = r#"{"type":"done"}"#;
     let events = json_stream_msg_to_agent_events(json, "test-sid", "bypassPermissions");
-    assert_eq!(events, vec![AgentEvent::Done { total_tokens: 0 }]);
+    assert_eq!(
+        events,
+        vec![AgentEvent::Done {
+            total_tokens: 0,
+            result_subtype: None,
+        }]
+    );
 }
 
 #[test]
 fn jagent_send_message_pushes_follow_up_message_into_runtime_queue() {
+    let _guard = TestEnvGuard::new("jagent-follow-up-queue");
     let session_id = agent_session::create_agent_session().expect("create session");
     let (user_message_tx, user_message_rx) = std::sync::mpsc::sync_channel::<KernelChatMessage>(1);
     let engine = AgentEngine::test_stub(
@@ -321,18 +397,47 @@ fn json_stream_msg_error_converts_to_error() {
 }
 
 #[test]
-fn json_stream_msg_internal_events_are_ignored() {
-    let event_types = [
-        r#"{"type":"chunk"}"#,
-        r#"{"type":"cancelled"}"#,
-        r#"{"type":"retrying","attempt":1,"maxAttempts":3,"delayMs":1000,"error":"timeout"}"#,
-        r#"{"type":"compacting"}"#,
-        r#"{"type":"compacted","messagesBefore":42}"#,
-    ];
-    for json in &event_types {
-        let events = json_stream_msg_to_agent_events(json, "test-sid", "bypassPermissions");
-        assert!(events.is_empty(), "expected no events for type: {}", json);
-    }
+fn json_stream_msg_chunk_is_ignored() {
+    let events =
+        json_stream_msg_to_agent_events(r#"{"type":"chunk"}"#, "test-sid", "bypassPermissions");
+    assert!(events.is_empty());
+}
+
+#[test]
+fn json_stream_msg_runtime_status_events_are_exposed() {
+    assert_eq!(
+        json_stream_msg_to_agent_events(r#"{"type":"cancelled"}"#, "test-sid", "bypassPermissions"),
+        vec![AgentEvent::Cancelled]
+    );
+    assert_eq!(
+        json_stream_msg_to_agent_events(
+            r#"{"type":"retrying","attempt":1,"maxAttempts":3,"delayMs":1000,"error":"timeout"}"#,
+            "test-sid",
+            "bypassPermissions"
+        ),
+        vec![AgentEvent::Retrying {
+            attempt: 1,
+            max_attempts: 3,
+            delay_seconds: 1,
+            reason: "timeout".to_string(),
+        }]
+    );
+    assert_eq!(
+        json_stream_msg_to_agent_events(
+            r#"{"type":"compacting"}"#,
+            "test-sid",
+            "bypassPermissions"
+        ),
+        vec![AgentEvent::Compacting]
+    );
+    assert_eq!(
+        json_stream_msg_to_agent_events(
+            r#"{"type":"compacted","messagesBefore":42}"#,
+            "test-sid",
+            "bypassPermissions"
+        ),
+        vec![AgentEvent::CompactComplete]
+    );
 }
 
 #[test]
@@ -380,6 +485,7 @@ fn permission_mode_persists_tool_call_and_interrupt_timeline_items() {
 
 #[test]
 fn persist_sdk_session_id_reads_real_session_id_from_sdk_line() {
+    let _guard = TestEnvGuard::new("persist-sdk-session-id");
     let session_id = agent_session::create_agent_session().expect("create session");
 
     persist_sdk_session_id(
@@ -393,6 +499,39 @@ fn persist_sdk_session_id_reads_real_session_id_from_sdk_line() {
         .find(|session| session.id == session_id)
         .expect("session exists");
     assert_eq!(persisted.sdk_session_id.as_deref(), Some("sdk-session-1"));
+
+    agent_session::delete_agent_session(&session_id).expect("cleanup session");
+}
+
+#[test]
+fn jagent_send_message_persists_truncated_transcript_for_oversized_input() {
+    let _guard = TestEnvGuard::new("persist-truncated-transcript");
+    let session_id = agent_session::create_agent_session().expect("create session");
+    let (user_message_tx, _user_message_rx) = std::sync::mpsc::sync_channel(1);
+    let engine = AgentEngine::test_stub(
+        &session_id,
+        AgentBackend::JAgent {
+            session_id: session_id.clone(),
+            cancel_token: tokio_util::sync::CancellationToken::new(),
+            tool_result_tx: std::sync::mpsc::sync_channel(1).0,
+            user_message_tx,
+            agent_handle: None,
+            bridge_handle: None,
+        },
+    );
+    let mut engine = engine;
+
+    engine
+        .send_message(&"x".repeat(300_000))
+        .expect("oversized input should still persist");
+
+    let timeline = agent_session::get_agent_session(&session_id).expect("read transcript");
+    let content = timeline
+        .first()
+        .and_then(|item| item.content.as_deref())
+        .expect("persisted content");
+    assert!(content.contains("内容已截断"));
+    assert!(content.len() < 300_000);
 
     agent_session::delete_agent_session(&session_id).expect("cleanup session");
 }

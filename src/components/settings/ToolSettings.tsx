@@ -39,7 +39,7 @@ export function BuiltinToolsSection(): React.ReactElement {
         setError(err instanceof Error ? err.message : String(err))
         setLoading(false)
       })
-  }, [])
+  }, [setTools])
 
   const handleToggle = async (toolId: string, currentEnabled: boolean): Promise<void> => {
     // 先做乐观更新，立即反馈到 UI

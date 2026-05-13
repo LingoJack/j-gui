@@ -13,42 +13,43 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::Channel;
 
+#[path = "chat_engine_helpers.rs"]
+mod chat_engine_helpers;
+#[path = "chat_engine_meta.rs"]
+mod chat_engine_meta;
 #[path = "chat_engine_payloads.rs"]
 mod chat_engine_payloads;
-use chat_engine_payloads::{parse_context_length, parse_image_attachments, parse_optional_bool};
+#[path = "chat_engine_session_meta.rs"]
+mod chat_engine_session_meta;
+use chat_engine_helpers::{
+    build_chat_reference_prompt, build_message_search_id, build_search_snippet,
+    finalize_send_message_result, parse_message_render_index,
+};
+#[cfg(test)]
+pub(crate) use chat_engine_helpers::{MessageBuildContext, PendingUserMessage};
+use chat_engine_meta::{
+    current_timestamp_millis, default_session_meta, load_session_meta, merge_session_info,
+};
+use chat_engine_payloads::{
+    parse_context_dividers, parse_context_length, parse_image_attachments, parse_optional_bool,
+};
 pub use chat_engine_payloads::{
-    ChatEvent, MessageInfo, MessageSearchResult, SendMessageRequest, SessionInfo,
+    ChatEvent, ChatReferenceContext, MessageInfo, MessageSearchResult, SendMessageRequest,
+    SessionInfo,
+};
+use chat_engine_session_meta::{
+    load_merged_session_info, merged_info_with_fallback, update_session_meta_fields,
 };
 
 static SESSION_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-const TOKEN_COUNT_UNSUPPORTED: u32 = 0;
+const MAX_CHAT_REFERENCE_MESSAGES: usize = 20;
 
 /// 面向 Tauri 命令层的聊天编排器，负责会话校验、持久化与流式转发。
 pub struct ChatEngine {
     chat_kernel: Arc<dyn ChatKernel>,
     config_kernel: Arc<dyn ConfigKernel>,
-}
-
-struct PendingUserMessage {
-    content: String,
-    attachments: Vec<KernelFileAttachment>,
-}
-
-struct PreparedSendMessage {
-    provider: KernelProvider,
-    options: KernelChatRequestOptions,
-    messages: Vec<KernelChatMessage>,
-    system_prompt: Option<String>,
-    pending_user: PendingUserMessage,
-}
-
-struct StreamUiForwarder<'a> {
-    request: &'a SendMessageRequest,
-    on_event: &'a Channel<ChatEvent>,
-    cancelled: &'a Cell<bool>,
 }
 
 impl ChatEngine {
@@ -78,303 +79,6 @@ impl ChatEngine {
         }
     }
 
-    /// 为本次 LLM 调用构造消息列表。
-    fn build_messages(
-        &self,
-        session_id: &str,
-        user_message: PendingUserMessage,
-        system_message: Option<&str>,
-        context_length: Option<usize>,
-    ) -> Result<(Vec<KernelChatMessage>, Option<String>), String> {
-        let kernel_events = self
-            .chat_kernel
-            .get_session(session_id)
-            .map_err(|e| e.to_string())?;
-        let mut messages: Vec<KernelChatMessage> = kernel_events
-            .iter()
-            .map(|e| KernelChatMessage {
-                role: e.role.clone(),
-                content: e.content.clone(),
-                reasoning: e.reasoning.clone(),
-                attachments: e.attachments.clone(),
-            })
-            .collect();
-        if let Some(limit) = context_length {
-            messages = Self::trim_messages_to_recent_rounds(messages, limit);
-        }
-        messages.push(KernelChatMessage {
-            role: "user".to_string(),
-            content: user_message.content,
-            reasoning: None,
-            attachments: (!user_message.attachments.is_empty()).then_some(user_message.attachments),
-        });
-        let system_prompt = match system_message {
-            Some(prompt) => Some(prompt.to_string()),
-            None => self
-                .config_kernel
-                .load_system_prompt()
-                .map_err(|e| e.to_string())?,
-        };
-        Ok((messages, system_prompt))
-    }
-
-    fn trim_messages_to_recent_rounds(
-        messages: Vec<KernelChatMessage>,
-        round_limit: usize,
-    ) -> Vec<KernelChatMessage> {
-        if round_limit == 0 || messages.is_empty() {
-            return Vec::new();
-        }
-
-        let mut remaining_user_rounds = round_limit;
-        let mut start_index = 0usize;
-
-        for (index, message) in messages.iter().enumerate().rev() {
-            if message.role == "user" {
-                remaining_user_rounds -= 1;
-                start_index = index;
-                if remaining_user_rounds == 0 {
-                    break;
-                }
-            }
-        }
-
-        if remaining_user_rounds > 0 {
-            messages
-        } else {
-            messages.into_iter().skip(start_index).collect()
-        }
-    }
-
-    fn unsupported_request_fields(request: &SendMessageRequest) -> Vec<&'static str> {
-        let mut fields = Vec::new();
-        if request
-            .context_length
-            .as_ref()
-            .is_some_and(|value| parse_context_length(Some(value)).is_err())
-        {
-            fields.push("contextLength");
-        }
-        if request.context_dividers.as_ref().is_some_and(
-            |value| !matches!(value, serde_json::Value::Array(items) if items.is_empty()),
-        ) {
-            fields.push("contextDividers");
-        }
-        if request.enabled_tool_ids.as_ref().is_some_and(
-            |value| !matches!(value, serde_json::Value::Array(items) if items.is_empty()),
-        ) {
-            fields.push("enabledToolIds");
-        }
-        fields
-    }
-
-    fn validate_send_message_request(request: &SendMessageRequest) -> Result<(), String> {
-        Self::validate_session_id(&request.session_id)?;
-        parse_context_length(request.context_length.as_ref())?;
-        parse_optional_bool(request.thinking_enabled.as_ref())?;
-        parse_image_attachments(request.attachments.as_ref())?;
-        let unsupported_fields = Self::unsupported_request_fields(request);
-        if unsupported_fields.is_empty() {
-            Ok(())
-        } else {
-            Err(format!(
-                "不支持的请求字段: {}",
-                unsupported_fields.join(", ")
-            ))
-        }
-    }
-
-    fn resolve_provider_for_request(
-        &self,
-        request: &SendMessageRequest,
-    ) -> Result<KernelProvider, String> {
-        let providers = self
-            .config_kernel
-            .load_providers()
-            .map_err(|e| e.to_string())?;
-
-        let provider = if let Some(channel_id) = request
-            .channel_id
-            .as_deref()
-            .filter(|value| !value.is_empty())
-        {
-            providers
-                .into_iter()
-                .find(|provider| provider.id == channel_id)
-                .ok_or_else(|| format!("渠道 ID 不存在: {channel_id}"))?
-        } else {
-            let active_index = self
-                .config_kernel
-                .load_active_index()
-                .map_err(|e| e.to_string())?;
-            providers
-                .get(active_index)
-                .cloned()
-                .ok_or_else(|| "未配置模型提供方，请先在设置中添加并选择".to_string())?
-        };
-
-        if let Some(model_id) = request
-            .model_id
-            .as_deref()
-            .filter(|value| !value.is_empty())
-        {
-            let mut provider = provider;
-            let model = provider
-                .models
-                .iter()
-                .find(|model| model.id == model_id)
-                .cloned()
-                .ok_or_else(|| format!("渠道 {} 中不存在模型: {}", provider.id, model_id))?;
-            provider.models = vec![model];
-            provider.provider = if provider.provider.is_empty() {
-                infer_provider(&provider.api_base)
-            } else {
-                canonical_provider_key(&provider.provider)
-            };
-            return Ok(provider);
-        }
-
-        if provider.models.is_empty() {
-            Err(format!("渠道 {} 未配置可用模型", provider.id))
-        } else {
-            let mut provider = provider;
-            provider.provider = if provider.provider.is_empty() {
-                infer_provider(&provider.api_base)
-            } else {
-                canonical_provider_key(&provider.provider)
-            };
-            Ok(provider)
-        }
-    }
-
-    fn resolve_transport_route_for_request(
-        provider: &KernelProvider,
-        request: &SendMessageRequest,
-    ) -> crate::kernel::types::ChatTransportRoute {
-        resolve_chat_transport_route(
-            &provider.api_base,
-            Some(&provider.provider),
-            request.model_id.as_deref(),
-            request
-                .protocol_hint
-                .as_deref()
-                .or(provider.protocol_hint.as_deref()),
-        )
-    }
-
-    /// 把助手回复持久化写入会话 transcript。
-    fn persist_response(
-        &self,
-        session_id: &str,
-        response: &str,
-        reasoning: Option<&str>,
-    ) -> Result<(), String> {
-        let _lock = SESSION_WRITE_LOCK
-            .lock()
-            .map_err(|e| format!("锁定会话写入失败: {}", e))?;
-        self.chat_kernel
-            .append_message(KernelAppendMessage {
-                session_id,
-                role: "assistant",
-                content: response,
-                reasoning,
-                attachments: None,
-            })
-            .map_err(|e| e.to_string())
-    }
-
-    fn prepare_send_message(
-        &self,
-        request: &SendMessageRequest,
-    ) -> Result<PreparedSendMessage, String> {
-        Self::validate_send_message_request(request)?;
-        let provider = self.resolve_provider_for_request(request)?;
-        let route = Self::resolve_transport_route_for_request(&provider, request);
-        let pending_user = PendingUserMessage {
-            content: request.content.clone(),
-            attachments: parse_image_attachments(request.attachments.as_ref())?,
-        };
-        let (messages, system_prompt) = self.build_messages(
-            &request.session_id,
-            PendingUserMessage {
-                content: pending_user.content.clone(),
-                attachments: pending_user.attachments.clone(),
-            },
-            request.system_message.as_deref(),
-            parse_context_length(request.context_length.as_ref())?,
-        )?;
-        Ok(PreparedSendMessage {
-            provider,
-            options: KernelChatRequestOptions {
-                thinking_enabled: parse_optional_bool(request.thinking_enabled.as_ref())?,
-                protocol_family: Some(route.family),
-            },
-            messages,
-            system_prompt,
-            pending_user,
-        })
-    }
-
-    fn persist_user_message(
-        &self,
-        session_id: &str,
-        pending_user: &PendingUserMessage,
-    ) -> Result<(), String> {
-        let _lock = SESSION_WRITE_LOCK
-            .lock()
-            .map_err(|e| format!("锁定会话写入失败: {}", e))?;
-        self.chat_kernel
-            .append_message(KernelAppendMessage {
-                session_id,
-                role: "user",
-                content: &pending_user.content,
-                reasoning: None,
-                attachments: (!pending_user.attachments.is_empty())
-                    .then_some(pending_user.attachments.as_slice()),
-            })
-            .map_err(|e| e.to_string())
-    }
-
-    async fn stream_model_response(
-        &self,
-        request: &SendMessageRequest,
-        prepared: &PreparedSendMessage,
-        on_event: Channel<ChatEvent>,
-    ) -> Result<(String, String), String> {
-        let chunk_index = Cell::new(0u32);
-        let reasoning_index = Cell::new(0u32);
-        let cancelled = Cell::new(false);
-        let full_reasoning = RefCell::new(String::new());
-        let forwarder = StreamUiForwarder {
-            request,
-            on_event: &on_event,
-            cancelled: &cancelled,
-        };
-        let result = self
-            .chat_kernel
-            .stream_chat(
-                KernelChatStreamRequest {
-                    provider: &prepared.provider,
-                    messages: &prepared.messages,
-                    system_prompt: prepared.system_prompt.as_deref(),
-                    options: prepared.options,
-                },
-                KernelChatStreamCallbacks {
-                    on_chunk: &mut |chunk: &str| forwarder.emit_chunk(&chunk_index, chunk),
-                    on_reasoning: &mut |delta: &str| {
-                        forwarder.emit_reasoning(&reasoning_index, &full_reasoning, delta)
-                    },
-                },
-            )
-            .await;
-        if cancelled.get() {
-            crate::commands::chat::clear_stopped_session(&request.session_id);
-            return Err("流式传输已取消".to_string());
-        }
-        let full_text = result.map_err(|e| e.to_string())?;
-        Ok((full_text, full_reasoning.into_inner()))
-    }
-
     /// 发送一条用户消息，并把模型流式响应转发给前端。
     pub async fn send_message(
         &self,
@@ -397,13 +101,10 @@ impl ChatEngine {
             .map_err(|e| e.to_string())?;
         Ok(sessions
             .into_iter()
-            .map(|s| SessionInfo {
-                id: s.id,
-                title: s.title,
-                message_count: s.message_count,
-                updated_at: s.updated_at,
-                pinned: s.pinned,
-                archived: s.archived,
+            .map(|summary| {
+                let meta = load_session_meta(&summary.id)
+                    .unwrap_or_else(|_| default_session_meta(&summary.id));
+                merge_session_info(summary, &meta)
             })
             .collect())
     }
@@ -431,17 +132,26 @@ impl ChatEngine {
             .chat_kernel
             .get_session(session_id)
             .map_err(|e| e.to_string())?;
+        let fallback_timestamp = current_timestamp_millis();
         Ok(events
             .into_iter()
-            .map(|e| MessageInfo {
+            .enumerate()
+            .map(|(index, e)| MessageInfo {
+                id: build_message_search_id(index),
                 role: e.role,
                 content: e.content,
                 reasoning: e.reasoning,
                 attachments: e.attachments,
-                timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64,
+                created_at: if e.timestamp > 0 {
+                    e.timestamp
+                } else {
+                    fallback_timestamp
+                },
+                timestamp: if e.timestamp > 0 {
+                    e.timestamp
+                } else {
+                    fallback_timestamp
+                },
             })
             .collect())
     }
@@ -489,6 +199,42 @@ impl ChatEngine {
         Ok(results)
     }
 
+    /// 把 Chat 会话格式化为可注入 Agent 输入的引用上下文。
+    pub fn build_chat_reference_context(
+        &self,
+        session_id: &str,
+    ) -> Result<ChatReferenceContext, String> {
+        Self::validate_session_id(session_id)?;
+        let sessions = self.list_sessions()?;
+        let session = sessions
+            .into_iter()
+            .find(|item| item.id == session_id)
+            .ok_or_else(|| format!("未找到对话: {}", session_id))?;
+        let conversation_title = session.title.unwrap_or_else(|| "新对话".to_string());
+        let messages = self.get_messages(session_id)?;
+        let total_count = messages.len();
+        let start_index = total_count.saturating_sub(MAX_CHAT_REFERENCE_MESSAGES);
+        let included_messages = messages.into_iter().skip(start_index).collect::<Vec<_>>();
+        let included_count = included_messages.len();
+        let omitted_count = total_count.saturating_sub(included_count);
+        let prompt = build_chat_reference_prompt(chat_engine_helpers::ChatReferencePrompt {
+            session_id,
+            conversation_title: &conversation_title,
+            messages: &included_messages,
+            total_count,
+            omitted_count,
+        });
+
+        Ok(ChatReferenceContext {
+            conversation_id: session_id.to_string(),
+            conversation_title,
+            message_count: total_count,
+            included_message_count: included_count,
+            omitted_message_count: omitted_count,
+            prompt,
+        })
+    }
+
     /// 删除指定轮次的用户/助手消息对。
     pub fn delete_message(&self, session_id: &str, pair_index: usize) -> Result<(), String> {
         Self::validate_session_id(session_id)?;
@@ -529,6 +275,47 @@ impl ChatEngine {
             .map_err(|e| e.to_string())
     }
 
+    /// 更新会话标题元数据。
+    pub fn update_conversation_title(
+        &self,
+        session_id: &str,
+        title: &str,
+    ) -> Result<SessionInfo, String> {
+        Self::validate_session_id(session_id)?;
+        let meta = update_session_meta_fields(session_id, |meta| {
+            meta["title"] = serde_json::json!(title);
+        })?;
+        load_merged_session_info(self.chat_kernel.as_ref(), session_id, &meta)
+    }
+
+    /// 更新会话绑定的模型与渠道元数据。
+    pub fn update_conversation_model(
+        &self,
+        session_id: &str,
+        model_id: &str,
+        channel_id: &str,
+    ) -> Result<SessionInfo, String> {
+        Self::validate_session_id(session_id)?;
+        let meta = update_session_meta_fields(session_id, |meta| {
+            meta["model_id"] = serde_json::json!(model_id);
+            meta["channel_id"] = serde_json::json!(channel_id);
+        })?;
+        load_merged_session_info(self.chat_kernel.as_ref(), session_id, &meta)
+    }
+
+    /// 更新上下文分隔线元数据，用于“清除上下文”展示与持久化。
+    pub fn update_context_dividers(
+        &self,
+        session_id: &str,
+        dividers: &[String],
+    ) -> Result<SessionInfo, String> {
+        Self::validate_session_id(session_id)?;
+        let meta = update_session_meta_fields(session_id, |meta| {
+            meta["context_dividers"] = serde_json::json!(dividers);
+        })?;
+        load_merged_session_info(self.chat_kernel.as_ref(), session_id, &meta)
+    }
+
     /// 删除指定聊天会话。
     pub fn delete_session(&self, session_id: &str) -> Result<(), String> {
         Self::validate_session_id(session_id)?;
@@ -540,180 +327,19 @@ impl ChatEngine {
     /// 切换指定会话的置顶状态并返回最新摘要。
     pub fn toggle_pin(&self, session_id: &str) -> Result<SessionInfo, String> {
         Self::validate_session_id(session_id)?;
-        let summary = self
-            .chat_kernel
+        self.chat_kernel
             .toggle_pin(session_id)
             .map_err(|e| e.to_string())?;
-        Ok(SessionInfo {
-            id: summary.id,
-            title: summary.title,
-            message_count: summary.message_count,
-            updated_at: summary.updated_at,
-            pinned: summary.pinned,
-            archived: summary.archived,
-        })
+        merged_info_with_fallback(self.chat_kernel.as_ref(), session_id)
     }
 
     /// 切换指定会话的归档状态并返回最新摘要。
     pub fn toggle_archive(&self, session_id: &str) -> Result<SessionInfo, String> {
         Self::validate_session_id(session_id)?;
-        let summary = self
-            .chat_kernel
+        self.chat_kernel
             .toggle_archive(session_id)
             .map_err(|e| e.to_string())?;
-        Ok(SessionInfo {
-            id: summary.id,
-            title: summary.title,
-            message_count: summary.message_count,
-            updated_at: summary.updated_at,
-            pinned: summary.pinned,
-            archived: summary.archived,
-        })
-    }
-}
-
-fn build_message_search_id(index: usize) -> String {
-    format!("chat-index-{}", index)
-}
-
-fn parse_message_render_index(message_id: &str) -> Result<usize, String> {
-    message_id
-        .strip_prefix("chat-index-")
-        .ok_or_else(|| format!("无效的消息锚点 ID: {}", message_id))?
-        .parse::<usize>()
-        .map_err(|_| format!("无效的消息锚点 ID: {}", message_id))
-}
-
-fn build_search_snippet(
-    content: &str,
-    normalized_query: &str,
-    query_utf16_len: usize,
-) -> Option<(String, usize, usize)> {
-    let content_utf16: Vec<u16> = content.to_lowercase().encode_utf16().collect();
-    let query_utf16: Vec<u16> = normalized_query.encode_utf16().collect();
-    let match_start = find_utf16_subsequence(&content_utf16, &query_utf16)?;
-    let window_start = match_start.saturating_sub(30);
-    let window_end = (match_start + query_utf16_len + 50).min(content.encode_utf16().count());
-    let (snippet, snippet_start) = slice_utf16_window(content, window_start, window_end);
-    Some((
-        snippet,
-        match_start.saturating_sub(snippet_start),
-        query_utf16_len,
-    ))
-}
-
-fn find_utf16_subsequence(haystack: &[u16], needle: &[u16]) -> Option<usize> {
-    if needle.is_empty() {
-        return Some(0);
-    }
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
-}
-
-fn slice_utf16_window(content: &str, start_utf16: usize, end_utf16: usize) -> (String, usize) {
-    let mut boundaries = Vec::with_capacity(content.chars().count() + 1);
-    boundaries.push((0usize, 0usize));
-
-    let mut utf16_offset = 0usize;
-    for (byte_index, ch) in content.char_indices() {
-        utf16_offset += ch.len_utf16();
-        boundaries.push((utf16_offset, byte_index + ch.len_utf8()));
-    }
-
-    let snippet_start = boundaries
-        .iter()
-        .rfind(|(offset, _)| *offset <= start_utf16)
-        .copied()
-        .unwrap_or((0, 0));
-    let snippet_end = boundaries
-        .iter()
-        .find(|(offset, _)| *offset >= end_utf16)
-        .copied()
-        .unwrap_or((content.encode_utf16().count(), content.len()));
-
-    (
-        content[snippet_start.1..snippet_end.1].to_string(),
-        snippet_start.0,
-    )
-}
-
-impl StreamUiForwarder<'_> {
-    fn emit_chunk(&self, chunk_index: &Cell<u32>, chunk: &str) {
-        if self.cancelled.get() {
-            return;
-        }
-        if crate::commands::chat::is_session_stopped(&self.request.session_id) {
-            self.cancelled.set(true);
-            return;
-        }
-        if self
-            .on_event
-            .send(ChatEvent::Chunk {
-                index: chunk_index.get(),
-                delta: chunk.to_string(),
-            })
-            .is_err()
-        {
-            self.cancelled.set(true);
-        }
-        chunk_index.set(chunk_index.get() + 1);
-    }
-
-    fn emit_reasoning(
-        &self,
-        reasoning_index: &Cell<u32>,
-        full_reasoning: &RefCell<String>,
-        delta: &str,
-    ) {
-        if self.cancelled.get() {
-            return;
-        }
-        if crate::commands::chat::is_session_stopped(&self.request.session_id) {
-            self.cancelled.set(true);
-            return;
-        }
-        full_reasoning.borrow_mut().push_str(delta);
-        if self
-            .on_event
-            .send(ChatEvent::Reasoning {
-                index: reasoning_index.get(),
-                delta: delta.to_string(),
-            })
-            .is_err()
-        {
-            self.cancelled.set(true);
-        }
-        reasoning_index.set(reasoning_index.get() + 1);
-    }
-}
-
-async fn finalize_send_message_result(
-    engine: &ChatEngine,
-    session_id: &str,
-    on_event: Channel<ChatEvent>,
-    result: Result<(String, String), String>,
-) -> Result<(), String> {
-    match result {
-        Ok((full_text, full_reasoning)) => {
-            engine.persist_response(
-                session_id,
-                &full_text,
-                (!full_reasoning.is_empty()).then_some(full_reasoning.as_str()),
-            )?;
-            let _ = on_event.send(ChatEvent::Done {
-                total_tokens: TOKEN_COUNT_UNSUPPORTED,
-            });
-            crate::commands::chat::clear_stopped_session(session_id);
-            Ok(())
-        }
-        Err(message) => {
-            crate::commands::chat::clear_stopped_session(session_id);
-            let _ = on_event.send(ChatEvent::Error {
-                message: message.clone(),
-            });
-            Err(message)
-        }
+        merged_info_with_fallback(self.chat_kernel.as_ref(), session_id)
     }
 }
 

@@ -60,6 +60,8 @@ function parseSearchResults(text: string): SearchResult[] | null {
 }
 
 export function WebSearchResultRenderer({ result, isError }: WebSearchResultRendererProps): React.ReactElement {
+  const searchResults = React.useMemo(() => parseSearchResults(result), [result])
+
   if (isError) {
     return (
       <pre className="rounded-md p-3 text-[12px] font-mono text-destructive/80 bg-destructive/5 whitespace-pre-wrap break-all overflow-x-auto">
@@ -67,8 +69,6 @@ export function WebSearchResultRenderer({ result, isError }: WebSearchResultRend
       </pre>
     )
   }
-
-  const searchResults = React.useMemo(() => parseSearchResults(result), [result])
 
   // 无法解析为搜索结果时 fallback
   if (!searchResults) {

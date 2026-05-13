@@ -1,12 +1,29 @@
 use super::*;
 
 #[test]
-fn validate_request_rejects_unsupported_fields() {
+fn validate_request_allows_context_dividers() {
     let mut req = request(Some("channel-a"), Some("model-a1"));
     req.context_dividers = Some(json!(["divider-1"]));
-    let err =
-        ChatEngine::validate_send_message_request(&req).expect_err("unsupported fields must fail");
+    ChatEngine::validate_send_message_request(&req)
+        .expect("contextDividers should be forwarded to the backend kernel");
+}
+
+#[test]
+fn validate_request_rejects_invalid_context_dividers_type() {
+    let mut req = request(Some("channel-a"), Some("model-a1"));
+    req.context_dividers = Some(json!("divider-1"));
+    let err = ChatEngine::validate_send_message_request(&req)
+        .expect_err("string contextDividers should fail validation");
     assert!(err.contains("contextDividers"));
+}
+
+#[test]
+fn validate_request_rejects_unsupported_enabled_tool_ids() {
+    let mut req = request(Some("channel-a"), Some("model-a1"));
+    req.enabled_tool_ids = Some(json!(["tool-a"]));
+    let err = ChatEngine::validate_send_message_request(&req)
+        .expect_err("enabledToolIds should still fail when non-empty");
+    assert!(err.contains("enabledToolIds"));
 }
 
 #[test]

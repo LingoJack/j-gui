@@ -67,7 +67,11 @@ interface AgentMessagesProps {
 
 /** 空状态引导 — 使用 WelcomeEmptyState */
 function EmptyState(): React.ReactElement {
-  return <WelcomeEmptyState />
+  return (
+    <div className="flex flex-1 items-start pt-8">
+      <WelcomeEmptyState />
+    </div>
+  )
 }
 
 function AssistantLogo({ model }: { model?: string }): React.ReactElement {
@@ -160,7 +164,6 @@ function RetryingNotice({ retrying }: { retrying: NonNullable<AgentStreamState['
               key={attempt.timestamp}
               attempt={attempt}
               isLatest={index === retrying.history.length - 1}
-              isFailed={retrying.failed && index === retrying.history.length - 1}
             />
           ))}
           {!retrying.failed && (
@@ -188,11 +191,9 @@ function RetryingNotice({ retrying }: { retrying: NonNullable<AgentStreamState['
 function RetryAttemptItem({
   attempt,
   isLatest,
-  isFailed,
 }: {
   attempt: RetryAttempt
   isLatest: boolean
-  isFailed: boolean
 }): React.ReactElement {
   const [showStderr, setShowStderr] = React.useState(false)
   const [showStack, setShowStack] = React.useState(false)
@@ -383,7 +384,7 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
       if (!cancelled) setReady(true)
     })
     return () => { cancelled = true }
-  }, [streaming, liveMessages, persistedSDKMessages, messagesLoaded])
+  }, [streaming, liveMessages, persistedSDKMessages, messagesLoaded, ready])
 
   // 从 streamState 属性中计算派生值
   const streamingContent = streamState?.content ?? ''
@@ -550,7 +551,7 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
     <BasePathsProvider basePaths={attachedDirs}>
     <Conversation resize={ready && !transitioning ? 'smooth' : 'instant'} className={ready ? 'opacity-100 transition-opacity duration-200' : 'opacity-0'}>
       <ScrollPositionManager id={sessionId} ready={ready} />
-      <ConversationContent>
+      <ConversationContent className={!hasContent && !streaming ? 'flex-1' : undefined}>
         {!hasContent && !streaming ? (
           <EmptyState />
         ) : (

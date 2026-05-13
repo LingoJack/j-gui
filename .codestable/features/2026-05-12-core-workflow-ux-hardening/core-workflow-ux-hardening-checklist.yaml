@@ -1,0 +1,45 @@
+feature: 2026-05-12-core-workflow-ux-hardening
+roadmap: j-gui-v1
+roadmap_item: core-workflow-ux-hardening
+created: 2026-05-12
+status: in-progress
+
+steps:
+  - id: step-1
+    paradigm: planning
+    title: 从摩擦台账定义主路径修复批次
+    status: done
+    description: "固定第一批实现输入为 pf-006、pf-001、pf-016、pf-004，并把 design/checklist/roadmap 状态对齐。"
+    exit: design、checklist、roadmap item 都以这 4 条 finding 为唯一输入。
+
+  - id: step-2
+    paradigm: ui
+    title: 收口静态状态与可用性
+    status: done
+    description: "处理最后 tab 空态、Chat 工具活动可见性和 Chat->Agent 迁移入口等静态可见状态。"
+    exit: pf-006、pf-001、pf-016 的静态可见问题可观察修复。
+
+  - id: step-3
+    paradigm: interaction
+    title: 收口主路径交互逻辑
+    status: done
+    description: "处理最后 tab 关闭行为、搜索结果归档标识和结果细节等交互逻辑。"
+    exit: pf-006、pf-004 的交互问题通过验证。
+
+  - id: step-4
+    paradigm: verification
+    title: 补验证记录
+    status: done
+    description: "为 pf-006、pf-001、pf-016、pf-004 各自补自动化测试或手动验收记录。"
+    exit: 4 条 finding 都有验证证据。
+
+checks:
+  - id: check-source
+    target: step-1
+    description: "所有实现任务必须回指 pf-006、pf-001、pf-016、pf-004 四条 finding。"
+    status: passed
+
+  - id: check-state-isolation
+    target: step-3
+    description: "Chat 和 Agent 状态隔离不能被主路径硬化破坏。"
+    status: passed

@@ -6,7 +6,7 @@
  */
 
 import * as React from 'react'
-import { Pin, PinOff, Trash2, Pencil, ChevronDown, ChevronRight, Archive, ArchiveRestore, ArrowRightLeft, Hammer } from 'lucide-react'
+import { Pin, PinOff, Trash2, Pencil, Archive, ArchiveRestore, ArrowRightLeft, Hammer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { ConversationMeta, AgentSessionMeta } from '@jgui/shared'
@@ -15,43 +15,19 @@ import type { SessionIndicatorStatus } from '@/atoms/agent-atoms'
 /** 日期分组标签 */
 type DateGroup = '今天' | '昨天' | '更早'
 
-/** 按 updatedAt 将项目分为 今天 / 昨天 / 更早 三组 */
-export function groupByDate<T extends { updatedAt: number }>(items: T[]): Array<{ label: DateGroup; items: T[] }> {
-  const now = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const yesterdayStart = todayStart - 86_400_000
-
-  const today: T[] = []
-  const yesterday: T[] = []
-  const earlier: T[] = []
-
-  for (const item of items) {
-    if (item.updatedAt >= todayStart) {
-      today.push(item)
-    } else if (item.updatedAt >= yesterdayStart) {
-      yesterday.push(item)
-    } else {
-      earlier.push(item)
-    }
-  }
-
-  const groups: Array<{ label: DateGroup; items: T[] }> = []
-  if (today.length > 0) groups.push({ label: '今天', items: today })
-  if (yesterday.length > 0) groups.push({ label: '昨天', items: yesterday })
-  if (earlier.length > 0) groups.push({ label: '更早', items: earlier })
-  return groups
-}
-
 // ===== 对话列表项 =====
 
 interface ConversationItemProps {
   conversation: ConversationMeta
   active: boolean
   hovered: boolean
+  selectionMode: boolean
+  selected: boolean
   streaming: boolean
   /** 是否在标题旁显示置顶图标 */
   showPinIcon: boolean
   onSelect: () => void
+  onToggleSelect: () => void
   onRequestDelete: () => void
   onRename: (id: string, newTitle: string) => Promise<void>
   onTogglePin: (id: string) => Promise<void>
@@ -64,9 +40,12 @@ function ConversationItem({
   conversation,
   active,
   hovered,
+  selectionMode,
+  selected,
   streaming,
   showPinIcon,
   onSelect,
+  onToggleSelect,
   onRequestDelete,
   onRename,
   onTogglePin,
@@ -116,16 +95,28 @@ function ConversationItem({
     <div
       role="button"
       tabIndex={0}
-      onClick={onSelect}
+      onClick={() => {
+        if (selectionMode) {
+          onToggleSelect()
+          return
+        }
+        onSelect()
+      }}
       onDoubleClick={(e) => {
+        if (selectionMode) return
         e.stopPropagation()
         startEdit()
       }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
+      aria-pressed={selectionMode ? selected : active}
       className={cn(
         'relative w-full flex items-center gap-2 px-3 py-[7px] rounded-[10px] transition-colors duration-100 titlebar-no-drag text-left',
-        active
+        selectionMode
+          ? selected
+            ? 'bg-primary/10 ring-1 ring-primary/25 shadow-[0_1px_2px_0_rgba(0,0,0,0.05)]'
+            : 'hover:bg-primary/5'
+          : active
           ? 'session-item-selected bg-primary/10 shadow-[0_1px_2px_0_rgba(0,0,0,0.05)]'
           : 'hover:bg-primary/5'
       )}
@@ -163,7 +154,7 @@ function ConversationItem({
 
       <div className={cn(
         'flex items-center gap-0.5 flex-shrink-0 transition-all duration-100 overflow-hidden',
-        hovered && !editing ? 'opacity-100' : 'opacity-0 w-0 pointer-events-none'
+        hovered && !editing && !selectionMode ? 'opacity-100' : 'opacity-0 w-0 pointer-events-none'
       )}>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -240,12 +231,15 @@ interface AgentSessionItemProps {
   session: AgentSessionMeta
   active: boolean
   hovered: boolean
+  selectionMode: boolean
+  selected: boolean
   indicatorStatus: SessionIndicatorStatus
   showPinIcon?: boolean
   isInWorkingSection?: boolean
   leftAccent?: SessionLeftAccent
   workspaceName?: string
   onSelect: () => void
+  onToggleSelect: () => void
   onRequestDelete: () => void
   onRequestMove: () => void
   onRename: (id: string, newTitle: string) => Promise<void>
@@ -260,12 +254,15 @@ function AgentSessionItem({
   session,
   active,
   hovered,
+  selectionMode,
+  selected,
   indicatorStatus,
   showPinIcon,
   isInWorkingSection,
   leftAccent,
   workspaceName,
   onSelect,
+  onToggleSelect,
   onRequestDelete,
   onRequestMove,
   onRename,
@@ -315,16 +312,28 @@ function AgentSessionItem({
     <div
       role="button"
       tabIndex={0}
-      onClick={onSelect}
+      onClick={() => {
+        if (selectionMode) {
+          onToggleSelect()
+          return
+        }
+        onSelect()
+      }}
       onDoubleClick={(e) => {
+        if (selectionMode) return
         e.stopPropagation()
         startEdit()
       }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
+      aria-pressed={selectionMode ? selected : active}
       className={cn(
         'relative w-full flex items-center gap-2 px-3 py-[7px] rounded-[10px] transition-colors duration-100 titlebar-no-drag text-left',
-        active
+        selectionMode
+          ? selected
+            ? 'bg-primary/10 ring-1 ring-primary/25 shadow-[0_1px_2px_0_rgba(0,0,0,0.05)]'
+            : 'hover:bg-primary/5'
+          : active
           ? 'session-item-selected bg-primary/10 shadow-[0_1px_2px_0_rgba(0,0,0,0.05)]'
           : 'hover:bg-primary/5'
       )}
@@ -369,7 +378,7 @@ function AgentSessionItem({
 
       <div className={cn(
         'flex items-center gap-0.5 flex-shrink-0 transition-all duration-100 overflow-hidden',
-        hovered && !editing ? 'opacity-100' : 'opacity-0 w-0 pointer-events-none'
+        hovered && !editing && !selectionMode ? 'opacity-100' : 'opacity-0 w-0 pointer-events-none'
       )}>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -483,6 +492,8 @@ export interface SessionListItemsProps {
   viewMode: 'active' | 'archived'
   activeTabId: string | null
   hoveredId: string | null
+  selectionMode: boolean
+  selectedSessionIds: Set<string>
   pinnedExpanded: boolean
 
   // Chat 数据
@@ -512,6 +523,7 @@ export interface SessionListItemsProps {
 
   // 回调
   onHoveredIdChange: (id: string | null) => void
+  onToggleSessionSelection: (id: string) => void
   onSelectConversation: (id: string, title: string) => void
   onRequestDelete: (id: string) => void
   onRename: (id: string, newTitle: string) => Promise<void>
@@ -534,6 +546,8 @@ export function SessionListItems(props: SessionListItemsProps): React.ReactEleme
     viewMode,
     activeTabId,
     hoveredId,
+    selectionMode,
+    selectedSessionIds,
     pinnedExpanded,
     pinnedConversations,
     conversationGroups,
@@ -551,6 +565,7 @@ export function SessionListItems(props: SessionListItemsProps): React.ReactEleme
     agentTopHeight,
     agentSubTab,
     onHoveredIdChange,
+    onToggleSessionSelection,
     onSelectConversation,
     onRequestDelete,
     onRename,
@@ -579,9 +594,12 @@ export function SessionListItems(props: SessionListItemsProps): React.ReactEleme
                 conversation={conv}
                 active={conv.id === activeTabId}
                 hovered={conv.id === hoveredId}
+                selectionMode={selectionMode}
+                selected={selectedSessionIds.has(conv.id)}
                 streaming={streamingIds.has(conv.id)}
                 showPinIcon={false}
                 onSelect={() => onSelectConversation(conv.id, conv.title)}
+                onToggleSelect={() => onToggleSessionSelection(conv.id)}
                 onRequestDelete={() => onRequestDelete(conv.id)}
                 onRename={onRename}
                 onTogglePin={onTogglePin}
@@ -670,12 +688,15 @@ export function SessionListItems(props: SessionListItemsProps): React.ReactEleme
                                 session={session}
                                 active={session.id === activeTabId}
                                 hovered={session.id === hoveredId}
+                                selectionMode={selectionMode}
+                                selected={selectedSessionIds.has(session.id)}
                                 indicatorStatus={agentIndicatorMap.get(session.id) ?? 'idle'}
                                 isInWorkingSection={workingSessionIds.has(session.id)}
                                 showPinIcon={false}
                                 leftAccent={accent}
                                 workspaceName={session.workspaceId ? workspaceNameMap.get(session.workspaceId) : undefined}
                                 onSelect={() => onSelectAgentSession(session.id, session.title)}
+                                onToggleSelect={() => onToggleSessionSelection(session.id)}
                                 onRequestDelete={() => onRequestDelete(session.id)}
                                 onRequestMove={() => onRequestMove(session.id)}
                                 onRename={onAgentRename}
@@ -706,10 +727,13 @@ export function SessionListItems(props: SessionListItemsProps): React.ReactEleme
                               session={session}
                               active={session.id === activeTabId}
                               hovered={session.id === hoveredId}
+                              selectionMode={selectionMode}
+                              selected={selectedSessionIds.has(session.id)}
                               indicatorStatus={agentIndicatorMap.get(session.id) ?? 'idle'}
                               isInWorkingSection={workingSessionIds.has(session.id)}
                               showPinIcon={false}
                               onSelect={() => onSelectAgentSession(session.id, session.title)}
+                              onToggleSelect={() => onToggleSessionSelection(session.id)}
                               onRequestDelete={() => onRequestDelete(session.id)}
                               onRequestMove={() => onRequestMove(session.id)}
                               onRename={onAgentRename}
@@ -758,10 +782,13 @@ export function SessionListItems(props: SessionListItemsProps): React.ReactEleme
                       session={session}
                       active={session.id === activeTabId}
                       hovered={session.id === hoveredId}
+                      selectionMode={selectionMode}
+                      selected={selectedSessionIds.has(session.id)}
                       indicatorStatus={agentIndicatorMap.get(session.id) ?? 'idle'}
                       isInWorkingSection={workingSessionIds.has(session.id)}
                       showPinIcon={!!session.pinned}
                       onSelect={() => onSelectAgentSession(session.id, session.title)}
+                      onToggleSelect={() => onToggleSessionSelection(session.id)}
                       onRequestDelete={() => onRequestDelete(session.id)}
                       onRequestMove={() => onRequestMove(session.id)}
                       onRename={onAgentRename}
@@ -804,9 +831,12 @@ export function SessionListItems(props: SessionListItemsProps): React.ReactEleme
                         conversation={conv}
                         active={conv.id === activeTabId}
                         hovered={conv.id === hoveredId}
+                        selectionMode={selectionMode}
+                        selected={selectedSessionIds.has(conv.id)}
                         streaming={streamingIds.has(conv.id)}
                         showPinIcon={!!conv.pinned}
                         onSelect={() => onSelectConversation(conv.id, conv.title)}
+                        onToggleSelect={() => onToggleSessionSelection(conv.id)}
                         onRequestDelete={() => onRequestDelete(conv.id)}
                         onRename={onRename}
                         onTogglePin={onTogglePin}
@@ -832,10 +862,13 @@ export function SessionListItems(props: SessionListItemsProps): React.ReactEleme
                         session={session}
                         active={session.id === activeTabId}
                         hovered={session.id === hoveredId}
+                        selectionMode={selectionMode}
+                        selected={selectedSessionIds.has(session.id)}
                         indicatorStatus={agentIndicatorMap.get(session.id) ?? 'idle'}
                         isInWorkingSection={workingSessionIds.has(session.id)}
                         showPinIcon={!!session.pinned}
                         onSelect={() => onSelectAgentSession(session.id, session.title)}
+                        onToggleSelect={() => onToggleSessionSelection(session.id)}
                         onRequestDelete={() => onRequestDelete(session.id)}
                         onRequestMove={() => onRequestMove(session.id)}
                         onRename={onAgentRename}

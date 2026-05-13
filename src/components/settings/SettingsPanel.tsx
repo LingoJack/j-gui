@@ -2,13 +2,12 @@
  * SettingsPanel - 设置面板
  *
  * 顶部 Header + 左侧导航 + 右侧 ScrollArea 内容区域。
- * 已删除 roadmap 明确不做的模块：飞书/钉钉/微信/代理/语音/教程/快捷键自定义/MemOS/迁移。
  */
 
 import * as React from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { cn } from "@/lib/utils";
-import { Settings, Radio, Palette, Info, Plug, BookOpen, Wrench, Link, Webhook, FileCode, X } from "lucide-react";
+import { Settings, Radio, Palette, Info, Plug, BookOpen, Wrench, Link, Webhook, FileCode, Keyboard, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { settingsTabAtom, channelFormDirtyAtom, settingsCloseRequestedAtom } from "@/atoms/settings-tab";
 import type { SettingsTab } from "@/atoms/settings-tab";
@@ -27,6 +26,7 @@ import { PromptSettings } from "./PromptSettings";
 import { ToolSettings } from "./ToolSettings";
 import { AliasSettings } from "./AliasSettings";
 import { HooksSettings } from "./HooksSettings";
+import { ShortcutSettings } from "./ShortcutSettings";
 import { YamlConfigSettings } from "./YamlConfigSettings";
 
 interface TabItem { id: SettingsTab; label: string; icon: React.ReactNode }
@@ -42,10 +42,11 @@ const BASE_TABS: TabItem[] = [
 
 const AGENT_TAB: TabItem = { id: "agent", label: "Agent 配置", icon: <Plug size={16} /> };
 const TOOLS_TAB: TabItem = { id: "tools", label: "Chat 工具", icon: <Wrench size={16} /> };
+const SHORTCUTS_TAB: TabItem = { id: "shortcuts", label: "快捷键管理", icon: <Keyboard size={16} /> };
 
 const TAIL_TABS: TabItem[] = [
   { id: "appearance", label: "外观设置", icon: <Palette size={16} /> },
-  { id: "about", label: "关于", icon: <Info size={16} /> },
+  { id: "about", label: "关于/更新", icon: <Info size={16} /> },
 ];
 
 /** 每个标签页独立的错误边界 */
@@ -75,6 +76,7 @@ function renderTabContent(tab: SettingsTab): React.ReactElement {
     case "tools": content = <ToolSettings />; break;
     case "alias": content = <AliasSettings />; break;
     case "hooks": content = <HooksSettings />; break;
+    case "shortcuts": content = <ShortcutSettings />; break;
     case "yaml": content = <YamlConfigSettings />; break;
     case "appearance": content = <AppearanceSettings />; break;
     case "about": content = <AboutSettings />; break;
@@ -118,8 +120,16 @@ export function SettingsPanel({ onClose }: SettingsPanelProps): React.ReactEleme
   }, [closeRequested, activeTab, setCloseRequested])
 
   const tabs = React.useMemo(() => {
-    return [...BASE_TABS, AGENT_TAB, TOOLS_TAB, ...TAIL_TABS]
-  }, []);
+    const middleTabs = appMode === 'agent'
+      ? [AGENT_TAB, TOOLS_TAB, SHORTCUTS_TAB]
+      : [TOOLS_TAB, SHORTCUTS_TAB]
+    return [...BASE_TABS, ...middleTabs, ...TAIL_TABS]
+  }, [appMode]);
+
+  React.useEffect(() => {
+    if (tabs.some((tab) => tab.id === activeTab)) return
+    setActiveTab("channels")
+  }, [activeTab, setActiveTab, tabs])
 
   const activeTabLabel = tabs.find((t) => t.id === activeTab)?.label ?? "设置";
 

@@ -42,17 +42,34 @@ import {
 import type { AgentContextStatus } from "@/atoms/agent-atoms";
 import { channelsAtom } from "@/atoms/chat-atoms";
 import { useOpenSession } from "@/hooks/useOpenSession";
-import { draftSessionIdsAtom } from "@/atoms/draft-session-atoms";
 import type {
   AgentSendInput,
   AgentPendingFile,
   SDKMessage,
 } from "@jgui/shared";
 import { fileToBase64 } from "@/lib/file-utils";
+import {
+  extractChatReferenceIds,
+  replaceChatReferenceTokens,
+} from "@/lib/chat-reference";
 import * as ipc from "@/lib/ipc";
 
 /** 稳定的空 SDKMessage 数组引用，避免 ?? [] 每次创建新引用 */
 const EMPTY_SDK_MESSAGES: SDKMessage[] = [];
+
+async function resolveChatReferenceContent(content: string): Promise<string> {
+  const conversationIds = extractChatReferenceIds(content);
+  if (conversationIds.length === 0) return content;
+
+  const entries = await Promise.all(
+    conversationIds.map(async (conversationId) => {
+      const context = await ipc.buildChatReferenceContext(conversationId);
+      return [conversationId, context.prompt] as const;
+    }),
+  );
+
+  return replaceChatReferenceTokens(content, new Map(entries));
+}
 
 export function useAgentSendMessage(sessionId: string) {
   const [persistedSDKMessages, setPersistedSDKMessages] = React.useState<
@@ -65,12 +82,11 @@ export function useAgentSendMessage(sessionId: string) {
   const stoppedByUserSessions = useAtomValue(stoppedByUserSessionsAtom);
   const stoppedByUser = stoppedByUserSessions.has(sessionId);
   const liveMessagesMap = useAtomValue(liveMessagesMapAtom);
-  const setLiveMessagesMap = useSetAtom(liveMessagesMapAtom);
   const liveMessages = liveMessagesMap.get(sessionId) ?? EMPTY_SDK_MESSAGES;
   const sessionChannelMap = useAtomValue(agentSessionChannelMapAtom);
   const sessionModelMap = useAtomValue(agentSessionModelMapAtom);
-  const [defaultChannelId, setDefaultChannelId] = useAtom(agentChannelIdAtom);
-  const [defaultModelId, setDefaultModelId] = useAtom(agentModelIdAtom);
+  const [defaultChannelId] = useAtom(agentChannelIdAtom);
+  const [defaultModelId] = useAtom(agentModelIdAtom);
   const agentBackendMode = useAtomValue(agentBackendModeAtom);
   const setAgentSessionBackendModeMap = useSetAtom(
     agentSessionBackendModeMapAtom,
@@ -247,7 +263,7 @@ export function useAgentSendMessage(sessionId: string) {
   const handleAttachFolder = React.useCallback(async (): Promise<void> => {
     try {
       const result = await ipc.openFolderDialog();
-      if (!result) return;
+      if (!result || result.canceled || !result.path) return;
       const updated = await ipc.attachDirectory({
         sessionId,
         directoryPath: result.path,
@@ -257,7 +273,9 @@ export function useAgentSendMessage(sessionId: string) {
         map.set(sessionId, updated);
         return map;
       });
-      toast.success(`已附加目录: ${result.name}`);
+      const attachedPath = result.path ?? '';
+      const folderName = attachedPath.split(/[\\/]/).filter(Boolean).pop() ?? attachedPath;
+      toast.success(`已附加目录: ${folderName}`);
     } catch (error) {
       console.error("[AgentView] 附加文件夹失败:", error);
       toast.error("附加文件夹失败");
@@ -476,13 +494,34 @@ export function useAgentSendMessage(sessionId: string) {
       return map;
     });
 
-    // 处理附件
     let fileReferences = "";
+    const pendingFilesSnapshot = [...pendingFiles];
+    const pendingFileData = new Map<string, string>();
+    for (const file of pendingFilesSnapshot) {
+      const rawData = window.__pendingAgentFileData?.get(file.id);
+      if (rawData) {
+        pendingFileData.set(file.id, rawData);
+      }
+    }
+
+    // 先解析 Chat 引用；失败时保留附件状态，避免用户数据丢失
+    let resolvedText: string;
+    try {
+      resolvedText = await resolveChatReferenceContent(effectiveText);
+    } catch (error) {
+      console.error("[AgentView] 解析 Chat 引用失败:", error);
+      toast.error("引用 Chat 对话失败", {
+        description: error instanceof Error ? error.message : "未知错误",
+      });
+      return;
+    }
+
+    // 处理附件
     if (pendingFiles.length > 0) {
       const workspace = workspaces.find((w) => w.id === currentWorkspaceId);
       if (workspace) {
-        const existingFiles = pendingFiles.filter((f) => f.sourcePath);
-        const newFiles = pendingFiles.filter((f) => !f.sourcePath);
+        const existingFiles = pendingFilesSnapshot.filter((f) => f.sourcePath);
+        const newFiles = pendingFilesSnapshot.filter((f) => !f.sourcePath);
         const allRefs: Array<{ filename: string; targetPath: string }> = [];
         for (const f of existingFiles) {
           allRefs.push({ filename: f.filename, targetPath: f.sourcePath! });
@@ -490,7 +529,7 @@ export function useAgentSendMessage(sessionId: string) {
         if (newFiles.length > 0) {
           const filesToSave = newFiles.map((f) => ({
             filename: f.filename,
-            data: window.__pendingAgentFileData?.get(f.id) || "",
+            data: pendingFileData.get(f.id) || "",
           }));
           try {
             const saved = await ipc.saveFilesToAgentSession({
@@ -510,7 +549,7 @@ export function useAgentSendMessage(sessionId: string) {
           fileReferences += `<attached_files>\n${refs}\n</attached_files>\n\n`;
         }
       }
-      for (const f of pendingFiles) {
+      for (const f of pendingFilesSnapshot) {
         if (f.previewUrl?.startsWith("blob:"))
           URL.revokeObjectURL(f.previewUrl);
         window.__pendingAgentFileData?.delete(f.id);
@@ -518,7 +557,7 @@ export function useAgentSendMessage(sessionId: string) {
       setPendingFiles([]);
     }
 
-    const finalMessage = fileReferences + effectiveText;
+    const finalMessage = fileReferences + resolvedText;
 
     store.set(stoppedByUserSessionsAtom, (prev: Set<string>) => {
       if (!prev.has(sessionId)) return prev;
@@ -585,7 +624,6 @@ export function useAgentSendMessage(sessionId: string) {
   }, [
     inputContent,
     pendingFiles,
-    attachedDirs,
     sessionId,
     agentChannelId,
     agentModelId,
@@ -601,7 +639,6 @@ export function useAgentSendMessage(sessionId: string) {
     setPromptSuggestions,
     setInputContent,
     setInputHtmlContent,
-    setLiveMessagesMap,
     permissionMode,
     agentBackendMode,
     setAgentSessionBackendModeMap,
@@ -634,7 +671,7 @@ export function useAgentSendMessage(sessionId: string) {
     const streamStartedAt = Date.now();
     const localUuid = crypto.randomUUID();
 
-    const syntheticMsg: import("@jgui/shared").SDKMessage = {
+    const syntheticMsg: SDKMessage = {
       type: "user",
       uuid: localUuid,
       message: {
@@ -642,7 +679,7 @@ export function useAgentSendMessage(sessionId: string) {
       },
       parent_tool_use_id: null,
       _createdAt: streamStartedAt,
-    } as unknown as import("@jgui/shared").SDKMessage;
+    } as unknown as SDKMessage;
 
     store.set(liveMessagesMapAtom, (prev) => {
       const map = new Map(prev);
@@ -712,7 +749,6 @@ export function useAgentSendMessage(sessionId: string) {
     sessionId,
     agentChannelId,
     agentModelId,
-    currentWorkspaceId,
     streaming,
     setStreamingStates,
     store,
@@ -786,7 +822,6 @@ export function useAgentSendMessage(sessionId: string) {
     sessionId,
     agentChannelId,
     agentModelId,
-    currentWorkspaceId,
     streaming,
     setAgentStreamErrors,
     setStreamingStates,

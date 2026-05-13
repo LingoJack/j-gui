@@ -1,0 +1,45 @@
+feature: 2026-05-12-settings-experience-hardening
+roadmap: j-gui-v1
+roadmap_item: settings-experience-hardening
+created: 2026-05-12
+status: draft
+
+steps:
+  - id: step-1
+    paradigm: planning
+    title: 从摩擦台账定义 Settings 修复批次
+    status: pending
+    description: "筛选 Settings finding，按设置区域和反馈缺口聚类。"
+    exit: 修复批次有 finding 回指和验收目标。
+
+  - id: step-2
+    paradigm: ui
+    title: 收口保存失败和 unsupported 反馈
+    status: pending
+    description: "补齐保存中、已保存、失败、不支持等用户可见状态。"
+    exit: 对应 finding 可验证通过。
+
+  - id: step-3
+    paradigm: ui
+    title: 收口来源和工具状态提示
+    status: pending
+    description: "让用户能区分配置来源、工具状态和凭据边界。"
+    exit: 来源与工具状态 finding 可验证通过。
+
+  - id: step-4
+    paradigm: verification
+    title: 补验证记录
+    status: pending
+    description: "为每条 Settings finding 补自动化测试或手动验收记录。"
+    exit: 每条 P0/P1 finding 有验证证据。
+
+checks:
+  - id: check-source
+    target: step-1
+    description: "所有实现任务必须回指 product-friction-audit finding。"
+    status: pending
+
+  - id: check-no-new-settings
+    target: step-3
+    description: "不新增设置项，不扩大治理模型。"
+    status: pending

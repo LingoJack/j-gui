@@ -26,14 +26,12 @@ interface TabPreviewPanelProps {
 
 const PREVIEW_REMARK_PLUGINS = [remarkGfm]
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const PREVIEW_MD_COMPONENTS = {
   pre: ({ children }: { children?: React.ReactNode }) => <pre className="text-[11px] opacity-70 truncate">{children}</pre>,
   code: ({ children }: { children?: React.ReactNode }) => <code className="text-[11px] bg-muted/50 px-0.5 rounded">{children}</code>,
   img: () => null as unknown as React.ReactElement,
   a: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
 } as const
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // ── 子组件 ──
 
@@ -100,9 +98,9 @@ export function TabPreviewPanel({ title, items, isLeaving }: TabPreviewPanelProp
             暂无消息
           </div>
         ) : (
-          items.map((item) => (
+          items.map((item, index) => (
             <div
-              key={item.id}
+              key={item.id ? `${item.id}-${index}` : `preview-${index}`}
               className="flex items-start gap-2 w-full rounded-md px-2 py-1.5 text-left"
             >
               <ItemIcon item={item} />

@@ -16,13 +16,11 @@ import DefaultLogo from '@/assets/models/default.png'
 
 // Claude / Anthropic
 import ClaudeLogo from '@/assets/models/claude.png'
-import ClaudeDarkLogo from '@/assets/models/claude_dark.png'
 
 // OpenAI / GPT 系列
 import OpenAILogo from '@/assets/models/openai.png'
 import GPT4Logo from '@/assets/models/gpt_4.png'
 import GPT35Logo from '@/assets/models/gpt_3.5.png'
-import GPTDarkLogo from '@/assets/models/gpt_dark.png'
 import GPTo1Logo from '@/assets/models/gpt_o1.png'
 import GPTImageLogo from '@/assets/models/gpt_image_1.png'
 import GPT5Logo from '@/assets/models/gpt-5.png'
@@ -37,13 +35,10 @@ import GPT51CodexMiniLogo from '@/assets/models/gpt-5.1-codex-mini.png'
 
 // DeepSeek
 import DeepSeekLogo from '@/assets/models/deepseek.png'
-import DeepSeekDarkLogo from '@/assets/models/deepseek_dark.png'
 
 // Google / Gemini
 import GeminiLogo from '@/assets/models/gemini.png'
-import GeminiDarkLogo from '@/assets/models/gemini_dark.png'
 import GemmaLogo from '@/assets/models/gemma.png'
-import GemmaDarkLogo from '@/assets/models/gemma_dark.png'
 
 // 自定义 Gemini 衍生模型
 import DeepGeminiLogo from '@/assets/models/deepgemini.png'
@@ -53,55 +48,40 @@ import SeedGeminiLogo from '@/assets/models/seedgemini.png'
 
 // Qwen / 通义
 import QwenLogo from '@/assets/models/qwen.png'
-import QwenDarkLogo from '@/assets/models/qwen_dark.png'
 
 // Grok / xAI
 import GrokLogo from '@/assets/models/grok.png'
-import GrokDarkLogo from '@/assets/models/grok_dark.png'
 
 // Moonshot / Kimi
 import MoonshotLogo from '@/assets/models/moonshot.png'
 
 // Doubao / 豆包
 import DoubaoLogo from '@/assets/models/doubao.png'
-import DoubaoDarkLogo from '@/assets/models/doubao_dark.png'
 
 // Zhipu / 智谱
 import ZhipuLogo from '@/assets/models/zhipu.png'
-import ZhipuDarkLogo from '@/assets/models/zhipu_dark.png'
-
-// ChatGLM
-import ChatGLMLogo from '@/assets/models/chatglm.png'
-import ChatGLMDarkLogo from '@/assets/models/chatglm_dark.png'
 
 // Llama / Meta
 import LlamaLogo from '@/assets/models/llama.png'
-import LlamaDarkLogo from '@/assets/models/llama_dark.png'
 
 // Mistral / Mixtral
 import MistralLogo from '@/assets/models/mixtral.png'
-import MistralDarkLogo from '@/assets/models/mixtral_dark.png'
 import CodestralLogo from '@/assets/models/codestral.png'
 
 // Yi / 零一
 import YiLogo from '@/assets/models/yi.png'
-import YiDarkLogo from '@/assets/models/yi_dark.png'
 
 // Hunyuan / 混元
 import HunyuanLogo from '@/assets/models/hunyuan.png'
-import HunyuanDarkLogo from '@/assets/models/hunyuan_dark.png'
 
 // Wenxin / 文心 / ERNIE
 import WenxinLogo from '@/assets/models/wenxin.png'
-import WenxinDarkLogo from '@/assets/models/wenxin_dark.png'
 
 // SparkDesk / 讯飞星火
 import SparkDeskLogo from '@/assets/models/sparkdesk.png'
-import SparkDeskDarkLogo from '@/assets/models/sparkdesk_dark.png'
 
 // Step / 阶跃
 import StepLogo from '@/assets/models/step.png'
-import StepDarkLogo from '@/assets/models/step_dark.png'
 
 // MiniMax
 import MiniMaxLogo from '@/assets/models/minimax.png'
@@ -111,14 +91,14 @@ import PromaLogo from '@/assets/models/proma.png'
 
 // Cohere
 import CohereLogo from '@/assets/models/cohere.png'
-import CohereDarkLogo from '@/assets/models/cohere_dark.png'
 
 // Embedding
 import EmbeddingLogo from '@/assets/models/embedding.png'
 
 // ===== 供应商类型 =====
 
-import type { ProviderType } from '@jgui/shared'
+import { PROVIDER_LABELS } from '@jgui/shared'
+import type { Channel, ProviderType } from '@jgui/shared'
 
 // ===== 正则匹配映射 =====
 
@@ -342,7 +322,7 @@ export function getChannelLogo(baseUrl: string): string {
  * 优先返回别名（name !== id），未找到则返回原始 modelId。
  * 用于将 SDK 返回的 model ID 转为用户友好的显示名称。
  */
-export function resolveModelDisplayName(modelId: string, channels: import('@jgui/shared').Channel[]): string {
+export function resolveModelDisplayName(modelId: string, channels: Channel[]): string {
   for (const channel of channels) {
     for (const model of channel.models) {
       if (model.id === modelId && model.name && model.name !== model.id) {
@@ -351,6 +331,68 @@ export function resolveModelDisplayName(modelId: string, channels: import('@jgui
     }
   }
   return modelId
+}
+
+function inferProviderFromModelId(modelId: string): ProviderType | undefined {
+  if (!modelId) return undefined
+
+  const providerMatchers: Array<[RegExp, ProviderType]> = [
+    [/(claude|anthropic-)/i, 'anthropic'],
+    [/gpt|o1|o3|o4/i, 'openai'],
+    [/deepseek/i, 'deepseek'],
+    [/gemini|gemma|veo/i, 'google'],
+    [/moonshot/i, 'moonshot'],
+    [/kimi/i, 'kimi-api'],
+    [/(zhipu|glm|cogview)/i, 'zhipu'],
+    [/minimax/i, 'minimax'],
+    [/(doubao|seed|ep-202)/i, 'doubao'],
+    [/(qwen|qwq|qvq|wan-)/i, 'qwen'],
+  ]
+
+  for (const [matcher, provider] of providerMatchers) {
+    if (matcher.test(modelId)) {
+      return provider
+    }
+  }
+
+  return undefined
+}
+
+function resolveProviderByModelId(modelId: string, channels: Channel[]): ProviderType | undefined {
+  for (const channel of channels) {
+    if (channel.models.some((model) => model.id === modelId)) {
+      return channel.provider
+    }
+  }
+
+  return inferProviderFromModelId(modelId)
+}
+
+export interface AssistantBranding {
+  label: string
+  logo: string
+  provider?: ProviderType
+}
+
+/**
+ * Chat 模式里的助手身份统一按供应商品牌展示，避免把 model id 直接暴露给用户。
+ * 若渠道已删除或历史消息缺少上下文，再回退到 modelId 推断。
+ */
+export function resolveAssistantBranding(modelId: string, channels: Channel[]): AssistantBranding {
+  const provider = resolveProviderByModelId(modelId, channels)
+  if (provider) {
+    return {
+      label: PROVIDER_LABELS[provider],
+      logo: getProviderLogo(provider),
+      provider,
+    }
+  }
+
+  return {
+    label: modelId || 'AI',
+    logo: getModelLogo(modelId),
+    provider,
+  }
 }
 
 /** 默认模型图标 */

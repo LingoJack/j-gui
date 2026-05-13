@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tauri::Emitter;
 
 use crate::kernel::JcliAdapter;
 
@@ -10,10 +9,15 @@ use crate::kernel::JcliAdapter;
 mod settings_agent_workspaces;
 #[path = "settings_environment.rs"]
 mod settings_environment;
+#[path = "settings_general.rs"]
+mod settings_general;
+#[path = "settings_storage.rs"]
+mod settings_storage;
 #[path = "settings_system_prompts.rs"]
 mod settings_system_prompts;
 use settings_agent_workspaces as workspace_commands;
 use settings_environment as environment_commands;
+use settings_storage as storage_commands;
 pub use settings_system_prompts::{
     CreateSystemPromptInput, SystemPromptConfig, SystemPromptEntry, UpdateSystemPromptInput,
 };
@@ -68,6 +72,7 @@ pub struct GuiSettings {
     #[serde(default)]
     pub agent_channel_ids: Vec<String>,
     pub agent_workspace_id: Option<String>,
+    pub chat_workspace_id: Option<String>,
     #[serde(default = "default_true")]
     pub notifications_enabled: bool,
     #[serde(default)]
@@ -121,6 +126,7 @@ impl Default for GuiSettings {
             agent_backend_mode: None,
             agent_channel_ids: vec![],
             agent_workspace_id: None,
+            chat_workspace_id: None,
             notifications_enabled: true,
             notification_sound_enabled: false,
             tutorial_banner_dismissed: false,
@@ -220,144 +226,12 @@ pub fn get_settings() -> Result<GuiSettings, String> {
     Ok(load_settings())
 }
 
-macro_rules! set_str {
-    ($val:expr, $settings:expr, $field:ident) => {
-        if let Some(v) = $val.as_str() {
-            $settings.$field = v.to_string();
-        }
-    };
-}
-
-macro_rules! set_bool {
-    ($val:expr, $settings:expr, $field:ident) => {
-        if let Some(v) = $val.as_bool() {
-            $settings.$field = v;
-        }
-    };
-}
-
-macro_rules! set_u64 {
-    ($val:expr, $settings:expr, $field:ident) => {
-        if let Some(v) = $val.as_u64() {
-            $settings.$field = v as u32;
-        }
-    };
-}
-
-macro_rules! set_opt_str {
-    ($val:expr, $settings:expr, $field:ident) => {
-        if $val.is_null() {
-            $settings.$field = None;
-        } else if let Some(v) = $val.as_str() {
-            $settings.$field = Some(v.to_string());
-        }
-    };
-}
-
-macro_rules! set_opt_val {
-    ($val:expr, $settings:expr, $field:ident) => {
-        if $val.is_null() {
-            $settings.$field = None;
-        } else {
-            $settings.$field = Some($val.clone());
-        }
-    };
-}
-
-macro_rules! set_opt_u64 {
-    ($val:expr, $settings:expr, $field:ident) => {
-        if $val.is_null() {
-            $settings.$field = None;
-        } else if let Some(v) = $val.as_u64() {
-            $settings.$field = Some(v as u32);
-        }
-    };
-}
-
-macro_rules! set_opt_f64 {
-    ($val:expr, $settings:expr, $field:ident) => {
-        if $val.is_null() {
-            $settings.$field = None;
-        } else if let Some(v) = $val.as_f64() {
-            $settings.$field = Some(v);
-        }
-    };
-}
-
-macro_rules! set_arr_str {
-    ($val:expr, $settings:expr, $field:ident) => {
-        if let Some(arr) = $val.as_array() {
-            $settings.$field = arr
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect();
-        }
-    };
-}
-
 #[tauri::command]
 pub fn update_settings(
     app: tauri::AppHandle,
     updates: serde_json::Value,
 ) -> Result<GuiSettings, String> {
-    let mut settings = load_settings();
-    let mut theme_changed = false;
-
-    if let Some(obj) = updates.as_object() {
-        for (key, value) in obj {
-            match key.as_str() {
-                "themeMode" => {
-                    set_str!(value, settings, theme_mode);
-                    theme_changed = true;
-                }
-                "themeStyle" => {
-                    set_str!(value, settings, theme_style);
-                    theme_changed = true;
-                }
-                "onboardingCompleted" => set_bool!(value, settings, onboarding_completed),
-                "agentChannelId" => set_opt_str!(value, settings, agent_channel_id),
-                "agentModelId" => set_opt_str!(value, settings, agent_model_id),
-                "agentBackendMode" => set_opt_str!(value, settings, agent_backend_mode),
-                "agentChannelIds" => set_arr_str!(value, settings, agent_channel_ids),
-                "agentWorkspaceId" => set_opt_str!(value, settings, agent_workspace_id),
-                "notificationsEnabled" => set_bool!(value, settings, notifications_enabled),
-                "notificationSoundEnabled" => {
-                    set_bool!(value, settings, notification_sound_enabled)
-                }
-                "tutorialBannerDismissed" => set_bool!(value, settings, tutorial_banner_dismissed),
-                "archiveAfterDays" => set_u64!(value, settings, archive_after_days),
-                "sendWithCmdEnter" => set_bool!(value, settings, send_with_cmd_enter),
-                "stickyUserMessageEnabled" => {
-                    set_bool!(value, settings, sticky_user_message_enabled)
-                }
-                "agentThinking" => set_opt_val!(value, settings, agent_thinking),
-                "agentEffort" => set_opt_str!(value, settings, agent_effort),
-                "agentMaxBudgetUsd" => set_opt_f64!(value, settings, agent_max_budget_usd),
-                "agentMaxTurns" => set_opt_u64!(value, settings, agent_max_turns),
-                "tabState" => set_opt_val!(value, settings, tab_state),
-                "shortcutOverrides" => set_opt_val!(value, settings, shortcut_overrides),
-                "appIconVariant" => set_opt_str!(value, settings, app_icon_variant),
-                "environmentCheckSkipped" => set_bool!(value, settings, environment_check_skipped),
-                "lastEnvironmentCheck" => set_opt_val!(value, settings, last_environment_check),
-                "notificationSounds" => set_opt_val!(value, settings, notification_sounds),
-                "voiceDictation" => set_opt_val!(value, settings, voice_dictation),
-                _ => {}
-            }
-        }
-    }
-
-    save_settings(&settings)?;
-    if theme_changed {
-        app.emit(
-            "theme-changed",
-            serde_json::json!({
-                "themeMode": settings.theme_mode,
-                "themeStyle": settings.theme_style,
-            }),
-        )
-        .map_err(|e| e.to_string())?;
-    }
-    Ok(settings)
+    settings_general::apply_settings_updates(app, load_settings(), updates)
 }
 
 #[tauri::command]
@@ -367,19 +241,7 @@ pub fn get_user_profile() -> Result<UserProfile, String> {
 
 #[tauri::command]
 pub fn update_user_profile(updates: serde_json::Value) -> Result<UserProfile, String> {
-    let mut profile = load_user_profile();
-
-    if let Some(obj) = updates.as_object() {
-        if let Some(v) = obj.get("userName").and_then(|v| v.as_str()) {
-            profile.user_name = v.to_string();
-        }
-        if let Some(v) = obj.get("avatar").and_then(|v| v.as_str()) {
-            profile.avatar = v.to_string();
-        }
-    }
-
-    save_user_profile(&profile)?;
-    Ok(profile)
+    settings_general::apply_user_profile_updates(load_user_profile(), updates)
 }
 
 // ============================================================
@@ -392,6 +254,14 @@ pub struct AgentWorkspaceInfo {
     pub id: String,
     pub name: String,
     pub slug: String,
+}
+
+fn default_workspace() -> AgentWorkspaceInfo {
+    AgentWorkspaceInfo {
+        id: "default-workspace".to_string(),
+        name: "默认工作区".to_string(),
+        slug: "default".to_string(),
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -408,14 +278,21 @@ fn workspaces_path() -> PathBuf {
 
 pub(crate) fn load_workspaces() -> Vec<AgentWorkspaceInfo> {
     let path = workspaces_path();
-    if path.exists() {
+    let mut workspaces = if path.exists() {
         fs::read_to_string(&path)
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default()
     } else {
         vec![]
+    };
+
+    if workspaces.is_empty() {
+        workspaces.push(default_workspace());
+        let _ = save_workspaces(&workspaces);
     }
+
+    workspaces
 }
 
 pub(crate) fn save_workspaces(workspaces: &[AgentWorkspaceInfo]) -> Result<(), String> {
@@ -465,6 +342,7 @@ pub struct EnvCheckResult {
     pub platform: String,
 }
 
+/// 基础环境检查里单个工具的状态。
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvToolStatus {
@@ -477,12 +355,148 @@ pub struct EnvToolStatus {
     pub error: Option<String>,
 }
 
+/// Node/Git 这类运行时的统一状态结构。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeBinaryStatus {
+    /// 运行时是否可用。
+    pub available: bool,
+    /// 运行时版本号。
+    pub version: Option<String>,
+    /// 可执行文件路径。
+    pub path: Option<String>,
+    /// 错误信息。
+    pub error: Option<String>,
+}
+
+/// Bun 运行时状态。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BunRuntimeStatus {
+    /// 运行时是否可用。
+    pub available: bool,
+    /// Bun 版本号。
+    pub version: Option<String>,
+    /// 可执行文件路径。
+    pub path: Option<String>,
+    /// Bun 来源，当前仅区分 system 或未知。
+    pub source: Option<String>,
+    /// 错误信息。
+    pub error: Option<String>,
+}
+
+/// Windows 下 Git Bash 的探测结果。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBashStatus {
+    /// Git Bash 是否可用。
+    pub available: bool,
+    /// bash.exe 路径。
+    pub path: Option<String>,
+    /// Git Bash 版本号。
+    pub version: Option<String>,
+    /// 错误信息。
+    pub error: Option<String>,
+}
+
+/// Windows 下 WSL 的探测结果。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslStatus {
+    /// WSL 是否可用。
+    pub available: bool,
+    /// 默认发行版的 WSL 主版本，仅支持 1/2。
+    pub version: Option<u8>,
+    /// 默认发行版名称。
+    pub default_distro: Option<String>,
+    /// 已探测到的发行版列表。
+    pub distros: Vec<String>,
+    /// 错误信息。
+    pub error: Option<String>,
+}
+
+/// Windows Shell 环境状态。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellEnvironmentStatus {
+    /// Git Bash 状态。
+    pub git_bash: GitBashStatus,
+    /// WSL 状态。
+    pub wsl: WslStatus,
+    /// 推荐使用的 shell。
+    pub recommended: Option<String>,
+}
+
+/// 完整运行时状态。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeStatus {
+    /// Node.js 状态。
+    pub node: RuntimeBinaryStatus,
+    /// Bun 状态。
+    pub bun: BunRuntimeStatus,
+    /// Git 状态。
+    pub git: RuntimeBinaryStatus,
+    /// Windows shell 状态；非 Windows 为空。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shell: Option<ShellEnvironmentStatus>,
+    /// 是否完成额外 shell 环境加载；Tauri 当前恒为 false。
+    pub env_loaded: bool,
+    /// 本次探测时间戳。
+    pub initialized_at: u64,
+}
+
+/// 单类存储目录的只读统计结果。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageBucketStats {
+    /// 统计目标路径。
+    pub path: String,
+    /// 路径当前是否存在。
+    pub exists: bool,
+    /// 递归统计到的文件数。
+    pub file_count: u64,
+    /// 递归统计到的目录数（不含根目录自身）。
+    pub directory_count: u64,
+    /// 递归累计的字节数。
+    pub total_bytes: u64,
+}
+
+/// 设置页使用的只读存储统计。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageStats {
+    /// Agent session 落盘目录统计。
+    pub agent_sessions: StorageBucketStats,
+    /// GUI 附件目录统计。
+    pub attachments: StorageBucketStats,
+    /// GUI 工作区目录统计。
+    pub workspaces: StorageBucketStats,
+    /// GUI 临时目录统计。
+    pub temp_files: StorageBucketStats,
+    /// 本次统计时间戳。
+    pub checked_at: u64,
+}
+
 #[cfg(test)]
 pub(crate) use settings_environment::{parse_version, version_gte};
 
+/// 执行基础环境检查，用于设置页缓存最低环境结论。
 #[tauri::command]
 pub fn check_environment() -> Result<EnvCheckResult, String> {
     environment_commands::check_environment()
+}
+
+/// 返回运行时详情，包含 Windows 下的 Git Bash / WSL 探测结果。
+#[tauri::command]
+pub fn get_runtime_status() -> Result<RuntimeStatus, String> {
+    environment_commands::get_runtime_status()
+}
+
+/// 返回 GUI 自管目录的只读存储统计。
+#[tauri::command]
+pub fn get_storage_stats() -> Result<StorageStats, String> {
+    storage_commands::get_storage_stats()
 }
 
 #[tauri::command]

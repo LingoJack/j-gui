@@ -3,6 +3,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 
@@ -45,14 +46,53 @@ fn file_extension(filename: &str) -> Option<String> {
         .map(ToString::to_string)
 }
 
-fn validate_workspace_slug(slug: &str) -> Result<(), String> {
+fn infer_media_type(path: &Path) -> String {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        Some("bmp") => "image/bmp",
+        Some("ico") => "image/x-icon",
+        Some("txt") | Some("md") | Some("log") => "text/plain",
+        Some("json") => "application/json",
+        Some("pdf") => "application/pdf",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}
+
+pub(crate) fn ensure_existing_path(file_path: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(file_path);
+    if !path.exists() {
+        return Err(format!("路径不存在: {}", file_path));
+    }
+    path.canonicalize()
+        .map_err(|e| format!("解析路径失败: {}", e))
+}
+
+fn spawn_open_command(program: &str, args: &[String]) -> Result<(), String> {
+    Command::new(program)
+        .args(args)
+        .spawn()
+        .map_err(|e| format!("启动系统打开命令失败: {}", e))?;
+    Ok(())
+}
+
+pub(crate) fn validate_workspace_slug(slug: &str) -> Result<(), String> {
     if slug.is_empty() || slug.contains("..") || slug.contains('/') || slug.contains('\\') {
         return Err(format!("非法工作区标识: {}", slug));
     }
     Ok(())
 }
 
-fn workspace_dir(workspace_slug: &str) -> Result<PathBuf, String> {
+pub(crate) fn workspace_dir(workspace_slug: &str) -> Result<PathBuf, String> {
     validate_workspace_slug(workspace_slug)?;
     let base = dirs_next().unwrap_or_else(|| PathBuf::from("."));
     Ok(base.join("agent-workspaces").join(workspace_slug))
@@ -72,16 +112,23 @@ fn unique_attachment_relative_path(
     Ok(relative.to_string_lossy().replace('\\', "/"))
 }
 
-// ============================================================
-// 类型定义
-// ============================================================
-
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileDialogResult {
     pub canceled: bool,
     pub file_paths: Vec<String>,
     pub path: Option<String>,
+    #[serde(default)]
+    pub files: Vec<SelectedFile>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectedFile {
+    pub filename: String,
+    pub media_type: String,
+    pub data: String,
+    pub size: u64,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -90,7 +137,6 @@ pub struct SaveAttachmentArgs {
     pub conversation_id: String,
     pub filename: String,
     pub media_type: String,
-    /// 经过 base64 编码的文件数据
     pub data: String,
 }
 
@@ -119,26 +165,43 @@ pub struct DirEntry {
     pub size: u64,
 }
 
-// ============================================================
-// 命令
-// ============================================================
-
 #[tauri::command]
 pub fn open_file_dialog(app: tauri::AppHandle) -> Result<FileDialogResult, String> {
     match app.dialog().file().blocking_pick_files() {
-        Some(files) if !files.is_empty() => Ok(FileDialogResult {
-            canceled: false,
-            file_paths: files
-                .iter()
-                .flat_map(|p| p.as_path())
-                .map(|p| p.to_string_lossy().to_string())
-                .collect(),
-            path: None,
-        }),
+        Some(files) if !files.is_empty() => {
+            let mut file_paths = Vec::new();
+            let mut selected_files = Vec::new();
+
+            for file in files.iter().flat_map(|item| item.as_path()) {
+                let bytes = fs::read(file)
+                    .map_err(|e| format!("读取所选文件失败 ({}): {}", file.display(), e))?;
+                file_paths.push(file.to_string_lossy().to_string());
+                selected_files.push(SelectedFile {
+                    filename: file
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("unknown")
+                        .to_string(),
+                    media_type: infer_media_type(file),
+                    data: base64::engine::general_purpose::STANDARD.encode(bytes),
+                    size: fs::metadata(file)
+                        .map_err(|e| format!("读取文件元数据失败 ({}): {}", file.display(), e))?
+                        .len(),
+                });
+            }
+
+            Ok(FileDialogResult {
+                canceled: false,
+                file_paths,
+                path: None,
+                files: selected_files,
+            })
+        }
         _ => Ok(FileDialogResult {
             canceled: true,
             file_paths: vec![],
             path: None,
+            files: vec![],
         }),
     }
 }
@@ -155,12 +218,14 @@ pub fn open_folder_dialog(app: tauri::AppHandle) -> Result<FileDialogResult, Str
                 canceled: false,
                 file_paths: vec![path.clone()],
                 path: Some(path),
+                files: vec![],
             })
         }
         None => Ok(FileDialogResult {
             canceled: true,
             file_paths: vec![],
             path: None,
+            files: vec![],
         }),
     }
 }
@@ -235,6 +300,25 @@ pub fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn move_file(src: String, dest: String) -> Result<(), String> {
+    let source = ensure_existing_path(&src)?;
+    let destination_root = ensure_existing_path(&dest)?;
+    if !destination_root.is_dir() {
+        return Err(format!("目标目录不存在: {}", dest));
+    }
+
+    let destination = destination_root.join(
+        source
+            .file_name()
+            .ok_or_else(|| format!("无法解析源文件名: {}", src))?,
+    );
+    if destination.exists() {
+        return Err(format!("目标文件已存在: {}", destination.display()));
+    }
+    fs::rename(&source, &destination).map_err(|e| format!("移动文件失败: {}", e))
+}
+
+#[tauri::command]
 pub fn list_directory(dir_path: String) -> Result<Vec<DirEntry>, String> {
     let entries = fs::read_dir(&dir_path).map_err(|e| format!("读取目录失败: {}", e))?;
 
@@ -250,6 +334,54 @@ pub fn list_directory(dir_path: String) -> Result<Vec<DirEntry>, String> {
         });
     }
     Ok(result)
+}
+
+#[tauri::command]
+pub fn open_file(file_path: String) -> Result<(), String> {
+    let path = ensure_existing_path(&file_path)?;
+    let path_arg = path.to_string_lossy().to_string();
+
+    #[cfg(target_os = "windows")]
+    {
+        spawn_open_command("explorer", &[path_arg])
+    }
+    #[cfg(target_os = "macos")]
+    {
+        spawn_open_command("open", &[path_arg])
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        spawn_open_command("xdg-open", &[path_arg])
+    }
+}
+
+#[tauri::command]
+pub fn show_in_folder(file_path: String) -> Result<(), String> {
+    let path = ensure_existing_path(&file_path)?;
+
+    #[cfg(target_os = "windows")]
+    {
+        if path.is_dir() {
+            return spawn_open_command("explorer", &[path.to_string_lossy().to_string()]);
+        }
+        spawn_open_command("explorer", &[format!("/select,{}", path.to_string_lossy())])
+    }
+    #[cfg(target_os = "macos")]
+    {
+        spawn_open_command(
+            "open",
+            &["-R".to_string(), path.to_string_lossy().to_string()],
+        )
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        let target = if path.is_dir() {
+            path
+        } else {
+            path.parent().map(Path::to_path_buf).unwrap_or(path)
+        };
+        spawn_open_command("xdg-open", &[target.to_string_lossy().to_string()])
+    }
 }
 
 #[tauri::command]
@@ -397,169 +529,6 @@ pub fn get_workspace_directories(workspace_slug: String) -> Result<Vec<String>, 
     load_attached_directories(&workspace_base)
 }
 
-// ============================================================
-// 测试
-// ============================================================
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use base64::Engine;
-
-    #[test]
-    fn test_save_and_read_attachment_roundtrip() {
-        let dir = std::env::temp_dir().join("j-gui-test-attachments");
-        let _ = fs::remove_dir_all(&dir);
-
-        let test_data = b"hello world";
-        let b64 = base64::engine::general_purpose::STANDARD.encode(test_data);
-
-        // 按命令逻辑写入文件
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(&b64)
-            .unwrap();
-        fs::create_dir_all(&dir).unwrap();
-        let file_path = dir.join("test.txt");
-        fs::write(&file_path, &bytes).unwrap();
-
-        // 按命令逻辑读取文件
-        let read_data = fs::read(&file_path).unwrap();
-        let read_b64 = base64::engine::general_purpose::STANDARD.encode(&read_data);
-
-        assert_eq!(b64, read_b64);
-        assert_eq!(read_data, test_data);
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn test_list_directory() {
-        let dir = std::env::temp_dir().join("j-gui-test-list");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("a.txt"), b"123").unwrap();
-        fs::create_dir_all(dir.join("subdir")).unwrap();
-
-        let entries = list_directory(dir.to_string_lossy().to_string()).unwrap();
-        assert_eq!(entries.len(), 2);
-
-        let a_txt = entries
-            .iter()
-            .find(|e| e.name == "a.txt")
-            .expect("should have a.txt");
-        assert!(!a_txt.is_directory);
-        assert_eq!(a_txt.size, 3);
-
-        let subdir = entries
-            .iter()
-            .find(|e| e.name == "subdir")
-            .expect("should have subdir");
-        assert!(subdir.is_directory);
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn test_list_directory_empty() {
-        let dir = std::env::temp_dir().join("j-gui-test-empty");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-
-        let entries = list_directory(dir.to_string_lossy().to_string()).unwrap();
-        assert!(entries.is_empty());
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn test_list_directory_nonexistent() {
-        let result = list_directory("/nonexistent/path/that/does/not/exist".to_string());
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_delete_file_removes_file() {
-        let dir = std::env::temp_dir().join("j-gui-test-delete-file");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let file_path = dir.join("delete_me.txt");
-        fs::write(&file_path, b"content").unwrap();
-
-        delete_file(file_path.to_string_lossy().to_string()).unwrap();
-        assert!(!file_path.exists());
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn test_delete_file_nonexistent() {
-        let result = delete_file("/nonexistent/path/to/delete/file.txt".to_string());
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_delete_file_removes_directory() {
-        let dir = std::env::temp_dir().join("j-gui-test-delete-dir");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("nested.txt"), b"data").unwrap();
-
-        delete_file(dir.to_string_lossy().to_string()).unwrap();
-        assert!(!dir.exists());
-    }
-
-    #[test]
-    fn test_rename_file_renames() {
-        let dir = std::env::temp_dir().join("j-gui-test-rename");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let old = dir.join("old_name.txt");
-        let new = dir.join("new_name.txt");
-        fs::write(&old, b"content").unwrap();
-
-        rename_file(
-            old.to_string_lossy().to_string(),
-            new.to_string_lossy().to_string(),
-        )
-        .unwrap();
-        assert!(!old.exists());
-        assert!(new.exists());
-        assert_eq!(fs::read_to_string(&new).unwrap(), "content");
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn test_rename_file_nonexistent_old() {
-        let result = rename_file(
-            "/nonexistent/old.txt".to_string(),
-            "/nonexistent/new.txt".to_string(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_rename_file_conflict_new_exists() {
-        let dir = std::env::temp_dir().join("j-gui-test-rename-conflict");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let old = dir.join("a.txt");
-        let existing = dir.join("b.txt");
-        fs::write(&old, b"a").unwrap();
-        fs::write(&existing, b"b").unwrap();
-
-        let result = rename_file(
-            old.to_string_lossy().to_string(),
-            existing.to_string_lossy().to_string(),
-        );
-        assert!(result.is_err());
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn test_base64_decode_invalid() {
-        let result = base64::engine::general_purpose::STANDARD.decode("!!!not-valid-base64!!!");
-        assert!(result.is_err());
-    }
-}
+#[path = "../tests/commands_files.rs"]
+mod files_tests;

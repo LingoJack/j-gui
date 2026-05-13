@@ -10,16 +10,53 @@ import { invoke, Channel } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type { AppSettings, UserProfile, ThemeMode, ThemeStyle } from '@/types'
 import { decodeAgentStreamEvent, decodeChatStreamEvent } from '@/lib/ipc-stream-protocol'
+import { normalizeAgentSessionTitle, normalizeConversationTitle } from '@/lib/session-meta'
+import { mergeWorkspaceCapabilities } from '@/lib/workspace-capabilities'
 import { CHAT_IPC_CHANNELS } from '@jgui/shared'
-import type { ChatRequestInput } from '@jgui/shared'
 import type {
+  AgentSessionMeta,
   AgentSendInput,
   AgentStreamCompletePayload,
+  AgentWorkspace,
+  AttachmentSaveInput,
+  AttachmentSaveResult,
+  Channel as ChatChannel,
+  ChannelCreateInput,
+  ChannelTestResult,
+  ChannelUpdateInput,
+  ChatMessage,
+  RewindSessionInput,
+  RewindSessionResult,
+  ChatReferenceContext,
+  ChatSendInput,
+  ChatRequestInput,
+  ConversationMeta,
+  ExitPlanModeAction,
+  FetchModelsInput,
+  FetchModelsResult,
+  FileDialogResult,
+  FileEntry,
+  FileIndexEntry,
   MessageSearchResult,
   AgentMessageSearchResult,
+  GenerateTitleInput,
+  GetTaskOutputInput,
+  GetTaskOutputResult,
+  MemoryConfig,
+  OtherWorkspaceSkillsGroup,
   SDKMessage,
+  SkillMeta,
+  StopTaskInput,
+  SystemPrompt,
+  SystemPromptConfig,
+  SystemPromptCreateInput,
+  SystemPromptUpdateInput,
   ChatToolInfo,
   AgentBackendMode,
+  WorkspaceMcpConfig,
+  WorkspaceCapabilities,
+  RuntimeStatus,
+  StorageStats,
 } from '@jgui/shared'
 
 // ============================================================
@@ -27,6 +64,41 @@ import type {
 // ============================================================
 
 const warned = new Set<string>()
+type EventHandler = (...args: unknown[]) => void
+type IpcRecord = Record<string, unknown>
+type NullableRecord = IpcRecord | null | undefined
+type LegacyChatSendInput = ChatSendInput & Partial<ChatRequestInput> & {
+  message?: string
+  sessionId?: string
+}
+type ChannelCreateDraftInput = Omit<ChannelCreateInput, 'baseUrl'> & {
+  baseUrl?: string
+  apiBase?: string
+}
+type DirectChannelTestInput = {
+  provider: FetchModelsInput['provider']
+  protocolHint?: FetchModelsInput['protocolHint']
+  baseUrl?: string
+  apiBase?: string
+  apiKey: string
+}
+type AgentInterruptResponse = {
+  sessionId: string
+  requestId: string
+}
+type AskUserResponse = AgentInterruptResponse & {
+  answers?: Record<string, string> | Array<{ questionId: string; selectedOptions: string[] }>
+}
+type ExitPlanModeResponse = AgentInterruptResponse & {
+  action?: ExitPlanModeAction
+  feedback?: string
+}
+type OpenFolderDialogResult = { canceled: boolean; filePaths: string[]; path?: string }
+
+function asRecord(value: unknown): NullableRecord {
+  return value && typeof value === 'object' ? value as IpcRecord : null
+}
+
 function warnOnce(name: string, userVisible?: boolean): void {
   if (!warned.has(name)) {
     warned.add(name)
@@ -78,7 +150,7 @@ function extractInvokeErrorMessage(error: unknown): string {
 
 async function tryInvoke<T>(cmd: string, args?: unknown, fallback?: T, opts?: { userVisible?: boolean }): Promise<T> {
   try {
-    return await invoke<T>(cmd, args as any)
+    return await invoke<T>(cmd, args as Record<string, unknown> | undefined)
   } catch (err) {
     if (fallback !== undefined) {
       warnOnce(cmd, opts?.userVisible)
@@ -99,6 +171,8 @@ function unsupportedSubscription(name: string): never {
 }
 
 function emitCapabilitiesChanged(): void {
+  resolvedWorkspaceCapabilitiesCache.clear()
+  resolvedWorkspaceCapabilitiesInFlight.clear()
   emit('workspace:capabilities-changed')
 }
 
@@ -133,9 +207,9 @@ function listenToTauriEvent<T>(eventName: string, mapPayload?: (payload: unknown
 }
 
 // 内部事件总线（例如后端推送的流式事件）
-type Handler = (...args: any[]) => void
+type Handler = EventHandler
 const bus = new Map<string, Set<Handler>>()
-function emit(name: string, ...args: any[]): void { bus.get(name)?.forEach(h => h(...args)) }
+function emit(name: string, ...args: unknown[]): void { bus.get(name)?.forEach(h => h(...args)) }
 function onEvt(name: string, cb: Handler): () => void {
   if (!bus.has(name)) bus.set(name, new Set())
   bus.get(name)!.add(cb)
@@ -146,7 +220,7 @@ function onEvt(name: string, cb: Handler): () => void {
 // 运行时
 // ============================================================
 
-export const getRuntimeStatus = () => tryInvoke('get_runtime_status', undefined, null)
+export const getRuntimeStatus = () => tryInvoke<RuntimeStatus | null>('get_runtime_status', undefined, null)
 export const reinitRuntime = () => tryInvoke('reinit_runtime', undefined, null)
 
 export interface KernelInfo {
@@ -182,7 +256,92 @@ export const checkAppUpdate = () => invoke<AppUpdateInfo>('check_app_update')
 
 let settingsCache: AppSettings | null = null
 let settingsInFlight: Promise<AppSettings> | null = null
-let agentSessionsInFlight: Promise<any[]> | null = null
+let agentSessionsInFlight: Promise<AgentSessionMeta[]> | null = null
+const resolvedWorkspaceCapabilitiesCache = new Map<string, WorkspaceCapabilities>()
+const resolvedWorkspaceCapabilitiesInFlight = new Map<string, Promise<WorkspaceCapabilities>>()
+
+function normalizeConversationMeta(metaInput: unknown): ConversationMeta {
+  const meta = asRecord(metaInput)
+  return {
+    ...meta,
+    createdAt:
+      typeof meta?.createdAt === 'number'
+        ? meta.createdAt
+        : typeof meta?.updatedAt === 'number'
+          ? meta.updatedAt
+          : Date.now(),
+    updatedAt:
+      typeof meta?.updatedAt === 'number'
+        ? meta.updatedAt
+        : typeof meta?.createdAt === 'number'
+          ? meta.createdAt
+          : Date.now(),
+    id: typeof meta?.id === 'string' ? meta.id : '',
+    title: normalizeConversationTitle(typeof meta?.title === 'string' ? meta.title : undefined),
+    modelId: typeof meta?.modelId === 'string' ? meta.modelId : undefined,
+    channelId: typeof meta?.channelId === 'string' ? meta.channelId : undefined,
+    contextDividers: Array.isArray(meta?.contextDividers) ? meta.contextDividers.filter((item): item is string => typeof item === 'string') : [],
+    contextLength:
+      typeof meta?.contextLength === 'number' || meta?.contextLength === 'infinite'
+        ? meta.contextLength
+        : undefined,
+    pinned: typeof meta?.pinned === 'boolean' ? meta.pinned : undefined,
+    archived: typeof meta?.archived === 'boolean' ? meta.archived : undefined,
+  }
+}
+
+function normalizeAgentSessionMeta(metaInput: unknown): AgentSessionMeta {
+  const meta = asRecord(metaInput)
+  return {
+    ...meta,
+    id: typeof meta?.id === 'string' ? meta.id : '',
+    title: normalizeAgentSessionTitle(typeof meta?.title === 'string' ? meta.title : undefined),
+    channelId: typeof meta?.channelId === 'string' ? meta.channelId : undefined,
+    sdkSessionId: typeof meta?.sdkSessionId === 'string' ? meta.sdkSessionId : undefined,
+    workspaceId: typeof meta?.workspaceId === 'string' ? meta.workspaceId : undefined,
+    pinned: typeof meta?.pinned === 'boolean' ? meta.pinned : undefined,
+    archived: typeof meta?.archived === 'boolean' ? meta.archived : undefined,
+    attachedDirectories: Array.isArray(meta?.attachedDirectories)
+      ? meta.attachedDirectories.filter((item): item is string => typeof item === 'string')
+      : undefined,
+    forkSourceDir: typeof meta?.forkSourceDir === 'string' ? meta.forkSourceDir : undefined,
+    forkSourceSdkSessionId:
+      typeof meta?.forkSourceSdkSessionId === 'string' ? meta.forkSourceSdkSessionId : undefined,
+    resumeAtMessageUuid: typeof meta?.resumeAtMessageUuid === 'string' ? meta.resumeAtMessageUuid : undefined,
+    manualWorking: typeof meta?.manualWorking === 'boolean' ? meta.manualWorking : undefined,
+    stoppedByUser: typeof meta?.stoppedByUser === 'boolean' ? meta.stoppedByUser : undefined,
+    permissionMode: typeof meta?.permissionMode === 'string' ? meta.permissionMode as AgentSessionMeta['permissionMode'] : undefined,
+    backendMode: typeof meta?.backendMode === 'string' ? meta.backendMode as AgentBackendMode : undefined,
+    createdAt: typeof meta?.createdAt === 'number' ? meta.createdAt : Date.now(),
+    updatedAt: typeof meta?.updatedAt === 'number' ? meta.updatedAt : Date.now(),
+  }
+}
+
+function normalizeChatMessage(messageInput: unknown, index: number): ChatMessage {
+  const message = asRecord(messageInput)
+  return {
+    ...message,
+    id:
+      typeof message?.id === 'string' && message.id.length > 0
+        ? message.id
+        : buildChatRenderMessageId(message, index),
+    role:
+      message?.role === 'user' || message?.role === 'assistant' || message?.role === 'system'
+        ? message.role
+        : 'assistant',
+    content: typeof message?.content === 'string' ? message.content : '',
+    createdAt:
+      typeof message?.createdAt === 'number'
+        ? message.createdAt
+        : typeof message?.timestamp === 'number'
+          ? message.timestamp
+          : 0,
+  }
+}
+
+function normalizeChatMessages(messages: unknown[]): ChatMessage[] {
+  return messages.map((message, index) => normalizeChatMessage(message, index))
+}
 
 export async function getSettings(): Promise<AppSettings> {
   if (settingsCache) return settingsCache
@@ -199,6 +358,7 @@ export async function getSettings(): Promise<AppSettings> {
         agentChannelIds: [],
         agentBackendMode: 'claude-sdk' as AgentBackendMode,
         agentWorkspaceId: null,
+        chatWorkspaceId: null,
         notificationsEnabled: true,
         notificationSoundEnabled: false,
         tutorialBannerDismissed: false,
@@ -234,6 +394,7 @@ export function updateSettingsSync(updates: Partial<AppSettings>): boolean {
 }
 
 export const getSystemTheme = () => Promise.resolve(window.matchMedia('(prefers-color-scheme: dark)').matches)
+export const getStorageStats = () => tryInvoke<StorageStats>('get_storage_stats')
 
 export function onSystemThemeChanged(callback: (isDark: boolean) => void): () => void {
   const mq = window.matchMedia('(prefers-color-scheme: dark)')
@@ -278,50 +439,65 @@ export const onThemeSettingsChanged = listenToTauriEvent<{ themeMode: ThemeMode;
 // ============================================================
 
 /** 列出所有已配置渠道（包含启用状态和模型列表） */
-export async function listChannels(): Promise<any[]> { try { return await invoke<any[]>('list_channels') } catch { warnOnce('list_channels'); return [] } }
+export async function listChannels(): Promise<ChatChannel[]> { try { return await invoke<ChatChannel[]>('list_channels') } catch { warnOnce('list_channels'); return [] } }
 /** 创建新渠道，并返回创建后的渠道元数据 */
-export async function createChannel(input: any): Promise<{id: string, name: string}> { return invoke<any>('create_channel', { input }) }
-export async function updateChannel(id: string, input: any) { return invoke<any>('update_channel', { id, input }) }
+export async function createChannel(input: ChannelCreateDraftInput): Promise<ChatChannel> { return invoke<ChatChannel>('create_channel', { input }) }
+export async function updateChannel(id: string, input: ChannelUpdateInput & { model?: string }) { return invoke<ChatChannel>('update_channel', { id, input }) }
 export async function deleteChannel(id: string) { return invoke('delete_channel', { id }) }
 export const decryptApiKey = (channelId: string) =>
   tryInvoke<string>('decrypt_api_key', { channelId }, '')
-export async function testChannelDirect(input: any) { try { return await invoke<any>('test_channel_direct', { input }) } catch { return { success: false, message: '连接失败' } } }
-export async function testSavedChannel(id: string, input?: any) { try { return await invoke<any>('test_saved_channel', { id, input }) } catch { return { success: false, message: '连接失败' } } }
-export async function fetchModels(input: any) { try { return await invoke<any>('fetch_models', { apiBase: input.apiBase || input.baseUrl, apiKey: input.apiKey }) } catch { return { success: false, message: '获取模型列表失败', models: [] } } }
+export async function testChannelDirect(input: DirectChannelTestInput): Promise<ChannelTestResult> { try { return await invoke<ChannelTestResult>('test_channel_direct', { input }) } catch { return { success: false, message: '连接失败' } } }
+export async function testSavedChannel(id: string, input?: (Partial<ChannelUpdateInput> & { model?: string })): Promise<ChannelTestResult> { try { return await invoke<ChannelTestResult>('test_saved_channel', { id, input }) } catch { return { success: false, message: '连接失败' } } }
+export async function fetchModels(input: FetchModelsInput & { apiBase?: string }): Promise<FetchModelsResult> { try { return await invoke<FetchModelsResult>('fetch_models', { apiBase: input.apiBase || input.baseUrl, apiKey: input.apiKey }) } catch { return { success: false, message: '获取模型列表失败', models: [] } } }
 
 // ============================================================
 // 对话 - 映射到 Rust chat 命令（j-cli 后端）
 // ============================================================
 
-export async function listConversations(): Promise<any[]> {
-  try { return await invoke<any[]>('list_sessions') }
+export async function listConversations(): Promise<ConversationMeta[]> {
+  try { return (await invoke<ConversationMeta[]>('list_sessions')).map(normalizeConversationMeta) }
   catch { warnOnce('list_sessions'); return [] }
 }
 
-export async function createConversation(title?: string, _modelId?: string, _channelId?: string): Promise<any> {
+export async function createConversation(title?: string, _modelId?: string, _channelId?: string): Promise<ConversationMeta> {
   try {
     const id = await invoke<string>('create_session')
-    return { id, title: title || '新对话', messageCount: 0, updatedAt: Date.now() }
+    const baseMeta = normalizeConversationMeta({ id, title: title || '新对话', messageCount: 0, updatedAt: Date.now() })
+    if (_modelId && _channelId) {
+      try {
+        return await updateConversationModel(id, _modelId, _channelId)
+      } catch {
+        return {
+          ...baseMeta,
+          modelId: _modelId,
+          channelId: _channelId,
+        }
+      }
+    }
+    return baseMeta
   } catch { warnOnce('create_session'); throw new Error('Failed to create conversation') }
 }
 
-export async function getConversationMessages(id: string): Promise<any[]> {
-  try { return await invoke<any[]>('get_session_messages', { sessionId: id }) }
+export async function getConversationMessages(id: string): Promise<ChatMessage[]> {
+  try { return normalizeChatMessages(await invoke<ChatMessage[]>('get_session_messages', { sessionId: id })) }
   catch { warnOnce('get_session_messages'); return [] }
 }
-export async function getRecentMessages(id: string, limit: number): Promise<{ messages: any[]; hasMore: boolean }> {
+export async function getRecentMessages(id: string, limit: number): Promise<{ messages: ChatMessage[]; hasMore: boolean }> {
   try {
-    const raw = await invoke<any[]>('get_session_messages', { sessionId: id })
-    const msgs = Array.isArray(raw) ? raw : []
+    const raw = await invoke<ChatMessage[]>('get_session_messages', { sessionId: id })
+    const msgs = normalizeChatMessages(Array.isArray(raw) ? raw : [])
     return { messages: msgs.slice(-limit), hasMore: msgs.length > limit }
   } catch { warnOnce('get_session_messages'); return { messages: [], hasMore: false } }
 }
-export const updateConversationTitle = (id: string, title: string) => tryInvoke<any>('update_conversation_title', { id, title })
+export const updateConversationTitle = (id: string, title: string) =>
+  tryInvoke<ConversationMeta>('update_conversation_title', { id, title }).then(normalizeConversationMeta)
 export const updateConversationModel = (id: string, modelId: string, channelId: string) =>
-  tryInvoke<any>('update_conversation_model', { id, modelId, channelId })
+  tryInvoke<ConversationMeta>('update_conversation_model', { id, modelId, channelId }).then(normalizeConversationMeta)
 export const deleteConversation = (id: string) => tryInvoke('delete_session', { sessionId: id })
-export const togglePinConversation = (id: string) => tryInvoke<any>('toggle_pin_conversation', { sessionId: id })
-export const toggleArchiveConversation = (id: string) => tryInvoke<any>('toggle_archive_conversation', { sessionId: id })
+export const togglePinConversation = (id: string) =>
+  tryInvoke<ConversationMeta>('toggle_pin_conversation', { sessionId: id }).then(normalizeConversationMeta)
+export const toggleArchiveConversation = (id: string) =>
+  tryInvoke<ConversationMeta>('toggle_archive_conversation', { sessionId: id }).then(normalizeConversationMeta)
 type TimelineItem = {
   id: string
   kind: string
@@ -346,13 +522,14 @@ function safeParseJsonObject(input: string): Record<string, unknown> {
   }
 }
 
-function buildChatRenderMessageId(message: any, index: number): string {
+function buildChatRenderMessageId(messageInput: unknown, index: number): string {
+  const message = asRecord(messageInput)
   return typeof message?.id === 'string' && message.id.length > 0
     ? message.id
     : `chat-index-${index}`
 }
 
-function timelineToSdkMessages(timeline: TimelineItem[], sessionId: string): SDKMessage[] {
+function _timelineToSdkMessages(timeline: TimelineItem[], sessionId: string): SDKMessage[] {
   const messages: SDKMessage[] = []
 
   for (const item of timeline) {
@@ -427,15 +604,17 @@ function timelineToSdkMessages(timeline: TimelineItem[], sessionId: string): SDK
 export async function searchConversationMessages(query: string): Promise<MessageSearchResult[]> {
   return await invoke<MessageSearchResult[]>('search_conversation_messages', { query })
 }
-export const generateTitle = (input: any) => tryInvoke<string>('generate_title', { input }, null)
-export const createWelcomeConversation = () => tryInvoke<any>('create_welcome_conversation', undefined, null)
+export const buildChatReferenceContext = (conversationId: string) =>
+  tryInvoke<ChatReferenceContext>('build_chat_reference_context', { conversationId })
+export const generateTitle = (input: GenerateTitleInput) => tryInvoke<string | null>('generate_title', { input }, null)
+export const createWelcomeConversation = () => tryInvoke<ConversationMeta | null>('create_welcome_conversation', undefined, null)
 // 已移除：j-gui v1 不支持 tutorial
 
 // ============================================================
 // Chat 消息 - 通过 j-cli 使用 Tauri Channel 流式传输
 // ============================================================
 
-export async function sendMessage(input: any): Promise<void> {
+export async function sendMessage(input: LegacyChatSendInput): Promise<void> {
   let sawStreamError = false
   const request: ChatRequestInput = {
     sessionId: input.sessionId || input.conversationId || '',
@@ -456,8 +635,8 @@ export async function sendMessage(input: any): Promise<void> {
       ? input.protocolHint
       : undefined,
   }
-  const channel = new Channel<any>()
-  channel.onmessage = (event: any) => {
+  const channel = new Channel<unknown>()
+  channel.onmessage = (event: unknown) => {
     const decoded = decodeChatStreamEvent(event, input.conversationId || input.sessionId)
     if (decoded?.kind === 'chunk') {
       emit(CHAT_IPC_CHANNELS.STREAM_CHUNK, {
@@ -483,7 +662,7 @@ export async function sendMessage(input: any): Promise<void> {
       request,
       onEvent: channel,
     })
-  } catch (e: any) {
+  } catch (e: unknown) {
     if (!sawStreamError) {
       emit(CHAT_IPC_CHANNELS.STREAM_ERROR, {
         conversationId: input.conversationId || input.sessionId,
@@ -496,10 +675,18 @@ export async function sendMessage(input: any): Promise<void> {
 export async function stopGeneration(sessionId: string) { try { await invoke('stop_generation', { sessionId }) } catch { warnOnce('stop_generation') } }
 export const deleteMessage = (conversationId: string, pairIndex: number) =>
   tryInvoke<void>('delete_message', { sessionId: conversationId, pairIndex })
-export const truncateMessagesFrom = (conversationId: string, messageId: string, preserveFirstMessageAttachments?: boolean) =>
-  tryInvoke<any[]>('truncate_messages_from', { input: { conversationId, messageId, preserveFirstMessageAttachments } })
+export const truncateMessagesFrom = async (
+  conversationId: string,
+  messageId: string,
+  preserveFirstMessageAttachments?: boolean,
+) =>
+  normalizeChatMessages(
+    await tryInvoke<ChatMessage[]>('truncate_messages_from', {
+      input: { conversationId, messageId, preserveFirstMessageAttachments },
+    }),
+  )
 export const updateContextDividers = (conversationId: string, dividers: string[]) =>
-  tryInvoke<any>('update_context_dividers', { conversationId, dividers })
+  tryInvoke<ConversationMeta>('update_context_dividers', { conversationId, dividers }).then(normalizeConversationMeta)
 
 // ============================================================
 // 流式事件（Chat）
@@ -515,44 +702,49 @@ export const onStreamToolActivity = (cb: Handler) => onEvt(CHAT_IPC_CHANNELS.STR
 // Agent 会话
 // ============================================================
 
-export async function listAgentSessions(): Promise<any[]> {
+export async function listAgentSessions(): Promise<AgentSessionMeta[]> {
   if (agentSessionsInFlight) return agentSessionsInFlight
-  agentSessionsInFlight = tryInvoke<any[]>('list_agent_sessions', undefined, [])
+  agentSessionsInFlight = tryInvoke<AgentSessionMeta[]>('list_agent_sessions', undefined, [])
+    .then((sessions) => sessions.map(normalizeAgentSessionMeta))
     .finally(() => {
       agentSessionsInFlight = null
     })
   return agentSessionsInFlight
 }
-export async function createAgentSession(title?: string, channelId?: string, workspaceId?: string): Promise<any> {
-  return tryInvoke<any>('create_agent_session', {
+export async function createAgentSession(title?: string, channelId?: string, workspaceId?: string): Promise<AgentSessionMeta> {
+  return tryInvoke<AgentSessionMeta>('create_agent_session', {
     input: {
       title,
       channelId,
       workspaceId,
     },
-  })
+  }).then(normalizeAgentSessionMeta)
 }
 export async function getAgentSessionSDKMessages(id: string): Promise<SDKMessage[]> {
   return invoke<SDKMessage[]>('get_agent_session_sdk_messages', { id })
 }
-export async function updateAgentSessionTitle(id: string, title: string) { return invoke<any>('update_agent_session_title', { sessionId: id, title }) }
-export const deleteAgentSession = (id: string) => tryInvoke('delete_agent_session', { id })
+export async function updateAgentSessionTitle(id: string, title: string) {
+  const updated = await invoke<AgentSessionMeta>('update_agent_session_title', { sessionId: id, title })
+  return { ...updated, id, title: normalizeAgentSessionTitle(updated?.title ?? title) }
+}
+export const deleteAgentSession = (id: string) => tryInvoke('delete_agent_session', { sessionId: id })
 export const migrateChatToAgent = (conversationId: string, agentSessionId: string) =>
   tryInvoke('migrate_chat_to_agent', { conversationId, agentSessionId })
-export const togglePinAgentSession = (id: string) => tryInvoke<any>('toggle_pin_agent_session', { sessionId: id })
+export const togglePinAgentSession = (id: string) => tryInvoke<AgentSessionMeta>('toggle_pin_agent_session', { sessionId: id }).then(normalizeAgentSessionMeta)
 export const toggleManualWorkingAgentSession = (id: string) =>
-  tryInvoke<any>('toggle_manual_working_agent_session', { sessionId: id })
-export const toggleArchiveAgentSession = (id: string) => tryInvoke<any>('toggle_archive_agent_session', { sessionId: id })
+  tryInvoke<AgentSessionMeta>('toggle_manual_working_agent_session', { sessionId: id }).then(normalizeAgentSessionMeta)
+export const toggleArchiveAgentSession = (id: string) => tryInvoke<AgentSessionMeta>('toggle_archive_agent_session', { sessionId: id }).then(normalizeAgentSessionMeta)
 export async function searchAgentSessionMessages(query: string): Promise<AgentMessageSearchResult[]> {
   return await invoke<AgentMessageSearchResult[]>('search_agent_session_messages', { query })
 }
-export const moveAgentSessionToWorkspace = (input: any) =>
-  tryInvoke<any>('move_agent_session_to_workspace', { input })
-export const forkAgentSession = (input: any) => tryInvoke<any>('fork_agent_session', { input })
-export const rewindSession = (input: any) => tryInvoke<any>('rewind_session', { input })
+export const moveAgentSessionToWorkspace = (input: IpcRecord) =>
+  tryInvoke<AgentSessionMeta>('move_agent_session_to_workspace', { input }).then(normalizeAgentSessionMeta)
+export const forkAgentSession = (input: IpcRecord) => tryInvoke<AgentSessionMeta>('fork_agent_session', { input }).then(normalizeAgentSessionMeta)
+export const rewindSession = (input: RewindSessionInput) =>
+  tryInvoke<RewindSessionResult>('rewind_session', { input })
 export async function generateAgentTitle(sessionId: string) { try { return await invoke<string>('generate_agent_title', { sessionId }) } catch { return null } }
 // Agent 活跃通道 - 每个会话一个
-type AgentRuntimeChannel = Channel<any> & {
+type AgentRuntimeChannel = Channel<unknown> & {
   __agentRunState?: AgentRunState
 }
 
@@ -579,7 +771,7 @@ function buildAgentStartRequest(input: AgentSendInput): {
     modelId: input.modelId,
     permissionModeOverride: input.permissionModeOverride,
     useJagent,
-    userMessage: useJagent ? input.userMessage : undefined,
+    userMessage: input.userMessage,
   }
 }
 
@@ -607,11 +799,11 @@ export async function sendAgentMessage(input: AgentSendInput): Promise<void> {
 
   // 如果当前会话没有活跃通道，则先启动 agent
   if (!agentChannels.has(sessionId)) {
-    const channel = new Channel<any>() as AgentRuntimeChannel
+    const channel = new Channel<unknown>() as AgentRuntimeChannel
     channel.__agentRunState = runState
     agentChannels.set(sessionId, channel)
 
-    channel.onmessage = (event: any) => {
+    channel.onmessage = (event: unknown) => {
       const decoded = decodeAgentStreamEvent(event, sessionId)
       if (decoded?.kind === 'payload') {
         emit('agent:stream-event', { sessionId, payload: decoded.payload })
@@ -647,12 +839,12 @@ export async function sendAgentMessage(input: AgentSendInput): Promise<void> {
         onEvent: channel,
       })
       startedRuntime = true
-    } catch (e: any) {
+    } catch (e: unknown) {
       const currentChannel = agentChannels.get(sessionId)
       if (currentChannel === channel) {
         agentChannels.delete(sessionId)
       }
-      emit('agent:stream-error', { sessionId, error: e?.message || String(e) })
+      emit('agent:stream-error', { sessionId, error: extractInvokeErrorMessage(e) })
       return
     }
   }
@@ -663,7 +855,7 @@ export async function sendAgentMessage(input: AgentSendInput): Promise<void> {
     return
   }
 
-  if (backendMode === 'jagent' && startedRuntime) {
+  if (startedRuntime) {
     return
   }
 
@@ -675,8 +867,8 @@ export async function sendAgentMessage(input: AgentSendInput): Promise<void> {
         userMessage: content,
       }),
     })
-  } catch (e: any) {
-    emit('agent:stream-error', { sessionId, error: e?.message || String(e) })
+  } catch (e: unknown) {
+    emit('agent:stream-error', { sessionId, error: extractInvokeErrorMessage(e) })
   }
 }
 
@@ -702,7 +894,9 @@ export const onAgentTitleUpdated = (cb: Handler) => onEvt('agent:title-updated',
 // Agent 权限
 // ============================================================
 
-export async function respondPermission(response: any) {
+export async function respondPermission(
+  response: AgentInterruptResponse & { behavior?: string; alwaysAllow?: boolean },
+) {
   return invoke('respond_agent_interrupt', {
     input: {
       sessionId: response.sessionId,
@@ -715,7 +909,7 @@ export async function respondPermission(response: any) {
     },
   })
 }
-export async function respondAskUser(response: any) {
+export async function respondAskUser(response: AskUserResponse) {
   const answers = Array.isArray(response.answers)
     ? response.answers
     : Object.entries(response.answers ?? {})
@@ -735,7 +929,7 @@ export async function respondAskUser(response: any) {
     },
   })
 }
-export const respondExitPlanMode = (response: any) => {
+export const respondExitPlanMode = (response: ExitPlanModeResponse) => {
   const decision = response.action === 'approve_auto'
     ? 'approve_and_run'
     : response.action === 'approve_edit'
@@ -764,13 +958,13 @@ export const onExitPlanModeRequest = (cb: Handler) => onEvt('agent:exit-plan-mod
 // Agent 工作区
 // ============================================================
 
-export const listAgentWorkspaces = () => tryInvoke<any[]>('list_agent_workspaces', undefined, [])
-export const createAgentWorkspace = (name: string) => tryInvoke<any>('create_agent_workspace', { name })
+export const listAgentWorkspaces = () => tryInvoke<AgentWorkspace[]>('list_agent_workspaces', undefined, [])
+export const createAgentWorkspace = (name: string) => tryInvoke<AgentWorkspace>('create_agent_workspace', { name })
 export const updateAgentWorkspace = (id: string, updates: { name: string }) =>
-  tryInvoke<any>('update_agent_workspace', { id, updates })
+  tryInvoke<AgentWorkspace>('update_agent_workspace', { id, updates })
 export const deleteAgentWorkspace = (id: string) => tryInvoke('delete_agent_workspace', { id })
 export const reorderAgentWorkspaces = (orderedIds: string[]) =>
-  tryInvoke<any[]>('reorder_agent_workspaces', { orderedIds }, [])
+  tryInvoke<AgentWorkspace[]>('reorder_agent_workspaces', { orderedIds }, [])
 
 // ============================================================
 // 工作区能力（MCP + 技能）
@@ -781,17 +975,17 @@ export const listMcpServers = () =>
   tryInvoke<Array<{ name: string; transport: string; command?: string; args?: string[]; url?: string; env?: Record<string, string>; disabled: boolean }>>('list_mcp_servers')
 
 export const getWorkspaceCapabilities = (workspaceSlug: string) =>
-  tryInvoke<any>('get_workspace_capabilities', { workspaceSlug })
+  tryInvoke<WorkspaceCapabilities>('get_workspace_capabilities', { workspaceSlug })
 export const getWorkspaceMcpConfig = (workspaceSlug: string) =>
-  tryInvoke<any>('get_workspace_mcp_config', { workspaceSlug })
-export const saveWorkspaceMcpConfig = async (workspaceSlug: string, config: any) => {
+  tryInvoke<WorkspaceMcpConfig>('get_workspace_mcp_config', { workspaceSlug })
+export const saveWorkspaceMcpConfig = async (workspaceSlug: string, config: WorkspaceMcpConfig) => {
   await tryInvoke('save_workspace_mcp_config', { workspaceSlug, config })
   emitCapabilitiesChanged()
 }
-export const testMcpServer = (name: string, entry: any) =>
+export const testMcpServer = (name: string, entry: WorkspaceMcpConfig['servers'][string]) =>
   tryInvoke<ConnectionTestResult>('test_mcp_server', { name, entry })
 export const getWorkspaceSkills = (workspaceSlug: string) =>
-  tryInvoke<any[]>('get_workspace_skills', { workspaceSlug })
+  tryInvoke<SkillMeta[]>('get_workspace_skills', { workspaceSlug })
 export const getWorkspaceSkillsDir = (workspaceSlug: string) =>
   tryInvoke<string>('get_workspace_skills_dir', { workspaceSlug })
 export const deleteWorkspaceSkill = async (workspaceSlug: string, skillSlug: string) => {
@@ -804,7 +998,7 @@ export const toggleWorkspaceSkill = async (workspaceSlug: string, skillSlug: str
   emitCapabilitiesChanged()
 }
 export const getOtherWorkspaceSkills = (currentSlug: string) =>
-  tryInvoke<any[]>('get_other_workspace_skills', { currentSlug })
+  tryInvoke<OtherWorkspaceSkillsGroup[]>('get_other_workspace_skills', { currentSlug })
 export const importSkillFromWorkspace = async (targetSlug: string, sourceSlug: string, skillSlug: string) => {
   await tryInvoke<void>('import_skill_from_workspace', { targetSlug, sourceSlug, skillSlug })
   emitCapabilitiesChanged()
@@ -829,23 +1023,36 @@ export const onWorkspaceFilesChanged = (cb: Handler) => onEvt('workspace:files-c
 // 后台任务
 // ============================================================
 
-export const getTaskOutput = (input: any) =>
-  tryInvoke<any>('get_task_output', { input }, { output: '' })
-export const stopTask = (input: any) => tryInvoke('stop_task', { input })
+export const getTaskOutput = (input: GetTaskOutputInput) =>
+  tryInvoke<GetTaskOutputResult>('get_task_output', { input }, { output: '', isComplete: false })
+export const stopTask = (input: StopTaskInput) => tryInvoke('stop_task', { input })
 
 // ============================================================
 // 附件
 // ============================================================
 
-export const saveAttachment = (input: any) =>
-  tryInvoke<any>('save_attachment', { input }, { localPath: '', fileName: '' })
+export const saveAttachment = (input: AttachmentSaveInput) =>
+  tryInvoke<AttachmentSaveResult>('save_attachment', { input }, {
+    attachment: {
+      id: '',
+      filename: '',
+      mediaType: '',
+      localPath: '',
+      size: 0,
+    },
+  })
 export const readAttachment = (localPath: string) => tryInvoke<string>('read_attachment', { localPath }, '')
 export const saveImageAs = (localPath: string, defaultFilename: string) =>
   tryInvoke<boolean>('save_image_as', { localPath, defaultFilename }, false)
 export const saveResourceFileAs = (resourceRelativePath: string, defaultFilename: string) =>
   tryInvoke<boolean>('save_resource_file_as', { resourceRelativePath, defaultFilename }, false)
 export const deleteAttachment = (localPath: string) => tryInvoke('delete_attachment', { localPath })
-export const openFileDialog = () => tryInvoke<any>('open_file_dialog', undefined, { canceled: true, filePaths: [] })
+export const openFileDialog = () =>
+  tryInvoke<FileDialogResult>('open_file_dialog', undefined, {
+    canceled: true,
+    filePaths: [],
+    files: [],
+  })
 export const extractAttachmentText = (localPath: string) =>
   tryInvoke<string>('extract_attachment_text', { localPath }, '')
 
@@ -868,17 +1075,18 @@ export const getOnlineStatus = () => Promise.resolve(navigator.onLine)
 // 系统提示词
 // ============================================================
 
-export const getSystemPrompts = () => tryInvoke<any[]>('get_system_prompts', undefined, [])
-export const getSystemPromptConfig = () => tryInvoke<any>('get_system_prompt_config', undefined, {
-  prompts: [{ id: 'builtin-default', name: '默认', content: '' }],
+export const getSystemPrompts = () => tryInvoke<IpcRecord[]>('get_system_prompts', undefined, [])
+export const getSystemPromptConfig = () => tryInvoke<SystemPromptConfig>('get_system_prompt_config', undefined, {
+  prompts: [{ id: 'builtin-default', name: '默认', content: '', isBuiltin: true, createdAt: 0, updatedAt: 0 }],
   defaultPromptId: 'builtin-default',
   appendDateTimeAndUserName: true,
 })
-export const createSystemPrompt = (input: any) => tryInvoke<any>('create_system_prompt', { input })
-export const updateSystemPrompt = (id: string, input: any) => tryInvoke<any>('update_system_prompt', { id, input })
+export const createSystemPrompt = (input: SystemPromptCreateInput) => tryInvoke<SystemPrompt>('create_system_prompt', { input })
+export const updateSystemPrompt = (id: string, input: SystemPromptUpdateInput) => tryInvoke<SystemPrompt>('update_system_prompt', { id, input })
 export const deleteSystemPrompt = (id: string) => tryInvoke('delete_system_prompt', { id })
 export const setDefaultPrompt = (prompt_id: string) => tryInvoke('set_default_prompt', { prompt_id })
-export const updateAppendSetting = (enabled: boolean) => tryInvoke('update_append_setting', { append_date_time_and_user_name: enabled })
+export const updateAppendSetting = (enabled: boolean) =>
+  tryInvoke('update_append_setting', { appendDateTimeAndUserName: enabled })
 
 // ============================================================
 // Chat 工具
@@ -939,6 +1147,46 @@ export const listSkills = () =>
 export const scanGlobalSkills = () =>
   invoke<Array<{ name: string; description: string; source: string; dirPath: string }>>('scan_global_skills')
 
+/**
+ * 统一解析 Agent 实际可见能力：
+ * 工作区本地配置 + j-cli / 全局 Skills + j-cli MCP。
+ */
+export const getResolvedWorkspaceCapabilities = async (
+  workspaceSlug: string,
+): Promise<WorkspaceCapabilities> => {
+  const cached = resolvedWorkspaceCapabilitiesCache.get(workspaceSlug)
+  if (cached) return cached
+
+  const inFlight = resolvedWorkspaceCapabilitiesInFlight.get(workspaceSlug)
+  if (inFlight) return inFlight
+
+  const request = Promise.all([
+    getWorkspaceCapabilities(workspaceSlug),
+    listMcpServers(),
+    scanGlobalSkills(),
+    listSkills(),
+  ])
+    .then(([workspaceCapabilities, jcliMcpServers, globalSkills, jcliSkills]) => {
+      const merged = mergeWorkspaceCapabilities(
+        workspaceCapabilities,
+        jcliMcpServers.map((server) => ({
+          name: server.name,
+          transport: server.transport as WorkspaceCapabilities['mcpServers'][number]['type'],
+          disabled: server.disabled,
+        })),
+        [...jcliSkills, ...globalSkills],
+      )
+      resolvedWorkspaceCapabilitiesCache.set(workspaceSlug, merged)
+      return merged
+    })
+    .finally(() => {
+      resolvedWorkspaceCapabilitiesInFlight.delete(workspaceSlug)
+    })
+
+  resolvedWorkspaceCapabilitiesInFlight.set(workspaceSlug, request)
+  return request
+}
+
 /** 将 skill 从源目录复制到当前工作区 */
 export const copySkillToWorkspace = async (sourceDir: string, workspaceSlug: string, skillSlug: string) => {
   await invoke<void>('copy_skill_to_workspace', { sourceDir, workspaceSlug, skillSlug })
@@ -957,44 +1205,45 @@ export const updateChatToolState = (id: string, state: { enabled?: boolean }) =>
   }
   return setToolEnabled(id, state.enabled)
 }
-export const addCustomTool = (_meta: any) => unsupportedCommand('add_custom_tool')
+export const addCustomTool = (_meta: IpcRecord) => unsupportedCommand('add_custom_tool')
 export const removeCustomTool = (_id: string) => unsupportedCommand('remove_custom_tool')
 export const deleteCustomChatTool = (_id: string) => unsupportedCommand('delete_custom_chat_tool')
 export const getChatToolCredentials = (_id: string) => unsupportedCommand('get_chat_tool_credentials')
-export const updateChatToolCredentials = (_id: string, _creds: any) =>
+export const updateChatToolCredentials = (_id: string, _creds: IpcRecord) =>
   unsupportedCommand('update_chat_tool_credentials')
-export const testChatTool = (_id: string, _creds: any) => unsupportedCommand('test_chat_tool')
+export const testChatTool = (_id: string, _creds: IpcRecord) => unsupportedCommand('test_chat_tool')
 
 // ============================================================
 // Agent 文件
 // ============================================================
 
-export const saveAgentWorkspaceFiles = (input: any) => tryInvoke<any[]>('save_agent_workspace_files', { input }, [])
-export const saveAgentSessionFiles = (input: any) => tryInvoke<any[]>('save_agent_session_files', { input }, [])
-export const saveFilesToAgentSession = (input: any) => tryInvoke<any[]>('save_files_to_agent_session', { input }, [])
-export const saveFilesToWorkspaceFiles = (input: any) => tryInvoke<any[]>('save_files_to_workspace_files', { input }, [])
-export const attachAgentDirectory = (input: any) => tryInvoke<any[]>('attach_agent_directory', { input }, [])
-export const attachDirectory = (input: any) => tryInvoke<any[]>('attach_directory', { input }, [])
-export const attachWorkspaceDirectory = (input: any) => tryInvoke<any[]>('attach_workspace_directory', { input }, [])
+export const saveAgentWorkspaceFiles = (input: IpcRecord) => tryInvoke<string[]>('save_agent_workspace_files', { input }, [])
+export const saveAgentSessionFiles = (input: IpcRecord) => tryInvoke<string[]>('save_agent_session_files', { input }, [])
+export const saveFilesToAgentSession = (input: IpcRecord) =>
+  tryInvoke<Array<{ filename: string; targetPath: string }>>('save_files_to_agent_session', { input }, [])
+export const saveFilesToWorkspaceFiles = (input: IpcRecord) => tryInvoke<string[]>('save_files_to_workspace_files', { input }, [])
+export const attachAgentDirectory = (input: IpcRecord) => tryInvoke<string[]>('attach_agent_directory', { input }, [])
+export const attachDirectory = (input: IpcRecord) => tryInvoke<string[]>('attach_directory', { input }, [])
+export const attachWorkspaceDirectory = (input: IpcRecord) => tryInvoke<string[]>('attach_workspace_directory', { input }, [])
 export const detachDirectory = (sessionId: string, dirPath: string) =>
   tryInvoke('detach_directory', { sessionId, dirPath })
 export const detachWorkspaceDirectory = (workspaceSlug: string, dirPath: string) =>
   tryInvoke('detach_workspace_directory', { workspaceSlug, dirPath })
-export const listAttachedDirectory = (params: any) => tryInvoke<any[]>('list_attached_directory', params, [])
-export const getAgentWorkspaceFiles = (workspaceSlug: string) => tryInvoke<any[]>('get_agent_workspace_files', { workspaceSlug }, [])
-export const getAgentSessionFiles = (sessionId: string) => tryInvoke<any[]>('get_agent_session_files', { sessionId }, [])
+export const listAttachedDirectory = (params: IpcRecord) => tryInvoke<FileEntry[]>('list_attached_directory', { input: params }, [])
+export const getAgentWorkspaceFiles = (workspaceSlug: string) => tryInvoke<FileIndexEntry[]>('get_agent_workspace_files', { workspaceSlug }, [])
+export const getAgentSessionFiles = (sessionId: string) => tryInvoke<FileIndexEntry[]>('get_agent_session_files', { sessionId }, [])
 export const searchAgentWorkspaceFiles = (workspaceSlug: string, query: string) =>
-  tryInvoke<any[]>('search_agent_workspace_files', { workspaceSlug, query }, [])
-export const searchWorkspaceFiles = (params: any) => tryInvoke<any[]>('search_workspace_files', params, [])
+  tryInvoke<FileIndexEntry[]>('search_agent_workspace_files', { workspaceSlug, query }, [])
+export const searchWorkspaceFiles = (params: IpcRecord) => tryInvoke<FileIndexEntry[]>('search_workspace_files', { input: params }, [])
 export const readAgentFile = (filePath: string) => tryInvoke<string>('read_agent_file', { filePath }, '')
 
 // 文件浏览器操作
-export const listDirectory = (dirPath: string) => tryInvoke<any[]>('list_directory', { dirPath }, [])
+export const listDirectory = (dirPath: string) => tryInvoke<FileEntry[]>('list_directory', { dirPath }, [])
 export const moveFile = (src: string, dest: string) => tryInvoke('move_file', { src, dest })
 export const deleteFile = (filePath: string) => tryInvoke('delete_file', { filePath })
 export const renameFile = (oldPath: string, newPath: string) => tryInvoke('rename_file', { oldPath, newPath })
-export const renameAttachedFile = (params: any) => tryInvoke('rename_attached_file', params)
-export const moveAttachedFile = (params: any) => tryInvoke('move_attached_file', params)
+export const renameAttachedFile = (params: IpcRecord) => tryInvoke('rename_attached_file', { input: params })
+export const moveAttachedFile = (params: IpcRecord) => tryInvoke('move_attached_file', { input: params })
 export const openFile = (filePath: string) => tryInvoke('open_file', { filePath })
 export const openAttachedFile = (filePath: string) => tryInvoke('open_attached_file', { filePath })
 export const readAttachedFile = (filePath: string) => tryInvoke<string>('read_attached_file', { filePath }, '')
@@ -1002,7 +1251,7 @@ export const previewFile = (filePath: string) => tryInvoke('preview_file', { fil
 export const showInFolder = (filePath: string) => tryInvoke('show_in_folder', { filePath })
 export const showAttachedInFolder = (filePath: string) => tryInvoke('show_attached_in_folder', { filePath })
 export const openFolderDialog = () =>
-  tryInvoke<any>('open_folder_dialog', undefined, { canceled: true, filePaths: [], path: undefined })
+  tryInvoke<OpenFolderDialogResult>('open_folder_dialog', undefined, { canceled: true, filePaths: [], path: undefined })
 export const getWorkspaceDirectories = (workspaceSlug: string) =>
   tryInvoke<string[]>('get_workspace_directories', { workspaceSlug }, [])
 export const getWorkspaceFilesPath = (workspaceSlug: string) =>
@@ -1010,22 +1259,27 @@ export const getWorkspaceFilesPath = (workspaceSlug: string) =>
 export const getAgentSessionPath = (sessionId: string) =>
   tryInvoke<string>('get_agent_session_path', { sessionId }, '')
 export const getPathForFile = (file: File) => URL.createObjectURL(file)
-export const checkPathsType = (paths: string[]) => tryInvoke<any>('check_paths_type', { paths }, {})
+export const checkPathsType = (paths: string[]) =>
+  tryInvoke<{ directories: string[]; files: string[] }>('check_paths_type', { paths }, { directories: [], files: [] })
 export const getFilePath = (file: File) => URL.createObjectURL(file)
 
 // ============================================================
 // 记忆
 // ============================================================
 
-export const getMemoryConfig = () => tryInvoke<any>('get_memory_config', undefined, { enabled: false, memories: [] })
-export const saveMemoryConfig = (config: any) => tryInvoke('save_memory_config', { config })
-export const setMemoryConfig = (config: any) => tryInvoke('set_memory_config', { config })
+export const getMemoryConfig = () => tryInvoke<MemoryConfig>('get_memory_config', undefined, {
+  enabled: false,
+  apiKey: '',
+  userId: '',
+})
+export const saveMemoryConfig = (config: MemoryConfig) => tryInvoke('save_memory_config', { config })
+export const setMemoryConfig = (config: MemoryConfig) => tryInvoke('set_memory_config', { config })
 
 // ============================================================
 // Agent 团队
 // ============================================================
 
-export const getAgentTeamData = () => tryInvoke<any>('get_agent_team_data', undefined, null)
+export const getAgentTeamData = () => tryInvoke<IpcRecord | null>('get_agent_team_data', undefined, null)
 
 // 已移除：j-gui v1 不支持 installer 与 proxy
 
@@ -1085,11 +1339,11 @@ export const openExternal = async (url: string) => {
 
 export const setAppIcon = (variantId: string) => tryInvoke<boolean>('set_app_icon', { variantId }, false)
 export const setDockBadgeCount = (count: number) => tryInvoke<boolean>('set_dock_badge_count', { count }, false)
-export const notifyTraySendMessage = (data: any) => tryInvoke('notify_tray_send_message', { data })
-export const notifyTrayNewAgentSession = (data: any) => tryInvoke('notify_tray_new_agent_session', { data })
-export const listGitHubReleases = (opts: any) => tryInvoke<any[]>('list_github_releases', { opts }, [])
-export const listReleases = (opts: any) => tryInvoke<any[]>('list_releases', { opts }, [])
-export const getReleaseByTag = (tag: string) => tryInvoke<any>('get_release_by_tag', { tag })
+export const notifyTraySendMessage = (data: IpcRecord) => tryInvoke('notify_tray_send_message', { data })
+export const notifyTrayNewAgentSession = (data: IpcRecord) => tryInvoke('notify_tray_new_agent_session', { data })
+export const listGitHubReleases = (opts: IpcRecord) => tryInvoke<IpcRecord[]>('list_github_releases', { opts }, [])
+export const listReleases = (opts: IpcRecord) => tryInvoke<IpcRecord[]>('list_releases', { opts }, [])
+export const getReleaseByTag = (tag: string) => tryInvoke<IpcRecord>('get_release_by_tag', { tag })
 export const saveTaskPendingFilesState = (sessionId: string, state: unknown) =>
   tryInvoke('save_task_pending_files_state', { sessionId, state })
 export const getTaskPendingFilesState = (sessionId: string) =>

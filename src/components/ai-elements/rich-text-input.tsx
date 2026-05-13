@@ -5,7 +5,7 @@
  *
  * 功能：
  * - StarterKit + Placeholder + Underline + Link + CodeBlockLowlight
- * - 可选 Mention 扩展（@ 引用文件、/ 触发 Skill、# 触发 MCP）
+ * - 可选 Mention 扩展（@ 引用文件、/ 触发 Skill、$ 引用 Chat、# 触发 MCP）
  * - htmlToMarkdown 转换
  * - IME composition 处理
  * - Enter 提交 / Shift+Enter 换行
@@ -26,7 +26,8 @@ import { ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { createFileMentionSuggestion } from '@/components/file-browser/file-mention-suggestion'
-import { createSkillMentionSuggestion, createMcpMentionSuggestion } from '@/components/agent/mention-suggestions'
+import { createChatMentionSuggestion, createSlashMentionSuggestion, createMcpMentionSuggestion } from '@/components/agent/mention-suggestions'
+import { fromChatMentionId } from '@/lib/chat-reference'
 
 const VOICE_DICTATION_INSERT_EVENT = 'jgui:insert-text'
 let lastFocusedRichTextInputId: string | null = null
@@ -120,9 +121,16 @@ function htmlToMarkdown(html: string): string {
         const dataId = el.getAttribute('data-id') || ''
         const suggestionChar = el.getAttribute('data-mention-suggestion-char') || '@'
         if (dataType === 'mention') {
-          if (suggestionChar === '/') return `/skill:${dataId}`
-          if (suggestionChar === '#') return `#mcp:${dataId}`
-          return `@file:${dataId}`
+          if (suggestionChar === '$' || fromChatMentionId(dataId)) {
+            const chatId = fromChatMentionId(dataId)
+            if (chatId) return `$chat:${chatId}`
+          }
+          if (suggestionChar === '/') {
+            const skillId = dataId.startsWith('skill:') ? dataId.slice('skill:'.length) : dataId
+            return `/skill:${encodeURIComponent(skillId)}`
+          }
+          if (suggestionChar === '#') return `#mcp:${encodeURIComponent(dataId)}`
+          return `@file:${encodeURIComponent(dataId)}`
         }
         return children
       }
@@ -276,8 +284,14 @@ export function RichTextInput({
   )
 
   // Skill Suggestion 配置（/ 触发）
-  const skillSuggestion = useMemo(
-    () => createSkillMentionSuggestion(workspaceSlugRef, mentionActiveRef, mentionItemCountRef),
+  const slashSuggestion = useMemo(
+    () => createSlashMentionSuggestion(workspaceSlugRef, mentionActiveRef, mentionItemCountRef),
+    [],
+  )
+
+  // Chat Suggestion 配置（$ 触发）
+  const chatSuggestion = useMemo(
+    () => createChatMentionSuggestion(workspaceSlugRef, mentionActiveRef, mentionItemCountRef),
     [],
   )
 
@@ -316,7 +330,7 @@ export function RichTextInput({
         emptyEditorClass: 'is-editor-empty',
       }),
       // Mention 扩展：仅在 Agent 模式（有工作区）时启用
-      // @ 引用文件、/ 触发 Skill、# 触发 MCP
+      // @ 引用文件、/ 触发 Skill、$ 引用 Chat、# 触发 MCP
       ...(hasMentionSupport ? [
         Mention.extend({
           addAttributes() {
@@ -337,8 +351,13 @@ export function RichTextInput({
             const char = suggestion?.char ?? node.attrs.mentionSuggestionChar ?? '@'
             const label = node.attrs.label ?? node.attrs.id
             let chipClass = 'mention-chip'
-            if (char === '/') chipClass = 'skill-mention-chip'
-            else if (char === '#') chipClass = 'mcp-mention-chip'
+            if (fromChatMentionId(node.attrs.id)) {
+              chipClass = 'chat-mention-chip'
+            } else if (char === '/') {
+              chipClass = 'skill-mention-chip'
+            } else if (char === '#') {
+              chipClass = 'mcp-mention-chip'
+            }
             return [
               'span',
               {
@@ -353,7 +372,8 @@ export function RichTextInput({
           },
           suggestions: [
             mentionSuggestion,
-            skillSuggestion,
+            slashSuggestion,
+            chatSuggestion,
             mcpSuggestion,
           ],
         }),
@@ -716,6 +736,30 @@ export function RichTextInput({
           height: 12px;
           background-color: currentColor;
           mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z'/%3E%3C/svg%3E");
+          mask-size: contain;
+          mask-repeat: no-repeat;
+          flex-shrink: 0;
+        }
+        .chat-mention-chip {
+          background-color: hsl(203 90% 55% / 0.15);
+          color: hsl(203 75% 45%);
+          border-radius: 4px;
+          padding: 1px 4px 1px 2px;
+          font-size: 13px;
+          font-weight: 500;
+          white-space: nowrap;
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+          vertical-align: baseline;
+        }
+        .chat-mention-chip::before {
+          content: '';
+          display: inline-block;
+          width: 12px;
+          height: 12px;
+          background-color: currentColor;
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7.9 20A9 9 0 1 1 16 4a9 9 0 0 1 0 18c-1.5 0-2.9-.3-4.2-.9L6 22Z'/%3E%3C/svg%3E");
           mask-size: contain;
           mask-repeat: no-repeat;
           flex-shrink: 0;

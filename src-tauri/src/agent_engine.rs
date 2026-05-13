@@ -1,3 +1,5 @@
+use crate::agent_retry::RetryPolicy;
+use crate::agent_runtime_recovery::{classify_recovery, RecoveryAction};
 use crate::agent_session::{self, AgentTimelineItem};
 use crate::kernel::types::{
     KernelAgentInterruptResponse, KernelAgentParams, KernelAgentToolResult, KernelChatMessage,
@@ -8,7 +10,8 @@ use serde::Serialize;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::Arc;
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use tauri::ipc::Channel;
 use tokio_util::sync::CancellationToken;
@@ -21,8 +24,18 @@ mod agent_engine_runtime;
 #[cfg(test)]
 pub(crate) use agent_engine_runtime::timeline_items_from_event;
 use agent_engine_runtime::{forward_cli_event, persist_sdk_session_id, which_claude};
+#[path = "agent_engine_cli.rs"]
+mod agent_engine_cli;
+#[cfg(test)]
+pub(crate) use agent_engine_cli::{
+    build_claude_args, cli_events_show_visible_progress, cli_startup_error_from_events,
+};
+use agent_engine_cli::{
+    kernel_tool_result_from_response, serialize_interrupt_response, start_cli_with_recovery,
+};
 
 const CLAUDE_GRACE_PERIOD_MS: u64 = 500;
+const CLI_STARTUP_SUPERVISOR_TIMEOUT_MS: u64 = 3_000;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "event", content = "data", rename_all = "camelCase")]
@@ -47,9 +60,22 @@ pub enum AgentEvent {
     },
     Done {
         total_tokens: u32,
+        result_subtype: Option<String>,
     },
     Error {
         message: String,
+    },
+    Cancelled,
+    Compacting,
+    CompactComplete,
+    ModelResolved {
+        model: String,
+    },
+    Retrying {
+        attempt: u32,
+        max_attempts: u32,
+        delay_seconds: u32,
+        reason: String,
     },
 }
 
@@ -92,6 +118,7 @@ pub(crate) struct AgentCliStartParams {
     pub api_key: String,
     pub resume_session_id: Option<String>,
     pub fork_session: bool,
+    pub initial_user_message: Option<String>,
 }
 
 pub(crate) struct AgentJStartParams {
@@ -115,54 +142,20 @@ impl AgentEngine {
             api_key,
             resume_session_id,
             fork_session,
+            initial_user_message,
         } = params;
-        let claude_path = which_claude()?;
-
-        let mut cmd = Command::new(&claude_path);
-        let args = build_claude_args(
-            &model,
-            &permission_mode,
-            resume_session_id.as_deref(),
-            fork_session,
-        );
-        cmd.args(&args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        if !api_base.is_empty() {
-            cmd.env("ANTHROPIC_BASE_URL", &api_base);
-        }
-        // SAFETY: 这是 Claude CLI 文档约定的认证方式。
-        // 进程生命周期较短，在单用户桌面环境下该做法可接受。
-        // 但在共享系统上，/proc/<pid>/environ（Linux）或进程环境读取 API（Windows）
-        // 可能把密钥暴露给同用户的其他进程，这是当前明确接受的权衡。
-        if !api_key.is_empty() {
-            cmd.env("ANTHROPIC_API_KEY", &api_key);
-        }
-
-        let mut process = cmd
-            .spawn()
-            .map_err(|e| format!("启动 claude CLI 失败: {}", e))?;
-
-        let stdout = process.stdout.take().ok_or("无法获取 claude stdout")?;
-        let stderr = process.stderr.take().ok_or("无法获取 claude stderr")?;
-        let stdin = process.stdin.take().ok_or("无法获取 claude stdin")?;
-
-        let stdout_thread = Self::spawn_stdout_reader(
-            stdout,
-            on_event.clone(),
-            permission_mode.clone(),
-            session_id.clone(),
-        );
-
-        // 后台线程：持续记录 stderr
-        let stderr_thread = std::thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for l in reader.lines().map_while(Result::ok) {
-                eprintln!("[claude stderr] {}", l);
-            }
-        });
+        let (process, stdin, stdout_thread, stderr_thread) =
+            start_cli_with_recovery(AgentCliStartParams {
+                on_event: on_event.clone(),
+                permission_mode: permission_mode.clone(),
+                session_id: session_id.clone(),
+                model: model.clone(),
+                api_base: api_base.clone(),
+                api_key: api_key.clone(),
+                resume_session_id,
+                fork_session,
+                initial_user_message,
+            })?;
 
         let transcript_path = agent_session::agent_sessions_dir()
             .join(&session_id)
@@ -177,32 +170,6 @@ impl AgentEngine {
             },
             session_id,
             transcript_path,
-        })
-    }
-
-    fn spawn_stdout_reader(
-        stdout: std::process::ChildStdout,
-        on_event: Channel<AgentEvent>,
-        mode: String,
-        session_id: String,
-    ) -> JoinHandle<()> {
-        std::thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines() {
-                let line = match line {
-                    Ok(l) => l,
-                    Err(_) => break,
-                };
-                if line.is_empty() {
-                    continue;
-                }
-                persist_sdk_session_id(&session_id, &line);
-                for event in parse_sdk_line(&line) {
-                    if !forward_cli_event(&on_event, &session_id, &mode, event) {
-                        return;
-                    }
-                }
-            }
         })
     }
 
@@ -484,103 +451,9 @@ fn spawn_jagent_runtime_thread(
     })
 }
 
-fn build_claude_args(
-    model: &str,
-    permission_mode: &str,
-    resume_session_id: Option<&str>,
-    fork_session: bool,
-) -> Vec<String> {
-    let mut args = vec![
-        // NOTE: 不要使用 -p；那是单次执行模式，会导致 CLI 无法在多次 send_message 之间维持会话状态。
-        "--output-format".to_string(),
-        "stream-json".to_string(),
-        "--input-format".to_string(),
-        "stream-json".to_string(),
-        "--verbose".to_string(),
-        "--permission-mode".to_string(),
-        permission_mode.to_string(),
-    ];
-
-    if let Some(resume_session_id) = resume_session_id.filter(|value| !value.is_empty()) {
-        args.push("--resume".to_string());
-        args.push(resume_session_id.to_string());
-    }
-
-    if fork_session {
-        args.push("--fork-session".to_string());
-    }
-
-    if !model.is_empty() {
-        args.push("--model".to_string());
-        args.push(model.to_string());
-    }
-
-    args
-}
-
 impl Drop for AgentEngine {
     fn drop(&mut self) {
         self.close();
-    }
-}
-
-fn serialize_interrupt_response(response: &KernelAgentInterruptResponse) -> String {
-    match response {
-        KernelAgentInterruptResponse::Permission {
-            allowed: true,
-            always_allow: true,
-        } => "always_approved".to_string(),
-        KernelAgentInterruptResponse::Permission {
-            allowed: true,
-            always_allow: false,
-        } => "approved".to_string(),
-        KernelAgentInterruptResponse::Permission { allowed: false, .. } => "denied".to_string(),
-        KernelAgentInterruptResponse::AskUser { result_json } => result_json.clone(),
-        KernelAgentInterruptResponse::Plan { decision, feedback } => serde_json::json!({
-            "decision": match decision {
-                KernelPlanDecision::Approve => "approve",
-                KernelPlanDecision::ApproveAndClearContext => "approve_and_clear_context",
-                KernelPlanDecision::Reject => "reject",
-                KernelPlanDecision::None => "reject",
-            },
-            "feedback": feedback,
-        })
-        .to_string(),
-    }
-}
-
-fn kernel_tool_result_from_response(
-    interrupt_id: &str,
-    response: &KernelAgentInterruptResponse,
-) -> KernelAgentToolResult {
-    match response {
-        KernelAgentInterruptResponse::Permission {
-            allowed,
-            always_allow,
-        } => KernelAgentToolResult {
-            tool_call_id: interrupt_id.to_string(),
-            result: if *allowed && *always_allow {
-                "always_approved".to_string()
-            } else if *allowed {
-                "approved".to_string()
-            } else {
-                "denied".to_string()
-            },
-            is_error: !allowed,
-            plan_decision: KernelPlanDecision::None,
-        },
-        KernelAgentInterruptResponse::AskUser { result_json } => KernelAgentToolResult {
-            tool_call_id: interrupt_id.to_string(),
-            result: result_json.clone(),
-            is_error: false,
-            plan_decision: KernelPlanDecision::None,
-        },
-        KernelAgentInterruptResponse::Plan { decision, feedback } => KernelAgentToolResult {
-            tool_call_id: interrupt_id.to_string(),
-            result: feedback.clone().unwrap_or_default(),
-            is_error: matches!(decision, KernelPlanDecision::Reject),
-            plan_decision: decision.clone(),
-        },
     }
 }
 

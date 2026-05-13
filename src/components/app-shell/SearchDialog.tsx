@@ -12,18 +12,16 @@
 import * as React from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { Search, X, MessageSquare, Bot, Archive, Loader2 } from 'lucide-react'
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { searchDialogOpenAtom } from '@/atoms/search-atoms'
 import { conversationsAtom } from '@/atoms/chat-atoms'
 import {
   agentSessionsAtom,
-  currentAgentWorkspaceIdAtom,
   agentWorkspacesAtom,
 } from '@/atoms/agent-atoms'
 import { activeViewAtom } from '@/atoms/active-view'
 import { useOpenSession } from '@/hooks/useOpenSession'
-import type { ConversationMeta, AgentSessionMeta, MessageSearchResult, AgentMessageSearchResult } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
 
 /** 标题搜索结果项 */
@@ -45,6 +43,16 @@ interface ContentResult {
   matchStart: number
   matchLength: number
   archived?: boolean
+}
+
+function formatSearchMetaDate(timestamp: number): string {
+  if (!timestamp) return ''
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(timestamp))
 }
 
 /**
@@ -108,7 +116,6 @@ export function SearchDialog(): React.ReactElement {
   const agentSessions = useAtomValue(agentSessionsAtom)
   const agentWorkspaces = useAtomValue(agentWorkspacesAtom)
   const setActiveView = useSetAtom(activeViewAtom)
-  const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
   const openSession = useOpenSession()
 
   const workspaceNameMap = React.useMemo(() => {
@@ -116,12 +123,38 @@ export function SearchDialog(): React.ReactElement {
     for (const w of agentWorkspaces) map.set(w.id, w.name)
     return map
   }, [agentWorkspaces])
+  const conversationIdSet = React.useMemo(
+    () => new Set(conversations.map((conversation) => conversation.id)),
+    [conversations],
+  )
+  const agentSessionIdSet = React.useMemo(
+    () => new Set(agentSessions.map((session) => session.id)),
+    [agentSessions],
+  )
 
   const getAgentWorkspaceName = React.useCallback((sessionId: string): string | undefined => {
     const session = agentSessions.find((s) => s.id === sessionId)
     if (!session?.workspaceId) return undefined
     return workspaceNameMap.get(session.workspaceId)
   }, [agentSessions, workspaceNameMap])
+
+  const getResultMeta = React.useCallback((result: TitleResult | ContentResult) => {
+    if (result.type === 'chat') {
+      const conv = conversations.find((c) => c.id === result.id)
+      return {
+        typeLabel: 'Chat',
+        workspaceName: undefined,
+        updatedAt: conv?.updatedAt ?? ('updatedAt' in result ? result.updatedAt : 0),
+      }
+    }
+
+    const session = agentSessions.find((s) => s.id === result.id)
+    return {
+      typeLabel: 'Agent',
+      workspaceName: getAgentWorkspaceName(result.id),
+      updatedAt: session?.updatedAt ?? ('updatedAt' in result ? result.updatedAt : 0),
+    }
+  }, [agentSessions, conversations, getAgentWorkspaceName])
 
   const [query, setQuery] = React.useState('')
   const [searchQuery, setSearchQuery] = React.useState('')
@@ -212,7 +245,9 @@ export function SearchDialog(): React.ReactElement {
         if (cancelled) return
 
         const chatContent: ContentResult[] = chatResults.status === 'fulfilled'
-          ? chatResults.value.map((r) => ({
+          ? chatResults.value
+            .filter((result) => conversationIdSet.has(result.conversationId))
+            .map((r) => ({
               id: r.conversationId,
               title: r.conversationTitle,
               type: 'chat' as const,
@@ -225,7 +260,9 @@ export function SearchDialog(): React.ReactElement {
           : []
 
         const agentContent: ContentResult[] = agentResults.status === 'fulfilled'
-          ? agentResults.value.map((r) => ({
+          ? agentResults.value
+            .filter((result) => agentSessionIdSet.has(result.sessionId))
+            .map((r) => ({
               id: r.sessionId,
               title: r.sessionTitle,
               type: 'agent' as const,
@@ -255,7 +292,7 @@ export function SearchDialog(): React.ReactElement {
     }, 300)
 
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [searchQuery])
+  }, [searchQuery, conversationIdSet, agentSessionIdSet])
 
   // 全部结果列表
   const allResults = React.useMemo(
@@ -275,10 +312,12 @@ export function SearchDialog(): React.ReactElement {
 
     if (result.type === 'chat') {
       const conv = conversations.find((c) => c.id === result.id)
+      if (!conv) return
       const title = conv?.title ?? result.title
       openSession('chat', result.id, title, 'messageId' in result ? { messageId: result.messageId } : undefined)
     } else {
       const session = agentSessions.find((s) => s.id === result.id)
+      if (!session) return
       const title = session?.title ?? result.title
       openSession('agent', result.id, title, 'messageId' in result ? { messageId: result.messageId } : undefined)
     }
@@ -385,39 +424,50 @@ export function SearchDialog(): React.ReactElement {
                 标题匹配
               </div>
               {titleResults.map((result, idx) => (
-                <button
-                  key={`title-${result.id}`}
-                  data-index={idx}
-                  onClick={() => navigateToResult(result)}
-                  onMouseEnter={() => setSelectedIndex(idx)}
-                  className={cn(
-                    'w-full flex items-center gap-2.5 px-4 py-2 text-left transition-colors',
-                    selectedIndex === idx
-                      ? 'bg-primary/10'
-                      : 'hover:bg-foreground/[0.04]',
-                    result.archived && 'opacity-60'
-                  )}
-                >
-                  {result.type === 'chat' ? (
-                    <MessageSquare size={14} className="flex-shrink-0 text-foreground/40" />
-                  ) : (
-                    <Bot size={14} className="flex-shrink-0 text-blue-500/70" />
-                  )}
-                  <span className="flex-1 min-w-0 truncate text-[13px] text-foreground/80">
-                    <HighlightText text={result.title} query={searchQuery} />
-                  </span>
-                  {result.type === 'agent' && (() => {
-                    const wsName = getAgentWorkspaceName(result.id)
-                    return wsName ? (
-                      <span className="flex-shrink-0 px-1.5 py-0 rounded-full bg-foreground/[0.06] text-[10px] leading-4 text-foreground/40 font-medium truncate max-w-[80px]">
-                        {wsName}
-                      </span>
-                    ) : null
-                  })()}
-                  {result.archived && (
-                    <Archive size={12} className="flex-shrink-0 text-foreground/30" />
-                  )}
-                </button>
+                (() => {
+                  const meta = getResultMeta(result)
+                  return (
+                    <button
+                      key={`title-${result.id}`}
+                      data-index={idx}
+                      onClick={() => navigateToResult(result)}
+                      onMouseEnter={() => setSelectedIndex(idx)}
+                      className={cn(
+                        'w-full flex flex-col gap-1 px-4 py-2 text-left transition-colors',
+                        selectedIndex === idx
+                          ? 'bg-primary/10'
+                          : 'hover:bg-foreground/[0.04]',
+                        result.archived && 'opacity-75'
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {result.type === 'chat' ? (
+                          <MessageSquare size={14} className="flex-shrink-0 text-foreground/40" />
+                        ) : (
+                          <Bot size={14} className="flex-shrink-0 text-blue-500/70" />
+                        )}
+                        <span className="flex-1 min-w-0 truncate text-[13px] text-foreground/80">
+                          <HighlightText text={result.title} query={searchQuery} />
+                        </span>
+                      </div>
+                      <div className="pl-[22px] flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <span>{meta.typeLabel}</span>
+                        {meta.workspaceName && (
+                          <span className="rounded-full bg-foreground/[0.06] px-1.5 py-0 leading-4">
+                            {meta.workspaceName}
+                          </span>
+                        )}
+                        {meta.updatedAt > 0 && <span>{formatSearchMetaDate(meta.updatedAt)}</span>}
+                        {result.archived && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0 leading-4 text-amber-700 dark:text-amber-300">
+                            <Archive size={10} />
+                            <span>已归档</span>
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })()
               ))}
             </div>
           )}
@@ -431,6 +481,7 @@ export function SearchDialog(): React.ReactElement {
               </div>
               {contentResults.map((result, i) => {
                 const globalIdx = titleResults.length + i
+                const meta = getResultMeta(result)
                 return (
                   <button
                     key={`content-${result.type}-${result.id}-${result.messageId}`}
@@ -442,7 +493,7 @@ export function SearchDialog(): React.ReactElement {
                       selectedIndex === globalIdx
                         ? 'bg-primary/10'
                         : 'hover:bg-foreground/[0.04]',
-                      result.archived && 'opacity-60'
+                      result.archived && 'opacity-75'
                     )}
                   >
                     <div className="flex items-center gap-2.5">
@@ -454,16 +505,20 @@ export function SearchDialog(): React.ReactElement {
                       <span className="flex-1 min-w-0 truncate text-[13px] text-foreground/80">
                         {result.title}
                       </span>
-                      {result.type === 'agent' && (() => {
-                        const wsName = getAgentWorkspaceName(result.id)
-                        return wsName ? (
-                          <span className="flex-shrink-0 px-1.5 py-0 rounded-full bg-foreground/[0.06] text-[10px] leading-4 text-foreground/40 font-medium truncate max-w-[80px]">
-                            {wsName}
-                          </span>
-                        ) : null
-                      })()}
+                    </div>
+                    <div className="pl-[22px] flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <span>{meta.typeLabel}</span>
+                      {meta.workspaceName && (
+                        <span className="rounded-full bg-foreground/[0.06] px-1.5 py-0 leading-4">
+                          {meta.workspaceName}
+                        </span>
+                      )}
+                      {meta.updatedAt > 0 && <span>{formatSearchMetaDate(meta.updatedAt)}</span>}
                       {result.archived && (
-                        <Archive size={12} className="flex-shrink-0 text-foreground/30" />
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0 leading-4 text-amber-700 dark:text-amber-300">
+                          <Archive size={10} />
+                          <span>已归档</span>
+                        </span>
                       )}
                     </div>
                     <div className="pl-[22px] text-[12px] text-foreground/50 truncate">

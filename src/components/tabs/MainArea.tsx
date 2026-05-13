@@ -18,11 +18,6 @@ export function MainArea(): React.ReactElement {
   const activeTabId = useAtomValue(activeTabIdAtom)
   const setActiveTabId = useSetAtom(activeTabIdAtom)
 
-  React.useEffect(() => {
-    if (tabs.length === 0) {
-    }
-  }, [tabs.length])
-
   // 兜底：tabs 存在但 activeTabId 为空时，自动激活第一个标签。
   // 正常路径（openTab/closeTab/持久化恢复）都会维护 activeTabId，此分支只为防御
   // 异常状态（如外部原子被误清空），避免渲染 WelcomeView 触发重复 openTab 循环。

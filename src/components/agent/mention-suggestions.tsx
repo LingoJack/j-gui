@@ -1,5 +1,5 @@
 /**
- * MentionSuggestions — Skill / MCP 的 TipTap Mention Suggestion 统一配置
+ * MentionSuggestions — Skill / Chat / MCP 的 TipTap Mention Suggestion 统一配置
  *
  * 泛型工厂 createMentionSuggestion 封装公共逻辑（渲染、定位、键盘导航），
  * 通过 MentionSuggestionConfig 注入差异部分（触发字符、数据获取、行渲染）。
@@ -8,11 +8,13 @@
 import type React from 'react'
 import { ReactRenderer } from '@tiptap/react'
 import type { SuggestionOptions } from '@tiptap/suggestion'
-import { Sparkles, Server } from 'lucide-react'
+import { MessageSquareQuote, Sparkles, Server } from 'lucide-react'
 import { MentionList } from './MentionList'
 import type { MentionListRef } from './MentionList'
 import { createMentionPopup, positionPopup } from './mention-popup-utils'
 import * as ipc from '@/lib/ipc'
+import type { ConversationMeta } from '@jgui/shared'
+import { toChatMentionId } from '@/lib/chat-reference'
 
 // ===== 泛型工厂 =====
 
@@ -106,15 +108,42 @@ function createMentionSuggestion<T>(
   }
 }
 
-// ===== Skill 配置 =====
+// ===== Slash / Skill / Chat 引用配置 =====
 
-export interface SkillMentionItem {
+interface BaseMentionItem {
   id: string
   name: string
   description?: string
 }
 
-export function createSkillMentionSuggestion(
+export type SkillMentionItem = BaseMentionItem
+
+export interface ChatMentionItem extends BaseMentionItem {
+  updatedAt: number
+}
+
+function buildChatItems(
+  conversations: ConversationMeta[],
+  query: string,
+): ChatMentionItem[] {
+  const normalizedQuery = query.trim().toLowerCase()
+  return conversations
+    .filter((conversation) => !conversation.archived)
+    .filter((conversation) => {
+      if (!normalizedQuery) return true
+      return conversation.title.toLowerCase().includes(normalizedQuery)
+    })
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, 6)
+    .map((conversation) => ({
+      id: toChatMentionId(conversation.id),
+      name: conversation.title,
+      description: '引用 Chat',
+      updatedAt: conversation.updatedAt,
+    }))
+}
+
+export function createSlashMentionSuggestion(
   workspaceSlugRef: React.RefObject<string | null>,
   mentionActiveRef: React.MutableRefObject<boolean>,
   mentionItemCountRef: React.MutableRefObject<number>,
@@ -124,11 +153,15 @@ export function createSkillMentionSuggestion(
       char: '/',
       emptyText: '无匹配 Skill',
       fetchItems: async (slug, q) => {
-        const caps = await ipc.getWorkspaceCapabilities(slug)
+        const caps = await ipc.getResolvedWorkspaceCapabilities(slug)
         return caps.skills
-          .filter((s) => s.enabled)
-          .filter((s) => !q || s.name.toLowerCase().includes(q) || (s.slug ?? '').toLowerCase().includes(q))
-          .map((s) => ({ id: s.slug, name: s.name, description: s.description }))
+          .filter((skill) => skill.enabled)
+          .filter((skill) => !q || skill.name.toLowerCase().includes(q) || (skill.slug ?? '').toLowerCase().includes(q))
+          .map((skill) => ({
+            id: `skill:${skill.slug}`,
+            name: skill.name,
+            description: skill.description,
+          }))
       },
       keyExtractor: (item) => item.id,
       renderItem: (item) => (
@@ -141,6 +174,40 @@ export function createSkillMentionSuggestion(
         </>
       ),
       toCommand: (item) => ({ id: item.id, label: item.name }),
+    },
+    workspaceSlugRef,
+    mentionActiveRef,
+    mentionItemCountRef,
+  )
+}
+
+export function createChatMentionSuggestion(
+  workspaceSlugRef: React.RefObject<string | null>,
+  mentionActiveRef: React.MutableRefObject<boolean>,
+  mentionItemCountRef: React.MutableRefObject<number>,
+) {
+  return createMentionSuggestion<ChatMentionItem>(
+    {
+      char: '$',
+      emptyText: '无匹配 Chat 对话',
+      fetchItems: async (_slug, q) => {
+        const conversations = await ipc.listConversations()
+        return buildChatItems(conversations, q)
+      },
+      keyExtractor: (item) => item.id,
+      renderItem: (item) => (
+        <>
+          <MessageSquareQuote className="size-3.5 text-sky-500 flex-shrink-0" />
+          <span className="truncate font-medium flex-1 min-w-0">{item.name}</span>
+          <span className="truncate text-[10px] text-muted-foreground/50 max-w-[120px]">
+            引用 Chat
+          </span>
+        </>
+      ),
+      toCommand: (item) => ({
+        id: item.id,
+        label: `Chat · ${item.name}`,
+      }),
     },
     workspaceSlugRef,
     mentionActiveRef,
@@ -166,7 +233,7 @@ export function createMcpMentionSuggestion(
       char: '#',
       emptyText: '无匹配 MCP 服务',
       fetchItems: async (slug, q) => {
-        const caps = await ipc.getWorkspaceCapabilities(slug)
+        const caps = await ipc.getResolvedWorkspaceCapabilities(slug)
         return caps.mcpServers
           .filter((s) => s.enabled)
           .filter((s) => !q || s.name.toLowerCase().includes(q))

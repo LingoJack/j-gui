@@ -44,7 +44,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { workspaceFilesVersionAtom, fileBrowserAutoRevealAtom, recentlyModifiedPathsAtom, currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
+import { detectIsMac, detectIsWindows } from '@/lib/platform'
+import { workspaceFilesVersionAtom, fileBrowserAutoRevealAtom, recentlyModifiedPathsAtom } from '@/atoms/agent-atoms'
 import type { FileEntry } from '@jgui/shared'
 import { FileTypeIcon } from './FileTypeIcon'
 import * as ipc from '@/lib/ipc'
@@ -79,6 +80,7 @@ function isPathUnderRoot(rootPath: string, targetPath: string): boolean {
 }
 
 interface FileBrowserProps {
+  sessionId: string
   rootPath: string
   /** 隐藏内置顶部工具栏（面包屑 + 按钮），由外部自行渲染 */
   hideToolbar?: boolean
@@ -90,7 +92,9 @@ interface FileBrowserProps {
   onAddToChat?: (entry: FileEntry) => void
 }
 
-export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddToChat }: FileBrowserProps): React.ReactElement {
+export function FileBrowser({ sessionId, rootPath, hideToolbar, embedded, hideEmpty, onAddToChat }: FileBrowserProps): React.ReactElement {
+  const isWindows = React.useMemo(() => detectIsWindows(), [])
+  const isMac = React.useMemo(() => detectIsMac(), [])
   const [entries, setEntries] = React.useState<FileEntry[]>([])
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -101,9 +105,10 @@ export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddT
   // 仅当目标路径落在本实例 rootPath 内才响应；以 ts 标识本次脉冲
   const revealForThisRoot = React.useMemo(() => {
     if (!autoReveal || !rootPath) return null
+    if (autoReveal.sessionId !== sessionId) return null
     if (!isPathUnderRoot(rootPath, autoReveal.path)) return null
     return autoReveal
-  }, [autoReveal, rootPath])
+  }, [autoReveal, rootPath, sessionId])
   const revealAncestors = React.useMemo(
     () => revealForThisRoot ? computeRevealAncestors(rootPath, revealForThisRoot.path) : new Set<string>(),
     [revealForThisRoot, rootPath],
@@ -113,10 +118,8 @@ export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddT
 
   // ===== 最近修改的文件路径（60s 内显示左侧竖条） =====
   const recentlyModifiedMap = useAtomValue(recentlyModifiedPathsAtom)
-  const currentSessionId = useAtomValue(currentAgentSessionIdAtom)
   const recentlyModifiedSet = React.useMemo<Set<string>>(() => {
-    if (!currentSessionId) return new Set()
-    const inner = recentlyModifiedMap.get(currentSessionId)
+    const inner = recentlyModifiedMap.get(sessionId)
     if (!inner) return new Set()
     // 仅保留落在本实例 rootPath 下的路径
     const set = new Set<string>()
@@ -124,7 +127,7 @@ export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddT
       if (isPathUnderRoot(rootPath, p)) set.add(p)
     }
     return set
-  }, [recentlyModifiedMap, currentSessionId, rootPath])
+  }, [recentlyModifiedMap, rootPath, sessionId])
 
   // 选中状态
   const [selectedPaths, setSelectedPaths] = React.useState<Set<string>>(new Set())
@@ -334,7 +337,7 @@ export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddT
             size="icon"
             className="h-7 w-7 flex-shrink-0"
             onClick={() => ipc.openFile(rootPath).catch(console.error)}
-            title="在 Finder 中打开"
+            title={isWindows ? '在资源管理器中打开' : isMac ? '在 Finder 中打开' : '打开所在目录'}
           >
             <ExternalLink className="size-3.5" />
           </Button>

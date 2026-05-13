@@ -14,12 +14,13 @@
 
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { CornerDownLeft, Square, Brain, Paperclip } from 'lucide-react'
+import { CornerDownLeft, Square, Paperclip } from 'lucide-react'
 import { ModelSelector } from './ModelSelector'
 import { ClearContextButton } from './ClearContextButton'
 import { ContextSettingsPopover } from './ContextSettingsPopover'
 import { ToolSelectorPopover } from './ToolSelectorPopover'
 import { AttachmentPreviewItem } from './AttachmentPreviewItem'
+import { ThinkingModePopover } from '@/components/ai-elements/thinking-mode-popover'
 import { RichTextInput } from '@/components/ai-elements/rich-text-input'
 import { Button } from '@/components/ui/button'
 import {
@@ -30,12 +31,15 @@ import {
 import { getActiveAccelerator, getAcceleratorDisplay } from '@/lib/shortcut-registry'
 import {
   conversationDraftsAtom,
+  currentChatWorkspaceIdAtom,
 } from '@/atoms/chat-atoms'
+import { agentWorkspacesAtom, workspaceAttachedDirectoriesMapAtom } from '@/atoms/agent-atoms'
 import type { PendingAttachment } from '@/atoms/chat-atoms'
 import {
   useConversationModel,
   useConversationThinkingEnabled,
 } from '@/hooks/useConversationSettings'
+import { getEffectiveChatWorkspaceId } from '@/lib/chat-workspace'
 import { cn } from '@/lib/utils'
 import { fileToBase64 } from '@/lib/file-utils'
 import { sendWithCmdEnterAtom } from '@/atoms/shortcut-atoms'
@@ -60,6 +64,9 @@ interface ChatInputProps {
 
 export function ChatInput({ conversationId, streaming, pendingAttachments, onSetPendingAttachments, onSend, onStop, onClearContext }: ChatInputProps): React.ReactElement {
   const sendWithCmdEnter = useAtomValue(sendWithCmdEnterAtom)
+  const currentChatWorkspaceId = useAtomValue(currentChatWorkspaceIdAtom)
+  const workspaces = useAtomValue(agentWorkspacesAtom)
+  const workspaceAttachedDirsMap = useAtomValue(workspaceAttachedDirectoriesMapAtom)
   // 从 Map atom 读写草稿
   const draftsMap = useAtomValue(conversationDraftsAtom)
   const setDraftsMap = useSetAtom(conversationDraftsAtom)
@@ -80,6 +87,27 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
   const [thinkingEnabled, setThinkingEnabled] = useConversationThinkingEnabled()
   const setPendingAttachments = onSetPendingAttachments
   const [isDragOver, setIsDragOver] = React.useState(false)
+  const [workspaceFilesPath, setWorkspaceFilesPath] = React.useState<string | null>(null)
+  const effectiveChatWorkspaceId = React.useMemo(
+    () => getEffectiveChatWorkspaceId(currentChatWorkspaceId, workspaces),
+    [currentChatWorkspaceId, workspaces],
+  )
+  const workspaceSlug = React.useMemo(
+    () => workspaces.find((workspace) => workspace.id === effectiveChatWorkspaceId)?.slug ?? null,
+    [effectiveChatWorkspaceId, workspaces],
+  )
+  const workspaceAttachedDirs = React.useMemo(
+    () => (effectiveChatWorkspaceId ? (workspaceAttachedDirsMap.get(effectiveChatWorkspaceId) ?? []) : []),
+    [effectiveChatWorkspaceId, workspaceAttachedDirsMap],
+  )
+
+  React.useEffect(() => {
+    if (!workspaceSlug) {
+      setWorkspaceFilesPath(null)
+      return
+    }
+    ipc.getWorkspaceFilesPath(workspaceSlug).then(setWorkspaceFilesPath).catch(() => setWorkspaceFilesPath(null))
+  }, [workspaceSlug])
 
   const canSend = (content.trim().length > 0 || pendingAttachments.length > 0)
     && selectedModel !== null
@@ -175,7 +203,7 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
     onSend(content.trim())
     setContent('')
     // 附件清理由 ChatView 的 handleSend 负责
-  }, [canSend, content, onSend])
+  }, [canSend, content, onSend, setContent])
 
   /** 粘贴文件回调 */
   const handlePasteFiles = React.useCallback((files: File[]): void => {
@@ -227,7 +255,11 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
   }, [])
 
   return (
-    <div className="shrink-0 px-2.5 pb-2.5 md:px-[18px] md:pb-[18px]" data-input-mode="chat">
+    <div
+      className="shrink-0 px-2.5 pb-2 md:px-[18px] md:pb-3"
+      data-input-mode="chat"
+      data-testid="chat-input-dock"
+    >
         {/* 卡片式输入容器 — 对标 Cherry Studio: border-radius 17px, 0.5px border */}
         <div
           className={cn(
@@ -262,6 +294,9 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
             onPasteFiles={handlePasteFiles}
             placeholder={sendWithCmdEnter ? '输入消息... (⌘/Ctrl+Enter 发送，Enter 换行)' : '输入消息... (Enter 发送，Shift+Enter 换行)'}
             autoFocusTrigger={conversationId}
+            workspacePath={workspaceFilesPath}
+            workspaceSlug={workspaceSlug}
+            attachedDirs={workspaceAttachedDirs}
             sendWithCmdEnter={sendWithCmdEnter}
           />
 
@@ -290,25 +325,10 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
               <ModelSelector />
 
               {/* 思考模式切换 */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className={cn(
-                      'size-[36px] rounded-full',
-                      thinkingEnabled ? 'text-green-500' : 'text-foreground/60 hover:text-foreground'
-                    )}
-                    onClick={() => setThinkingEnabled(!thinkingEnabled)}
-                  >
-                    <Brain className="size-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p>{thinkingEnabled ? '关闭思考模式' : '开启思考模式'}</p>
-                </TooltipContent>
-              </Tooltip>
+              <ThinkingModePopover
+                enabled={thinkingEnabled}
+                onToggle={() => setThinkingEnabled(!thinkingEnabled)}
+              />
 
               <ToolSelectorPopover />
 

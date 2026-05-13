@@ -68,7 +68,7 @@ export function ToolSelectorPopover(): React.ReactElement {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip open={open ? false : undefined}>
+      <Tooltip>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <Button

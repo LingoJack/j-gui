@@ -1,5 +1,6 @@
 use super::*;
 use crate::agent_engine::AgentBackend;
+use crate::agent_session::TestEnvGuard;
 
 // ── AgentInterruptResponse 相关测试 ──
 
@@ -375,6 +376,7 @@ fn ensure_runtime_idle_allows_finished_session() {
 
 #[test]
 fn resolve_cli_resume_state_prefers_current_sdk_session() {
+    let _guard = TestEnvGuard::new("resume-current-sdk");
     let session_id = crate::agent_session::create_agent_session().expect("create session");
     crate::agent_session::set_session_sdk_session_id(&session_id, Some("sdk-current".to_string()))
         .expect("persist sdk session id");
@@ -391,6 +393,7 @@ fn resolve_cli_resume_state_prefers_current_sdk_session() {
 
 #[test]
 fn resolve_cli_resume_state_uses_source_session_for_forks() {
+    let _guard = TestEnvGuard::new("resume-fork-source");
     let source_id = crate::agent_session::create_agent_session().expect("create source session");
     crate::agent_session::set_session_sdk_session_id(&source_id, Some("sdk-source".to_string()))
         .expect("persist source sdk session id");
@@ -404,4 +407,79 @@ fn resolve_cli_resume_state_uses_source_session_for_forks() {
             fork_session: true,
         }
     );
+}
+
+#[test]
+fn start_agent_request_round_trips_initial_user_message() {
+    let value = serde_json::json!({
+        "sessionId": "abc-123",
+        "channelId": "channel-a",
+        "userMessage": "hello from start",
+        "useJagent": false,
+    });
+
+    let req: AgentStartRequest = serde_json::from_value(value).unwrap();
+    assert_eq!(req.session_id.as_deref(), Some("abc-123"));
+    assert_eq!(req.channel_id.as_deref(), Some("channel-a"));
+    assert_eq!(req.user_message.as_deref(), Some("hello from start"));
+}
+
+#[test]
+fn append_initial_user_message_persists_startup_prompt_once() {
+    let _guard = TestEnvGuard::new("append-startup-prompt");
+    let session_id = crate::agent_session::create_agent_session().expect("create session");
+
+    append_initial_user_message(&session_id, Some("first prompt")).expect("persist startup prompt");
+
+    let timeline = crate::agent_session::get_agent_session(&session_id).expect("read timeline");
+    assert_eq!(timeline.len(), 1);
+    assert_eq!(timeline[0].kind, "user_message");
+    assert_eq!(timeline[0].content.as_deref(), Some("first prompt"));
+
+    crate::agent_session::delete_agent_session(&session_id).expect("cleanup session");
+}
+
+#[test]
+fn append_initial_user_message_ignores_blank_prompt() {
+    let _guard = TestEnvGuard::new("append-blank-prompt");
+    let session_id = crate::agent_session::create_agent_session().expect("create session");
+
+    append_initial_user_message(&session_id, Some("   ")).expect("blank prompt should be ignored");
+
+    let timeline = crate::agent_session::get_agent_session(&session_id).expect("read timeline");
+    assert!(timeline.is_empty());
+
+    crate::agent_session::delete_agent_session(&session_id).expect("cleanup session");
+}
+
+#[test]
+fn cli_startup_prompt_is_not_persisted_twice_when_persistence_is_disabled() {
+    let _guard = TestEnvGuard::new("cli-startup-prompt-no-double-persist");
+    let session_id = crate::agent_session::create_agent_session().expect("create session");
+    let mut runtimes = HashMap::new();
+    let engine = AgentEngine::test_stub(
+        &session_id,
+        AgentBackend::Cli {
+            process: None,
+            stdin: None,
+            stdout_thread: None,
+            stderr_thread: None,
+        },
+    );
+
+    insert_runtime_and_maybe_append_initial_message(
+        &mut runtimes,
+        &session_id,
+        engine,
+        InitialMessageBehavior {
+            user_message: Some("first prompt"),
+            persist_to_timeline: false,
+        },
+    )
+    .expect("cli startup should not persist prompt locally");
+
+    let timeline = crate::agent_session::get_agent_session(&session_id).expect("read timeline");
+    assert!(timeline.is_empty());
+
+    crate::agent_session::delete_agent_session(&session_id).expect("cleanup session");
 }

@@ -2,9 +2,9 @@
 doc_type: architecture
 slug: frontend-chat-ui
 scope: j-gui 前端 Chat 界面——含 PromptEditorSidebar 的系统提示词编辑 + ChatInput 附件工具栏 + 并排模式 + 全局流式事件监听
-summary: ChatView 接收 conversationId prop，通过 ConversationProvider 提供 per-conversation 上下文，使用本地 useState 管理消息、通过全局 streamingStatesAtom Map 处理流式状态、通过 ipc.ts 的 EventBus 消费流式事件，ChatInput 使用 TipTap 富文本编辑器并支持附件
+summary: ChatView 接收 conversationId prop，通过 ConversationProvider 提供 per-conversation 上下文，使用本地 useState 管理消息、通过全局 streamingStatesAtom Map 处理流式状态、通过 ipc.ts 的 EventBus 消费流式事件；主路径额外显式露出工具活动面板与 Chat->Agent 迁移入口，ChatInput 使用 TipTap 富文本编辑器并支持附件
 status: current
-last_reviewed: 2026-05-10
+last_reviewed: 2026-05-12
 tags: [frontend, chat, streaming, jotai, tiptap, attachments, parallel]
 depends_on: [frontend-ai-elements, frontend-ipc-layer]
 implements: [j-gui-ai-interaction]
@@ -46,6 +46,8 @@ App
             │       ├── 左列：用户消息
             │       └── 右列：助手回复
             ├── 错误提示 AlertBar (chatStreamErrorsAtom)
+            ├── ToolActivity Summary Panel（当 streamState.toolActivities 非空时）
+            ├── MigrateToAgentButton（主路径按钮形态）
             ├── AgentRecommendBanner（suggest_agent_mode 工具结果）
             └── ChatInput
                 ├── AttachmentPreview（pending 附件缩略图列表）
@@ -125,7 +127,7 @@ ChatInput.handleSend()
 | `src/components/chat/ChatToolBlock.tsx` | 工具调用块——语义化短语行 + 图标 + 点击展开 ToolResultRenderer | 91 |
 | `src/components/chat/InlineEditForm.tsx` | 消息原地编辑——textarea + 附件保留/新增/删除 + 拖放支持 | 264 |
 | `src/components/chat/DeleteMessageDialog.tsx` | 删除确认弹窗——AlertDialog 带黄色警告 | 63 |
-| `src/components/chat/MigrateToAgentButton.tsx` | 迁移到 Agent 模式按钮——常驻 assistant 消息操作栏 | 114 |
+| `src/components/chat/MigrateToAgentButton.tsx` | 迁移到 Agent 模式按钮——同时支持 assistant 消息操作栏图标入口与 Chat 主路径按钮入口 | 114 |
 | `src/components/chat/CopyButton.tsx` | 复制按钮——CopyIcon/CheckIcon 状态切换 | 42 |
 | `src/components/chat/AgentRecommendBanner.tsx` | Agent 推荐横幅——suggest_agent_mode 工具结果展示 + 迁移流程 | 162 |
 | `src/components/chat/SystemPromptSelector.tsx` | 系统提示词下拉选择器——DropdownMenu + 选择/标记默认/跳转到编辑侧栏 | 96 |
@@ -286,6 +288,8 @@ interface ChatSendInput {
 - **附件工作流完整前端实现**：拖放/粘贴/文件对话框 → 临时 `pendingAttachmentData`（base64 + blob URL）→ 发送时 `saveAttachment` IPC 保存到磁盘 → attachments 随 `ChatSendInput` 发送。`__pendingAttachmentData` 挂载在 `window` 上。
 - **Thinking 按钮接通后端**：切换 per-conversation `thinkingEnabledAtom`，`ChatSendInput.thinkingEnabled` 传值，不同于旧版本仅维护本地视觉状态。
 - **Streaming 错误与已停止标记**：stream:error 时写入 `chatStreamErrorsAtom` 显示 AlertBar；点击停止或快捷键 `jgui:stop-generation` 触发 `handleStop`（仅标记 streaming=false，不清除内容）。
+- **主路径工具活动可见性**：当 `streamState.toolActivities` 非空时，`ChatView` 会在输入区上方额外渲染一个显式工具活动面板，避免工具执行状态只出现在流式消息气泡内部。
+- **Chat -> Agent 迁移入口双挂载**：保留 assistant 消息 action bar 中的图标入口，同时在 Chat 主路径中新增按钮形态入口；两者都复用 `MigrateToAgentButton` 的同一套迁移逻辑。
 - **标题异步生成**：首条消息发送时通过 `registerPendingTitle()` 注册，流式完成后 `useGlobalChatListeners` 调用 `generateTitle` IPC，更新 conversation + tab 标题。
 - **Separate Reasoning channel**：内容与推理在流式事件层面分开传输，前端分别累积，Reasoning 组件使用 Collapsible + 思考计时 + 自动折叠。
 - **并排模式**：通过 ChatHeader 按钮或 hook 切换，ChatMessages 检测 `parallelMode` 后渲染 ParallelChatMessages 替代标准消息列表。按 ContextDivider 分段。

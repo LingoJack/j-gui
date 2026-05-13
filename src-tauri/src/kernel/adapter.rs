@@ -302,6 +302,14 @@ fn chat_attachment_sidecar_path(session_id: &str) -> PathBuf {
         .join("chat_attachments.json")
 }
 
+pub(crate) fn chat_session_meta_path(session_id: &str) -> PathBuf {
+    SessionPaths::new(session_id).meta_file()
+}
+
+pub(crate) fn chat_session_transcript_path(session_id: &str) -> PathBuf {
+    SessionPaths::new(session_id).transcript()
+}
+
 fn load_chat_attachment_sidecar(session_id: &str) -> HashMap<usize, Vec<KernelFileAttachment>> {
     let path = chat_attachment_sidecar_path(session_id);
     let Ok(content) = std::fs::read_to_string(path) else {

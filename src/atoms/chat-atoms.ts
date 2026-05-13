@@ -33,6 +33,9 @@ export const conversationsAtom: PrimitiveAtom<ConversationMeta[]> = atom<Convers
 /** 当前对话 ID */
 export const currentConversationIdAtom = atom(null) as PrimitiveAtom<string | null>
 
+/** Chat 右侧工作区独立选择，不能复用 Agent 的当前工作区状态 */
+export const currentChatWorkspaceIdAtom = atom(null) as PrimitiveAtom<string | null>
+
 /** 搜索/导航后需要定位到的消息锚点 */
 export interface ChatMessageTarget {
   conversationId: string

@@ -75,45 +75,18 @@ function highlightPattern(text: string, pattern: string): React.ReactNode {
 
 export function GrepResultRenderer({ result, isError, input }: GrepResultRendererProps): React.ReactElement {
   const pattern = typeof input.pattern === 'string' ? input.pattern : ''
-
-  if (isError) {
-    return (
-      <pre className="rounded-md p-3 text-[12px] font-mono text-destructive/80 bg-destructive/5 whitespace-pre-wrap break-all overflow-x-auto">
-        {result}
-      </pre>
-    )
-  }
-
   const groups = React.useMemo(() => parseGrepOutput(result), [result])
+  const totalMatches = groups?.reduce((sum, g) => sum + g.matches.length, 0) ?? 0
 
-  // 无法解析时 fallback 到纯文本
-  if (!groups) {
-    return (
-      <CollapsibleResult
-        content={result}
-        renderContent={(text) => (
-          <pre className="rounded-md p-3 text-[12px] font-mono text-foreground/60 bg-muted/30 whitespace-pre-wrap break-all overflow-x-auto">
-            {text}
-          </pre>
-        )}
-      />
-    )
-  }
-
-  const totalMatches = groups.reduce((sum, g) => sum + g.matches.length, 0)
-
-  const renderGroups = React.useCallback((text: string): React.ReactNode => {
-    // 根据 text 长度决定显示多少（CollapsibleResult 会截断）
-    const visibleLines = text.split('\n').length
-
+  const renderGroups = React.useCallback((): React.ReactNode => {
     return (
       <div className="space-y-2">
         {/* 统计 */}
         <div className="text-[11px] text-muted-foreground/60">
-          {totalMatches} 个匹配，{groups.length} 个文件
+          {totalMatches} 个匹配，{groups?.length ?? 0} 个文件
         </div>
 
-        {groups.map((group) => (
+        {groups?.map((group) => (
           <div key={group.file} className="rounded-md overflow-hidden bg-zinc-900 dark:bg-zinc-950">
             {/* 文件头 */}
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800/50 text-[11px]">
@@ -139,6 +112,28 @@ export function GrepResultRenderer({ result, isError, input }: GrepResultRendere
       </div>
     )
   }, [groups, pattern, totalMatches])
+
+  if (isError) {
+    return (
+      <pre className="rounded-md p-3 text-[12px] font-mono text-destructive/80 bg-destructive/5 whitespace-pre-wrap break-all overflow-x-auto">
+        {result}
+      </pre>
+    )
+  }
+
+  // 无法解析时 fallback 到纯文本
+  if (!groups) {
+    return (
+      <CollapsibleResult
+        content={result}
+        renderContent={(text) => (
+          <pre className="rounded-md p-3 text-[12px] font-mono text-foreground/60 bg-muted/30 whitespace-pre-wrap break-all overflow-x-auto">
+            {text}
+          </pre>
+        )}
+      />
+    )
+  }
 
   return (
     <CollapsibleResult

@@ -19,16 +19,17 @@ import { notificationsEnabledAtom, notificationSoundEnabledAtom, notificationSou
 import { stickyUserMessageEnabledAtom, initializeUiPreferences } from './atoms/ui-preferences'
 import { useGlobalAgentListeners } from './hooks/useGlobalAgentListeners'
 import { useGlobalChatListeners } from './hooks/useGlobalChatListeners'
-import { tabsAtom, activeTabIdAtom } from './atoms/tab-atoms'
-import type { TabItem } from './atoms/tab-atoms'
-import { currentConversationIdAtom, channelsAtom, channelsLoadedAtom, selectedModelAtom } from './atoms/chat-atoms'
+import { useSyncChatWorkspaceId } from './hooks/useSyncChatWorkspaceId'
+import { tabsAtom, activeTabIdAtom, normalizeTabTitle } from './atoms/tab-atoms'
+import { currentConversationIdAtom, channelsAtom, channelsLoadedAtom, selectedModelAtom, currentChatWorkspaceIdAtom } from './atoms/chat-atoms'
 import { appModeAtom } from './atoms/app-mode'
 import { Toaster } from './components/ui/sonner'
 import { diffCapabilities } from '@jgui/shared'
-import type { WorkspaceCapabilities } from '@jgui/shared'
+import type { AgentSessionMeta, AgentWorkspace, Channel, ConversationMeta, WorkspaceCapabilities } from '@jgui/shared'
 import { showCapabilityChangeToasts } from './lib/capabilities-toast'
 import { GlobalShortcuts } from './components/shortcuts/GlobalShortcuts'
 import { TabSwitcher } from './components/tabs/TabSwitcher'
+import { isDraftLikeAgentSession, isDraftLikeConversation } from './lib/session-meta'
 import './styles/globals.css'
 import 'katex/dist/katex.min.css'
 import * as ipc from '@/lib/ipc'
@@ -61,7 +62,7 @@ function ThemeInitializer(): null {
     return themeMode
   }, [themeMode, themeStyle, systemIsDark])
 
-  useEffect(() => { applyThemeToDOM(themeMode, themeStyle, systemIsDark) }, [themeSignature])
+  useEffect(() => { applyThemeToDOM(themeMode, themeStyle, systemIsDark) }, [themeMode, themeStyle, systemIsDark, themeSignature])
   return null
 }
 
@@ -81,17 +82,19 @@ function AgentSettingsInitializer(): null {
   const setAgentSettingsReady = useSetAtom(agentSettingsReadyAtom)
   const setChannels = useSetAtom(channelsAtom)
   const setChannelsLoaded = useSetAtom(channelsLoadedAtom)
+  const setCurrentChatWorkspaceId = useSetAtom(currentChatWorkspaceIdAtom)
   const store = useStore()
   const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
   const workspaces = useAtomValue(agentWorkspacesAtom)
   const prevCapabilitiesRef = useRef<WorkspaceCapabilities | null>(null)
   const suppressToastRef = useRef(true)
+  useSyncChatWorkspaceId()
 
   useEffect(() => {
     Promise.all([ipc.listChannels(), ipc.getSettings()]).then(([channels, settings]) => {
       setChannels(channels)
       setChannelsLoaded(true)
-      const channelIds = new Set(channels.map((c: any) => c.id))
+      const channelIds = new Set(channels.map((c: Channel) => c.id))
       const chatModel = store.get(selectedModelAtom)
       if (chatModel && !channelIds.has(chatModel.channelId)) store.set(selectedModelAtom, null)
       if (settings.agentChannelId && channelIds.has(settings.agentChannelId)) setAgentChannelId(settings.agentChannelId)
@@ -104,20 +107,31 @@ function AgentSettingsInitializer(): null {
       if (settings.agentEffort) setEffort(settings.agentEffort)
       if (settings.agentMaxBudgetUsd != null) setMaxBudget(settings.agentMaxBudgetUsd)
       if (settings.agentMaxTurns != null) setMaxTurns(settings.agentMaxTurns)
-      ipc.listAgentWorkspaces().then((ws: any[]) => {
+      ipc.listAgentWorkspaces().then((ws: AgentWorkspace[]) => {
         setAgentWorkspaces(ws)
-        if (settings.agentWorkspaceId && ws.some((w: any) => w.id === settings.agentWorkspaceId)) setCurrentWorkspaceId(settings.agentWorkspaceId)
-        else if (ws.length > 0) setCurrentWorkspaceId(ws[0]!.id)
+        const restoredWorkspaceId = store.get(currentAgentWorkspaceIdAtom)
+        if (restoredWorkspaceId && ws.some((w: AgentWorkspace) => w.id === restoredWorkspaceId)) {
+          setCurrentWorkspaceId(restoredWorkspaceId)
+        } else if (settings.agentWorkspaceId && ws.some((w: AgentWorkspace) => w.id === settings.agentWorkspaceId)) {
+          setCurrentWorkspaceId(settings.agentWorkspaceId)
+        } else if (ws.length > 0) {
+          setCurrentWorkspaceId(ws[0]!.id)
+        }
+        if (settings.chatWorkspaceId && ws.some((w: AgentWorkspace) => w.id === settings.chatWorkspaceId)) {
+          setCurrentChatWorkspaceId(settings.chatWorkspaceId)
+        } else if (ws.length > 0) {
+          setCurrentChatWorkspaceId(ws[0]!.id)
+        }
         setAgentSettingsReady(true)
       }).catch(() => setAgentSettingsReady(true))
     }).catch(() => setAgentSettingsReady(true))
-  }, [])
+  }, [setAgentBackendMode, setAgentChannelId, setAgentChannelIds, setAgentModelId, setAgentSettingsReady, setAgentWorkspaces, setChannels, setChannelsLoaded, setCurrentChatWorkspaceId, setCurrentWorkspaceId, setEffort, setMaxBudget, setMaxTurns, setThinking, store])
 
   useEffect(() => {
     suppressToastRef.current = true
     prevCapabilitiesRef.current = null
     if (!currentWorkspaceId) return
-    const ws = workspaces.find((w: any) => w.id === currentWorkspaceId)
+    const ws = workspaces.find((w: AgentWorkspace) => w.id === currentWorkspaceId)
     if (!ws) return
     ipc.getWorkspaceCapabilities(ws.slug).then((caps: WorkspaceCapabilities) => {
       prevCapabilitiesRef.current = caps
@@ -127,7 +141,7 @@ function AgentSettingsInitializer(): null {
 
   useEffect(() => {
     const u1 = ipc.onCapabilitiesChanged(() => {
-      const ws = workspaces.find((w: any) => w.id === currentWorkspaceId)
+      const ws = workspaces.find((w: AgentWorkspace) => w.id === currentWorkspaceId)
       if (ws) ipc.getWorkspaceCapabilities(ws.slug).then((newCaps: WorkspaceCapabilities) => {
         const prev = prevCapabilitiesRef.current
         if (prev && !suppressToastRef.current) showCapabilityChangeToasts(diffCapabilities(prev, newCaps))
@@ -187,18 +201,34 @@ function TabStatePersistenceInitializer(): null {
     Promise.all([ipc.getSettings(), ipc.listConversations(), ipc.listAgentSessions()]).then(([settings, conversations, agentSessions]) => {
       const tabState = settings.tabState
       if (!tabState?.tabs?.length) { restoredRef.current = true; return }
-      const validSessionIds = new Set([...conversations.map((c: any) => c.id), ...agentSessions.map((s: any) => s.id)])
-      const validTabs = tabState.tabs.filter((t: any) => t?.sessionId && validSessionIds.has(t.sessionId))
+      const validChatIds = new Set(conversations.filter((conversation: ConversationMeta) => !isDraftLikeConversation(conversation)).map((conversation: ConversationMeta) => conversation.id))
+      const validAgentIds = new Set(agentSessions.filter((session: AgentSessionMeta) => !isDraftLikeAgentSession(session)).map((session: AgentSessionMeta) => session.id))
+      const validTabs = tabState.tabs
+        .filter((tab: { id: string; type: 'chat' | 'agent'; sessionId: string; title?: string }) =>
+          tab?.sessionId
+          && ((tab.type === 'chat' && validChatIds.has(tab.sessionId)) || (tab.type === 'agent' && validAgentIds.has(tab.sessionId))),
+        )
+        .map((tab: { id: string; type: 'chat' | 'agent'; sessionId: string; title?: string }) => ({
+          ...tab,
+          title: normalizeTabTitle(tab.type, tab.title),
+        }))
       if (!validTabs.length) { restoredRef.current = true; return }
-      const activeTabId = tabState.activeTabId && validTabs.some((t: any) => t.id === tabState.activeTabId) ? tabState.activeTabId : validTabs[0]?.id ?? null
+      const activeTabId = tabState.activeTabId && validTabs.some((t: { id: string }) => t.id === tabState.activeTabId) ? tabState.activeTabId : validTabs[0]?.id ?? null
       store.set(tabsAtom, validTabs)
       store.set(activeTabIdAtom, activeTabId)
-      const activeTab = validTabs.find((t: any) => t.id === activeTabId)
-      if (activeTab) { store.set(appModeAtom, activeTab.type); store.set(activeTab.type === 'chat' ? currentConversationIdAtom : currentAgentSessionIdAtom, activeTab.sessionId) }
+      const activeTab = validTabs.find((t: { id: string; type: 'chat' | 'agent'; sessionId: string }) => t.id === activeTabId)
+      if (activeTab) {
+        store.set(appModeAtom, activeTab.type)
+        store.set(activeTab.type === 'chat' ? currentConversationIdAtom : currentAgentSessionIdAtom, activeTab.sessionId)
+        if (activeTab.type === 'agent') {
+          const activeSession = agentSessions.find((session: AgentSessionMeta) => session.id === activeTab.sessionId)
+          store.set(currentAgentWorkspaceIdAtom, activeSession?.workspaceId ?? null)
+        }
+      }
     }).catch(console.error).finally(() => { restoredRef.current = true })
   }, [store])
   useEffect(() => {
-    let timer: any = null
+    let timer: ReturnType<typeof setTimeout> | null = null
     const save = () => { ipc.updateSettings({ tabState: { tabs: store.get(tabsAtom), activeTabId: store.get(activeTabIdAtom) } }).catch(console.error) }
     const debounced = () => { if (!restoredRef.current) return; if (timer) clearTimeout(timer); timer = setTimeout(save, 500) }
     const u1 = store.sub(tabsAtom, debounced)

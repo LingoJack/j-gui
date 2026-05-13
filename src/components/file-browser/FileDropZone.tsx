@@ -212,7 +212,7 @@ export function FileDropZone({ workspaceSlug, sessionId, target = 'session', onF
       ) : (
         <>
           {/* 添加文件 */}
-          <Tooltip open={isDragOver === 'left' ? false : undefined}>
+          <Tooltip>
             <TooltipTrigger asChild>
               <div
                 role="button"
@@ -234,7 +234,7 @@ export function FileDropZone({ workspaceSlug, sessionId, target = 'session', onF
             </TooltipContent>
           </Tooltip>
           {/* 附加文件夹 */}
-          <Tooltip open={isDragOver === 'right' ? false : undefined}>
+          <Tooltip>
             <TooltipTrigger asChild>
               <div
                 role="button"

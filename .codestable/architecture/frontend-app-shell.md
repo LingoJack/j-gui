@@ -2,9 +2,9 @@
 doc_type: architecture
 slug: frontend-app-shell
 scope: j-gui 前端工作台外壳——AppShell、Sidebar、MainArea、Search、RightSidePanel、GlobalShortcuts、Tab 系统
-summary: AppShell 是极简布局容器；左侧栏、标签页主区、搜索浮窗、右侧文件面板、全局快捷键各自由独立子模块承担，通过 Jotai atoms 协调
+summary: AppShell 是极简布局容器；左侧栏、标签页主区、搜索浮窗、右侧文件面板、全局快捷键各自由独立子模块承担，通过 Jotai atoms 协调；MainArea 允许真实无 tab 空态，SearchDialog 显式展示结果元信息与归档文案
 status: current
-last_reviewed: 2026-05-10
+last_reviewed: 2026-05-12
 tags: [frontend, app-shell, tabs, sidebar, workspace, shortcuts]
 depends_on: [frontend-state-atoms]
 implements: [j-gui-session-management]
@@ -176,7 +176,7 @@ AlertDialog (删除确认)     (pendingDeleteId, 放在 LeftSidebar 内局部挂
 
 - 包裹在 `Panel` 容器内（`.bg-content-area.rounded-2xl.shadow-xl`）
 - 渲染 `TabBar` + 内容区
-  - 无 tab 时显示 `WelcomeView`
+  - 无 tab 时显示 `WelcomeView` 的真实空态，不自动复用最近会话或创建 draft
   - 有 `activeTabId` 时渲染 `TabContent(tabId)`
 - `SettingsDialog` 始终作为同级渲染（通过 `settingsOpenAtom` 控制显示）
 - 兜底逻辑：`tabs.length > 0` 但 `activeTabId` 为空时自动激活第一个标签
@@ -222,7 +222,7 @@ AlertDialog (删除确认)     (pendingDeleteId, 放在 LeftSidebar 内局部挂
 3. **键盘导航**：上下箭头选择 + Enter 打开 + Esc 关闭
 4. **IME 兼容**：compositionStart/compositionEnd + 60ms 微 debounce 处理中文输入
 5. **导航**：使用 `useOpenSession` hook 打开对应会话
-6. **额外信息**：Agent 会话显示工作区名称 badge，已归档显示归档图标
+6. **额外信息**：结果列表显式展示类型、更新时间；Agent 会话显示工作区名称 badge；归档结果显示“已归档”文字标识而不只是图标
 
 ### 2.8 全局快捷键（GlobalShortcuts）
 
@@ -465,16 +465,16 @@ GlobalShortcuts → shortcut-atoms / tab-atoms / agent-atoms / chat-atoms / sett
 6. **Agent tab 关闭前先 stopAgent**（IPC 终止子进程），修复子进程残留。证据：`src/hooks/useCloseTab.tsx:76-106`。
 
 7. **搜索双层架构**：标题即时匹配（客户端过滤）+ 消息内容搜索（debounced IPC，含高亮）。理由：标题搜索低延迟，内容搜索需要后端支持。证据：`src/components/app-shell/SearchDialog.tsx:174-246`。
+8. **MainArea 允许真实无 tab 状态**：关闭最后一个 tab 后停留在 WelcomeView，由用户显式决定新建 Chat 或 Agent，而不是自动恢复最近会话。证据：`src/components/welcome/WelcomeView.tsx`。
+9. **右侧面板由 per-session 原子控制**（`agentSidePanelOpenMapAtom`），每个会话独立记忆面板开关状态。证据：`src/components/agent/SidePanel.tsx:57-64`。
 
-8. **右侧面板由 per-session 原子控制**（`agentSidePanelOpenMapAtom`），每个会话独立记忆面板开关状态。证据：`src/components/agent/SidePanel.tsx:57-64`。
+10. **Agent 侧边栏双区布局**（Working/置顶上区 + 最近会话下区），上区高度可拖拽调整并持久化。证据：`src/components/app-shell/LeftSidebar.tsx:1013-1193`。
 
-9. **Agent 侧边栏双区布局**（Working/置顶上区 + 最近会话下区），上区高度可拖拽调整并持久化。证据：`src/components/app-shell/LeftSidebar.tsx:1013-1193`。
+11. **会话归档/删除时同步清理标签页和 Map atoms**，避免残留状态。证据：`src/components/app-shell/LeftSidebar.tsx:530-603`（删除流程含 closeTab + cleanupMapAtoms + syncActiveTabSideEffects）。
 
-10. **会话归档/删除时同步清理标签页和 Map atoms**，避免残留状态。证据：`src/components/app-shell/LeftSidebar.tsx:530-603`（删除流程含 closeTab + cleanupMapAtoms + syncActiveTabSideEffects）。
+12. **模式切换时自动恢复上次会话**，通过 `useOpenSession` hook 统一处理 fallback 链（上次选中→同类型 Tab→最近未归档→仅切换模式）。证据：`src/components/app-shell/ModeSwitcher.tsx:36-63`。
 
-11. **模式切换时自动恢复上次会话**，通过 `useOpenSession` hook 统一处理 fallback 链（上次选中→同类型 Tab→最近未归档→仅切换模式）。证据：`src/components/app-shell/ModeSwitcher.tsx:36-63`。
-
-12. **BackgroundTasksPanel 不是 AppShell 的直接子组件**，而是嵌入在 Agent 消息的工具执行区域中。理由：后台任务与特定会话绑定，不适合全局渲染。证据：`src/components/agent/BackgroundTasksPanel.tsx`。
+13. **BackgroundTasksPanel 不是 AppShell 的直接子组件**，而是嵌入在 Agent 消息的工具执行区域中。理由：后台任务与特定会话绑定，不适合全局渲染。证据：`src/components/agent/BackgroundTasksPanel.tsx`。
 
 ## 6. 代码锚点
 

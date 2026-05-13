@@ -14,8 +14,6 @@ import {
   tabsAtom,
   activeTabIdAtom,
   tabIndicatorMapAtom,
-  openTab,
-  reorderTabs,
 } from '@/atoms/tab-atoms'
 import type { TabItem } from '@/atoms/tab-atoms'
 import type { SessionIndicatorStatus } from '@/atoms/agent-atoms'
@@ -81,12 +79,11 @@ export function TabBar(): React.ReactElement {
       })
 
       const session = agentSessions.find((s) => s.id === tab.sessionId)
-      if (session?.workspaceId) {
-        setCurrentAgentWorkspaceId(session.workspaceId)
-        ipc.updateSettings({
-          agentWorkspaceId: session.workspaceId,
-        }).catch(console.error)
-      }
+      const workspaceId = session?.workspaceId ?? null
+      setCurrentAgentWorkspaceId(workspaceId)
+      ipc.updateSettings({
+        agentWorkspaceId: workspaceId,
+      }).catch(console.error)
     }
   }, [setActiveTabId, tabs, agentSessions, setAppMode, setCurrentConversationId, setCurrentAgentSessionId, setCurrentAgentWorkspaceId, setUnviewedCompleted])
 

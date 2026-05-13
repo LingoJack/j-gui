@@ -6,6 +6,116 @@ fn parse_tool_input_json(input: &str) -> serde_json::Value {
     serde_json::from_str::<serde_json::Value>(input).unwrap_or_else(|_| json!({}))
 }
 
+struct TextMessagePayload<'a> {
+    message_type: &'a str,
+    content: &'a str,
+}
+
+fn push_text_message(
+    messages: &mut Vec<serde_json::Value>,
+    session_id: &str,
+    item: &AgentTimelineItem,
+    payload: TextMessagePayload<'_>,
+) {
+    messages.push(json!({
+        "type": payload.message_type,
+        "session_id": session_id,
+        "uuid": item.id,
+        "parent_tool_use_id": null,
+        "message": {
+            "content": [{ "type": "text", "text": payload.content }]
+        },
+        "_createdAt": item.created_at,
+    }));
+}
+
+fn push_tool_call_messages(
+    messages: &mut Vec<serde_json::Value>,
+    session_id: &str,
+    item: &AgentTimelineItem,
+) {
+    let Some(tool_call) = item.tool_call.as_ref() else {
+        return;
+    };
+    messages.push(json!({
+        "type": "assistant",
+        "session_id": session_id,
+        "uuid": item.id,
+        "parent_tool_use_id": null,
+        "message": {
+            "content": [{
+                "type": "tool_use",
+                "id": tool_call.tool_id,
+                "name": tool_call.tool_name,
+                "input": parse_tool_input_json(&tool_call.tool_input),
+            }]
+        },
+        "_createdAt": item.created_at,
+    }));
+
+    if let Some(output) = tool_call.tool_output.as_deref() {
+        messages.push(json!({
+            "type": "user",
+            "session_id": session_id,
+            "uuid": format!("{}-result", item.id),
+            "parent_tool_use_id": null,
+            "message": {
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": tool_call.tool_id,
+                    "content": output,
+                }]
+            },
+            "_createdAt": item.created_at,
+        }));
+    }
+}
+
+fn push_interrupt_messages(
+    messages: &mut Vec<serde_json::Value>,
+    session_id: &str,
+    item: &AgentTimelineItem,
+    persisted_tool_call_ids: &HashSet<&str>,
+) {
+    let Some(interrupt) = item.interrupt.as_ref() else {
+        return;
+    };
+    if !persisted_tool_call_ids.contains(interrupt.interrupt_id.as_str()) {
+        messages.push(json!({
+            "type": "assistant",
+            "session_id": session_id,
+            "uuid": item.id,
+            "parent_tool_use_id": null,
+            "message": {
+                "content": [{
+                    "type": "tool_use",
+                    "id": interrupt.interrupt_id,
+                    "name": interrupt.tool_name,
+                    "input": parse_tool_input_json(&interrupt.tool_input),
+                }]
+            },
+            "_createdAt": item.created_at,
+        }));
+    }
+
+    if let Some(response) = interrupt.response.as_deref() {
+        messages.push(json!({
+            "type": "user",
+            "session_id": session_id,
+            "uuid": format!("{}-response", item.id),
+            "parent_tool_use_id": null,
+            "message": {
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": interrupt.interrupt_id,
+                    "content": response,
+                }]
+            },
+            "_createdAt": item.created_at,
+        }));
+    }
+}
+
 /// 将 Agent 时间线转换为前端可直接消费的 SDK message 形状。
 pub fn timeline_to_sdk_messages(
     session_id: &str,
@@ -25,105 +135,33 @@ pub fn timeline_to_sdk_messages(
         match item.kind.as_str() {
             "user_message" => {
                 if let Some(content) = item.content.as_deref() {
-                    messages.push(json!({
-                        "type": "user",
-                        "session_id": session_id,
-                        "uuid": item.id,
-                        "parent_tool_use_id": null,
-                        "message": {
-                            "content": [{ "type": "text", "text": content }]
+                    push_text_message(
+                        &mut messages,
+                        session_id,
+                        item,
+                        TextMessagePayload {
+                            message_type: "user",
+                            content,
                         },
-                        "_createdAt": item.created_at,
-                    }));
+                    );
                 }
             }
             "assistant_content" => {
                 if let Some(content) = item.content.as_deref() {
-                    messages.push(json!({
-                        "type": "assistant",
-                        "session_id": session_id,
-                        "uuid": item.id,
-                        "parent_tool_use_id": null,
-                        "message": {
-                            "content": [{ "type": "text", "text": content }]
+                    push_text_message(
+                        &mut messages,
+                        session_id,
+                        item,
+                        TextMessagePayload {
+                            message_type: "assistant",
+                            content,
                         },
-                        "_createdAt": item.created_at,
-                    }));
+                    );
                 }
             }
-            "tool_call" => {
-                if let Some(tool_call) = item.tool_call.as_ref() {
-                    messages.push(json!({
-                        "type": "assistant",
-                        "session_id": session_id,
-                        "uuid": item.id,
-                        "parent_tool_use_id": null,
-                        "message": {
-                            "content": [{
-                                "type": "tool_use",
-                                "id": tool_call.tool_id,
-                                "name": tool_call.tool_name,
-                                "input": parse_tool_input_json(&tool_call.tool_input),
-                            }]
-                        },
-                        "_createdAt": item.created_at,
-                    }));
-
-                    if let Some(output) = tool_call.tool_output.as_deref() {
-                        messages.push(json!({
-                            "type": "user",
-                            "session_id": session_id,
-                            "uuid": format!("{}-result", item.id),
-                            "parent_tool_use_id": null,
-                            "message": {
-                                "content": [{
-                                    "type": "tool_result",
-                                    "tool_use_id": tool_call.tool_id,
-                                    "content": output,
-                                }]
-                            },
-                            "_createdAt": item.created_at,
-                        }));
-                    }
-                }
-            }
+            "tool_call" => push_tool_call_messages(&mut messages, session_id, item),
             "interrupt" => {
-                if let Some(interrupt) = item.interrupt.as_ref() {
-                    if !persisted_tool_call_ids.contains(interrupt.interrupt_id.as_str()) {
-                        messages.push(json!({
-                            "type": "assistant",
-                            "session_id": session_id,
-                            "uuid": item.id,
-                            "parent_tool_use_id": null,
-                            "message": {
-                                "content": [{
-                                    "type": "tool_use",
-                                    "id": interrupt.interrupt_id,
-                                    "name": interrupt.tool_name,
-                                    "input": parse_tool_input_json(&interrupt.tool_input),
-                                }]
-                            },
-                            "_createdAt": item.created_at,
-                        }));
-                    }
-
-                    if let Some(response) = interrupt.response.as_deref() {
-                        messages.push(json!({
-                            "type": "user",
-                            "session_id": session_id,
-                            "uuid": format!("{}-response", item.id),
-                            "parent_tool_use_id": null,
-                            "message": {
-                                "content": [{
-                                    "type": "tool_result",
-                                    "tool_use_id": interrupt.interrupt_id,
-                                    "content": response,
-                                }]
-                            },
-                            "_createdAt": item.created_at,
-                        }));
-                    }
-                }
+                push_interrupt_messages(&mut messages, session_id, item, &persisted_tool_call_ids)
             }
             _ => {}
         }

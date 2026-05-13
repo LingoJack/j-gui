@@ -37,7 +37,7 @@ export class TabErrorBoundary extends React.Component<
   override render(): React.ReactNode {
     if (this.state.hasError) {
       return (
-        <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
+        <div className="flex h-full min-h-0 flex-col items-center justify-center gap-4 text-muted-foreground">
           <AlertTriangle className="size-10 text-destructive/60" />
           <div className="text-center space-y-1">
             <p className="text-sm font-medium text-foreground">页面渲染出错</p>
@@ -56,6 +56,10 @@ export class TabErrorBoundary extends React.Component<
         </div>
       )
     }
-    return <div key={this.state.retryKey}>{this.props.children}</div>
+    return (
+      <div key={this.state.retryKey} className="flex h-full min-h-0 flex-1 flex-col">
+        {this.props.children}
+      </div>
+    )
   }
 }

@@ -12,6 +12,7 @@ import {
 import {
   agentSessionsAtom,
   agentChannelIdAtom,
+  agentWorkspacesAtom,
   currentAgentWorkspaceIdAtom,
 } from '@/atoms/agent-atoms'
 import { activeViewAtom } from '@/atoms/active-view'
@@ -46,6 +47,7 @@ export function useCreateSession(): CreateSessionActions {
   // Agent 模式
   const setAgentSessions = useSetAtom(agentSessionsAtom)
   const agentChannelId = useAtomValue(agentChannelIdAtom)
+  const agentWorkspaces = useAtomValue(agentWorkspacesAtom)
   const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
 
   const createChat = async (options?: CreateSessionOptions): Promise<string | undefined> => {
@@ -76,7 +78,7 @@ export function useCreateSession(): CreateSessionActions {
       const meta = await ipc.createAgentSession(
         undefined,
         agentChannelId || undefined,
-        currentWorkspaceId || undefined,
+        currentWorkspaceId || agentWorkspaces[0]?.id || undefined,
       )
       setAgentSessions((prev) => [meta, ...prev])
       openSession('agent', meta.id, meta.title)

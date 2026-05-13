@@ -36,7 +36,6 @@ import {
 import type {
   Channel,
   ChatProtocolHint,
-  ChannelCreateInput,
   ChannelModel,
   ChannelTestResult,
   FetchModelsResult,
@@ -125,7 +124,9 @@ function buildPreviewUrl(baseUrl: string, provider: ProviderType): string {
       if (pathname !== '/' && pathname !== '') {
         return `${trimmed}/messages`
       }
-    } catch {}
+    } catch {
+      // URL 非法时退回默认拼接逻辑
+    }
     return `${trimmed}/v1/messages`
   }
 
@@ -338,7 +339,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
           setModels((prev) => [...prev, ...newModels])
         }
       }
-    } catch (error) {
+    } catch {
       setFetchResult({ success: false, message: '拉取模型请求失败', models: [] })
     } finally {
       setFetchingModels(false)
@@ -367,7 +368,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
             apiKey,
           })
       setTestResult(result)
-    } catch (error) {
+    } catch {
       setTestResult({ success: false, message: '测试请求失败' })
     } finally {
       setTesting(false)
@@ -420,7 +421,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     } finally {
       setSaving(false)
     }
-  }, [name, baseUrl, apiKey, models, provider, enabled])
+  }, [name, baseUrl, apiKey, models, provider, protocolHint, enabled])
 
   /** 创建渠道（仅新建模式） */
   const handleCreate = async (): Promise<void> => {

@@ -30,6 +30,8 @@ function tryParseKeyValue(text: string): Array<{ key: string; value: string }> |
 }
 
 export function DefaultResultRenderer({ result, isError }: DefaultResultRendererProps): React.ReactElement {
+  const keyValues = React.useMemo(() => tryParseKeyValue(result), [result])
+
   if (isError) {
     return (
       <pre className="rounded-md p-3 text-[12px] font-mono text-destructive/80 bg-destructive/5 whitespace-pre-wrap break-all overflow-x-auto">
@@ -37,8 +39,6 @@ export function DefaultResultRenderer({ result, isError }: DefaultResultRenderer
       </pre>
     )
   }
-
-  const keyValues = React.useMemo(() => tryParseKeyValue(result), [result])
 
   // Key-Value 表格
   if (keyValues && keyValues.length > 0) {

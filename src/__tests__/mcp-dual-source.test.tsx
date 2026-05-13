@@ -432,7 +432,7 @@ describe('MCP Dual Source UI', () => {
       expect(screen.getByText('Global Skill')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: '导入到工作区' }))
+    fireEvent.click(screen.getByRole('button', { name: '复制到当前工作区' }))
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('copy_skill_to_workspace', {

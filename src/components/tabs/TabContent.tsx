@@ -20,11 +20,6 @@ export function TabContent({ tabId }: TabContentProps): React.ReactElement {
   const tabs = useAtomValue(tabsAtom)
   const tab = tabs.find((t) => t.id === tabId)
 
-  React.useEffect(() => {
-    if (!tab) {
-    }
-  }, [tab, tabId, tabs])
-
   if (!tab) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-sm">

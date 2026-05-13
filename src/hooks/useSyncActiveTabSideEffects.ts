@@ -63,12 +63,11 @@ export function useSyncActiveTabSideEffects(): SyncActiveTabSideEffects {
 
       // 同步 workspace
       const session = agentSessions.find((s) => s.id === newActiveTab.sessionId)
-      if (session?.workspaceId) {
-        setCurrentAgentWorkspaceId(session.workspaceId)
-        ipc.updateSettings({
-          agentWorkspaceId: session.workspaceId,
-        }).catch(console.error)
-      }
+      const workspaceId = session?.workspaceId ?? null
+      setCurrentAgentWorkspaceId(workspaceId)
+      ipc.updateSettings({
+        agentWorkspaceId: workspaceId,
+      }).catch(console.error)
     },
     [
       setAppMode,

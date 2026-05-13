@@ -34,7 +34,7 @@ import { MigrateToAgentButton } from './MigrateToAgentButton'
 import { DeleteMessageDialog } from './DeleteMessageDialog'
 import { InlineEditForm } from './InlineEditForm'
 import { UserAvatar } from './UserAvatar'
-import { getModelLogo, resolveModelDisplayName } from '@/lib/model-logo'
+import { resolveAssistantBranding } from '@/lib/model-logo'
 import { userProfileAtom } from '@/atoms/user-profile'
 import { channelsAtom } from '@/atoms/chat-atoms'
 import type { ChatMessage } from '@jgui/shared'
@@ -70,6 +70,8 @@ export function formatMessageTime(timestamp: number): string {
 interface ChatMessageItemProps {
   /** 消息数据 */
   message: ChatMessage
+  /** 当持久化消息未携带 model 时，回退到当前对话模型 */
+  fallbackModelId?: string | null
   /** 当前对话 ID（用于迁移到 Agent 模式） */
   conversationId?: string
   /** 是否正在流式生成中 */
@@ -98,6 +100,7 @@ interface ChatMessageItemProps {
 
 export const ChatMessageItem = React.memo(function ChatMessageItem({
   message,
+  fallbackModelId = null,
   conversationId,
   isStreaming = false,
   isLastAssistant = false,
@@ -113,6 +116,11 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
   const [isDeleting, setIsDeleting] = React.useState(false)
   const userProfile = useAtomValue(userProfileAtom)
   const channels = useAtomValue(channelsAtom)
+  const assistantModelId = message.model ?? fallbackModelId ?? ''
+  const assistantBranding = React.useMemo(
+    () => resolveAssistantBranding(assistantModelId, channels),
+    [assistantModelId, channels],
+  )
 
   /** 确认删除消息 */
   const handleDeleteConfirm = async (): Promise<void> => {
@@ -141,12 +149,12 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
         {/* assistant 头像 + 模型名 + 时间 */}
         {message.role === 'assistant' && (
           <MessageHeader
-            model={message.model ? resolveModelDisplayName(message.model, channels) : undefined}
+            model={assistantBranding.label}
             time={formatMessageTime(message.createdAt)}
             logo={
               <img
-                src={getModelLogo(message.model ?? '')}
-                alt={message.model ?? 'AI'}
+                src={assistantBranding.logo}
+                alt={assistantBranding.label}
                 className="size-[35px] rounded-[25%] object-cover"
               />
             }

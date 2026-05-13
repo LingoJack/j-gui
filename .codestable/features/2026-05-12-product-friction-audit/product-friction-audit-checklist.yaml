@@ -1,0 +1,69 @@
+feature: 2026-05-12-product-friction-audit
+roadmap: j-gui-v1
+roadmap_item: product-friction-audit
+created: 2026-05-12
+status: in-progress
+
+steps:
+  - id: step-1
+    paradigm: docs
+    title: 建立产品摩擦台账模板
+    status: done
+    description: "创建 `.codestable/acceptance/product-friction/2026-05-12/`，按 roadmap 5.7 的字段建立 finding 台账和区域记录骨架。"
+    exit: 台账文件存在，字段覆盖 area/severity/kind/reproduction/expected/actual/evidence/targetRoadmapItem。
+
+  - id: step-2
+    paradigm: audit
+    title: 审计 Chat Search Tabs 主路径
+    status: done
+    description: "运行 Chat、Search、Tabs 的最小审计路径，记录阻塞、交互摩擦、状态反馈和视觉问题。"
+    exit: 三个区域都有 finding 或明确的无 P0/P1 记录。
+
+  - id: step-3
+    paradigm: audit
+    title: 审计 Agent 和文件上下文路径
+    status: done
+    description: "运行 Agent、File Context 的最小审计路径，覆盖权限、工具调用、停止、继续、历史恢复、文件树和附件体验。"
+    exit: 两个区域都有 finding 或明确的无 P0/P1 记录。
+
+  - id: step-4
+    paradigm: audit
+    title: 审计 Settings 和 Layout 路径
+    status: done
+    description: "运行 Settings、Layout 的最小审计路径，覆盖保存、失败、unsupported、来源提示、溢出、截断、焦点和滚动。"
+    exit: 两个区域都有 finding 或明确的无 P0/P1 记录。
+
+  - id: step-5
+    paradigm: planning
+    title: 分级并映射后续硬化项
+    status: done
+    description: "按 P0/P1/P2 给 finding 分级，并映射到 core/settings/agent/layout/blocker 后续 roadmap item。"
+    exit: P0/P1/P2 摘要和 targetRoadmapItem 映射完成。
+
+  - id: step-6
+    paradigm: acceptance
+    title: 写审计验收记录
+    status: done
+    description: "编写 product-friction-audit acceptance，说明审计范围、证据、已发现问题和下游消费方式。"
+    exit: acceptance 完成，CodeStable YAML 校验通过。
+
+checks:
+  - id: check-evidence
+    target: step-5
+    description: "进入 P0/P1 的 finding 必须有复现步骤和行为证据，不能只有主观描述。"
+    status: passed
+
+  - id: check-coverage
+    target: step-4
+    description: "Chat、Agent、Search、Settings、Tabs、File Context、Layout 七个区域必须都有审计结论。"
+    status: passed
+
+  - id: check-downstream
+    target: step-5
+    description: "每条 P0/P1 finding 必须映射到一个后续硬化 roadmap item 或明确转为 issue。"
+    status: passed
+
+  - id: check-no-code-change
+    target: step-6
+    description: "本 feature 不修改产品代码，只输出审计证据和后续输入。"
+    status: passed

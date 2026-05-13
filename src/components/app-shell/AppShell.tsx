@@ -7,14 +7,15 @@
  */
 
 import * as React from 'react'
-import { useAtomValue } from 'jotai'
+import { atom, useAtomValue } from 'jotai'
 import { LeftSidebar } from './LeftSidebar'
 import { RightSidePanel } from './RightSidePanel'
 import { MainArea } from '@/components/tabs/MainArea'
 import { AppShellProvider, type AppShellContextType } from '@/contexts/AppShellContext'
 import { appModeAtom } from '@/atoms/app-mode'
-import { currentAgentSessionIdAtom, currentSessionSidePanelOpenAtom } from '@/atoms/agent-atoms'
+import { currentAgentSessionIdAtom, sessionSidePanelOpenAtom } from '@/atoms/agent-atoms'
 import { currentConversationIdAtom } from '@/atoms/chat-atoms'
+import { activeTabIdAtom, tabsAtom } from '@/atoms/tab-atoms'
 import { cn } from '@/lib/utils'
 
 export interface AppShellProps {
@@ -26,8 +27,27 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
   const appMode = useAtomValue(appModeAtom)
   const currentSessionId = useAtomValue(currentAgentSessionIdAtom)
   const currentConversationId = useAtomValue(currentConversationIdAtom)
-  const isPanelOpen = useAtomValue(currentSessionSidePanelOpenAtom)
-  const showRightPanel = (appMode === 'agent' && !!currentSessionId) || (appMode === 'chat' && !!currentConversationId)
+  const tabs = useAtomValue(tabsAtom)
+  const activeTabId = useAtomValue(activeTabIdAtom)
+
+  const activeTab = React.useMemo(
+    () => tabs.find((tab) => tab.id === activeTabId) ?? null,
+    [tabs, activeTabId],
+  )
+
+  const showRightPanel = React.useMemo(() => {
+    if (!activeTab) return false
+    if (activeTab.type === 'agent') {
+      return appMode === 'agent' && !!currentSessionId
+    }
+    return appMode === 'chat' && !!currentConversationId
+  }, [activeTab, appMode, currentSessionId, currentConversationId])
+
+  const activePanelSessionId = React.useMemo(() => {
+    if (!activeTab) return null
+    // 右侧面板必须跟着当前激活 tab 的真实 sessionId 走，避免 Chat/Agent 共用开关串台。
+    return activeTab.type === 'agent' ? currentSessionId : currentConversationId
+  }, [activeTab, currentConversationId, currentSessionId])
 
   return (
     <AppShellProvider value={contextValue}>
@@ -48,11 +68,29 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
 
         {/* 右侧边栏：Agent 文件面板，带圆角和内边距 */}
         {showRightPanel && (
-          <div className={cn('relative z-[60] transition-[padding] duration-300 ease-in-out', isPanelOpen ? 'p-2 pl-0' : 'p-0')}>
-            <RightSidePanel />
-          </div>
+          <RightPanelSlot sessionId={activePanelSessionId} />
         )}
       </div>
     </AppShellProvider>
   )
 }
+
+interface RightPanelSlotProps {
+  sessionId: string | null
+}
+
+function RightPanelSlot({ sessionId }: RightPanelSlotProps): React.ReactElement | null {
+  const panelAtom = React.useMemo(
+    () => (sessionId ? sessionSidePanelOpenAtom(sessionId) : null),
+    [sessionId],
+  )
+  const isPanelOpen = useAtomValue(panelAtom ?? FALLBACK_CLOSED_PANEL_ATOM)
+
+  return (
+    <div className={cn('relative z-[60] transition-[padding] duration-300 ease-in-out', isPanelOpen ? 'p-2 pl-0' : 'p-0')}>
+      <RightSidePanel />
+    </div>
+  )
+}
+
+const FALLBACK_CLOSED_PANEL_ATOM = atom(false)

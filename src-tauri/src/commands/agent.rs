@@ -1,6 +1,5 @@
 use crate::agent_engine::{AgentCliStartParams, AgentEngine, AgentEvent, AgentJStartParams};
-use crate::agent_session::{self, AgentSessionInfo, AgentTimelineItem, CreateSessionMetaInput};
-use crate::kernel::types::{KernelAgentInterruptResponse, KernelPlanDecision};
+use crate::agent_session::{self, AgentSessionInfo, AgentTimelineItem};
 use crate::kernel::{ChatKernel, JcliAdapter};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -8,87 +7,28 @@ use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 #[path = "agent_compat.rs"]
 mod agent_compat;
+#[path = "agent_interrupts.rs"]
+mod agent_interrupts;
+#[path = "agent_runtime_state.rs"]
+mod agent_runtime_state;
+#[path = "agent_session_commands.rs"]
+mod agent_session_commands;
 use agent_compat as compat;
 #[cfg(test)]
 pub(crate) use agent_compat::{
     AskUserAnswer, AskUserRequest, PermissionRequest, UpdateSessionTitleRequest,
     UpdateSessionTitleResult,
 };
-
+#[cfg(test)]
+use agent_runtime_state::{
+    append_initial_user_message, insert_runtime, resolve_cli_resume_state, CliResumeState,
+};
+use agent_runtime_state::{
+    ensure_runtime_idle, insert_runtime_and_maybe_append_initial_message, prune_finished_runtime,
+    resolve_start_context, InitialMessageBehavior,
+};
 /// Tauri 全局状态中的 AgentEngine 容器。
 pub struct AgentState(pub Arc<Mutex<HashMap<String, AgentEngine>>>);
-
-#[derive(Debug, Default, PartialEq, Eq)]
-struct CliResumeState {
-    resume_session_id: Option<String>,
-    fork_session: bool,
-}
-
-fn prune_finished_runtime(runtimes: &mut HashMap<String, AgentEngine>, session_id: &str) {
-    let should_remove = runtimes
-        .get_mut(session_id)
-        .map(AgentEngine::is_finished)
-        .unwrap_or(false);
-    if should_remove {
-        runtimes.remove(session_id);
-    }
-}
-
-fn insert_runtime(
-    runtimes: &mut HashMap<String, AgentEngine>,
-    session_id: &str,
-    engine: AgentEngine,
-) -> Result<(), String> {
-    prune_finished_runtime(runtimes, session_id);
-    if runtimes.contains_key(session_id) {
-        return Err(format!("Agent 会话已在运行中: {}", session_id));
-    }
-    runtimes.insert(session_id.to_string(), engine);
-    Ok(())
-}
-
-fn ensure_runtime_idle(
-    runtimes: &mut HashMap<String, AgentEngine>,
-    session_id: &str,
-) -> Result<(), String> {
-    prune_finished_runtime(runtimes, session_id);
-    if runtimes.contains_key(session_id) {
-        return Err(format!(
-            "Agent 会话仍在运行中，无法在运行期间执行该操作: {}",
-            session_id
-        ));
-    }
-    Ok(())
-}
-
-fn resolve_cli_resume_state(session_id: &str) -> Result<CliResumeState, String> {
-    let session = agent_session::list_agent_sessions()?
-        .into_iter()
-        .find(|item| item.id == session_id);
-    let Some(session) = session else {
-        return Ok(CliResumeState::default());
-    };
-
-    if session.resume_at_message_uuid.is_some() {
-        return Ok(CliResumeState::default());
-    }
-
-    if let Some(sdk_session_id) = session.sdk_session_id {
-        return Ok(CliResumeState {
-            resume_session_id: Some(sdk_session_id),
-            fork_session: false,
-        });
-    }
-
-    if let Some(source_sdk_session_id) = session.fork_source_sdk_session_id {
-        return Ok(CliResumeState {
-            resume_session_id: Some(source_sdk_session_id),
-            fork_session: true,
-        });
-    }
-
-    Ok(CliResumeState::default())
-}
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -144,7 +84,36 @@ pub struct RewindSessionInput {
 #[serde(rename_all = "camelCase")]
 pub struct RewindSessionResult {
     pub remaining_messages: usize,
-    pub file_rewind: Option<serde_json::Value>,
+    pub file_rewind: Option<FileRewindResult>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileRewindResult {
+    pub can_rewind: bool,
+    pub code: String,
+    pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub files_changed: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub insertions: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deletions: Option<u64>,
+}
+
+fn timeline_only_file_rewind_result() -> FileRewindResult {
+    let reason = "当前版本仅回退对话时间线，不恢复文件快照".to_string();
+    FileRewindResult {
+        can_rewind: false,
+        code: "timeline_only".to_string(),
+        reason: reason.clone(),
+        error: Some(reason),
+        files_changed: None,
+        insertions: None,
+        deletions: None,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -204,6 +173,7 @@ struct AgentInterruptAskUserAnswer {
 #[cfg(test)]
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[allow(dead_code)]
 enum AgentInterruptResponse {
     Permission {
         allowed: bool,
@@ -244,54 +214,49 @@ pub fn start_agent(
         .load_active_index()
         .map_err(|e| e.to_string())?;
     let provider = resolve_start_provider(&providers, active_index, &input)?;
-
-    let mode = input
-        .permission_mode_override
-        .clone()
-        .or(input.permission_mode.clone())
-        .unwrap_or_else(|| "default".to_string());
-    let sid = match input.session_id.clone() {
-        Some(id) => id,
-        None => agent_session::create_agent_session()?,
-    };
-    agent_session::set_session_stopped_by_user(&sid, false)?;
-    let backend_mode = if use_jagent {
-        Some("jagent")
-    } else {
-        Some("claude-sdk")
-    };
-    agent_session::set_session_backend_mode(&sid, backend_mode)?;
-    let cli_resume = resolve_cli_resume_state(&sid)?;
-    let model_id = input
-        .model_id
-        .as_deref()
-        .or_else(|| provider.models.first().map(|m| m.id.as_str()))
-        .unwrap_or("");
+    let context = resolve_start_context(&input, provider, use_jagent)?;
 
     if use_jagent {
         let engine = AgentEngine::start_jagent(AgentJStartParams {
             kernel: Arc::clone(&*kernel) as Arc<dyn ChatKernel>,
             on_event,
-            session_id: sid.clone(),
+            session_id: context.sid.clone(),
             messages: build_jagent_messages(&input),
-            permission_mode: mode,
+            permission_mode: context.mode,
             system_prompt: None,
         })?;
         let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-        insert_runtime(&mut guard, &sid, engine)?;
+        insert_runtime_and_maybe_append_initial_message(
+            &mut guard,
+            &context.sid,
+            engine,
+            InitialMessageBehavior {
+                user_message: input.user_message.as_deref(),
+                persist_to_timeline: true,
+            },
+        )?;
     } else {
         let engine = AgentEngine::start(AgentCliStartParams {
             on_event,
-            permission_mode: mode,
-            session_id: sid.clone(),
-            model: model_id.to_string(),
+            permission_mode: context.mode,
+            session_id: context.sid.clone(),
+            model: context.model_id,
             api_base: provider.api_base.clone(),
             api_key: provider.api_key.clone(),
-            resume_session_id: cli_resume.resume_session_id,
-            fork_session: cli_resume.fork_session,
+            resume_session_id: context.cli_resume.resume_session_id,
+            fork_session: context.cli_resume.fork_session,
+            initial_user_message: input.user_message.clone(),
         })?;
         let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-        insert_runtime(&mut guard, &sid, engine)?;
+        insert_runtime_and_maybe_append_initial_message(
+            &mut guard,
+            &context.sid,
+            engine,
+            InitialMessageBehavior {
+                user_message: input.user_message.as_deref(),
+                persist_to_timeline: false,
+            },
+        )?;
     }
     Ok(())
 }
@@ -300,49 +265,34 @@ pub fn start_agent(
 pub fn create_agent_session(
     input: Option<CreateAgentSessionRequest>,
 ) -> Result<AgentSessionInfo, String> {
-    let input = input.unwrap_or_default();
-    let id = agent_session::create_agent_session_with_meta(CreateSessionMetaInput {
-        title: input.title.clone(),
-        channel_id: input.channel_id.clone(),
-        workspace_id: input.workspace_id.clone(),
-        permission_mode: Some("bypassPermissions".to_string()),
-        backend_mode: None,
-        fork_source_dir: None,
-        fork_source_sdk_session_id: None,
-        resume_at_message_uuid: None,
-    })?;
-    agent_session::list_agent_sessions()?
-        .into_iter()
-        .find(|session| session.id == id)
-        .ok_or_else(|| "创建会话后未找到会话信息".to_string())
+    agent_session_commands::create_agent_session(input)
 }
 
 #[tauri::command]
 pub fn list_agent_sessions() -> Result<Vec<AgentSessionInfo>, String> {
-    agent_session::list_agent_sessions()
+    agent_session_commands::list_agent_sessions()
 }
 
 #[tauri::command]
 pub fn get_agent_session(session_id: String) -> Result<Vec<AgentTimelineItem>, String> {
-    agent_session::get_agent_session(&session_id)
+    agent_session_commands::get_agent_session(session_id)
 }
 
 #[tauri::command]
 pub fn get_agent_session_sdk_messages(id: String) -> Result<Vec<serde_json::Value>, String> {
-    let timeline = agent_session::get_agent_session(&id)?;
-    Ok(agent_session::timeline_to_sdk_messages(&id, &timeline))
+    agent_session_commands::get_agent_session_sdk_messages(id)
 }
 
 #[tauri::command]
 pub fn search_agent_session_messages(
     query: String,
 ) -> Result<Vec<agent_session::AgentMessageSearchResult>, String> {
-    agent_session::search_agent_session_messages(&query)
+    agent_session_commands::search_agent_session_messages(query)
 }
 
 #[tauri::command]
 pub fn delete_agent_session(session_id: String) -> Result<(), String> {
-    agent_session::delete_agent_session(&session_id)
+    agent_session_commands::delete_agent_session(session_id)
 }
 
 #[tauri::command]
@@ -368,7 +318,7 @@ pub(crate) fn respond_agent_interrupt_impl(
     let engine = guard
         .get_mut(&session_id)
         .ok_or_else(|| format!("Agent 未启动: {}", session_id))?;
-    let parsed = parse_interrupt_response(&kind, &response);
+    let parsed = agent_interrupts::parse_interrupt_response(&kind, &response);
     engine.respond_interrupt(&interrupt_id, &parsed)
 }
 
@@ -421,80 +371,6 @@ pub fn respond_ask_user(
     request: compat::AskUserRequest,
 ) -> Result<(), String> {
     compat::respond_ask_user(state, request)
-}
-
-fn parse_interrupt_response(
-    kind: &str,
-    response: &serde_json::Value,
-) -> KernelAgentInterruptResponse {
-    match kind {
-        "ask_user" => KernelAgentInterruptResponse::AskUser {
-            result_json: build_ask_user_response_json(response),
-        },
-        "plan" => KernelAgentInterruptResponse::Plan {
-            decision: parse_plan_decision(response["decision"].as_str().unwrap_or("reject")),
-            feedback: response["feedback"].as_str().map(|s| s.to_string()),
-        },
-        _ => KernelAgentInterruptResponse::Permission {
-            allowed: response["allowed"].as_bool().unwrap_or(false),
-            always_allow: response["alwaysAllow"].as_bool().unwrap_or(false),
-        },
-    }
-}
-
-fn parse_ask_user_answers(response: &serde_json::Value) -> Vec<AgentInterruptAskUserAnswer> {
-    response["answers"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| {
-                    serde_json::from_value::<AgentInterruptAskUserAnswer>(item.clone()).ok()
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default()
-}
-
-fn parse_selected_options(response: &serde_json::Value) -> Vec<String> {
-    response["selectedOptions"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str().map(|s| s.to_string()))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default()
-}
-
-fn build_ask_user_response_json(response: &serde_json::Value) -> String {
-    let answers = parse_ask_user_answers(response);
-    if !answers.is_empty() {
-        return serde_json::json!({
-            "answers": answers.iter().map(|answer| serde_json::json!({
-                "question_id": answer.question_id,
-                "selected_options": answer.selected_options,
-                "custom_text": answer.custom_text,
-            })).collect::<Vec<_>>(),
-        })
-        .to_string();
-    }
-
-    serde_json::json!({
-        "selected_options": parse_selected_options(response),
-        "custom_text": response["customText"].as_str().map(|s| s.to_string()),
-    })
-    .to_string()
-}
-
-fn parse_plan_decision(decision: &str) -> KernelPlanDecision {
-    match decision {
-        "approve" | "approve_auto" => KernelPlanDecision::Approve,
-        "approve_and_clear_context" | "approve_edit" => KernelPlanDecision::ApproveAndClearContext,
-        "feedback" | "deny" | "reject" => KernelPlanDecision::Reject,
-        _ => KernelPlanDecision::Reject,
-    }
 }
 
 #[tauri::command]
@@ -582,13 +458,45 @@ pub fn rewind_session(
         agent_session::rewind_agent_session(&input.session_id, &input.assistant_message_uuid)?;
     Ok(RewindSessionResult {
         remaining_messages,
-        file_rewind: Some(serde_json::json!({
-            "canRewind": false,
-            "error": "当前版本仅回退对话时间线，不恢复文件快照"
-        })),
+        file_rewind: Some(timeline_only_file_rewind_result()),
     })
 }
 
 #[cfg(test)]
 #[path = "../tests/commands_agent.rs"]
 mod tests;
+
+#[cfg(test)]
+mod phase3_tests {
+    use super::{timeline_only_file_rewind_result, RewindSessionResult};
+
+    #[test]
+    fn timeline_only_file_rewind_result_is_structured_and_legacy_compatible() {
+        let result = timeline_only_file_rewind_result();
+        assert!(!result.can_rewind);
+        assert_eq!(result.code, "timeline_only");
+        assert_eq!(result.reason, "当前版本仅回退对话时间线，不恢复文件快照");
+        assert_eq!(result.error.as_deref(), Some(result.reason.as_str()));
+    }
+
+    #[test]
+    fn rewind_session_result_serializes_structured_file_rewind_fields() {
+        let value = serde_json::to_value(RewindSessionResult {
+            remaining_messages: 3,
+            file_rewind: Some(timeline_only_file_rewind_result()),
+        })
+        .expect("serialize rewind result");
+
+        assert_eq!(value["remainingMessages"], 3);
+        assert_eq!(value["fileRewind"]["canRewind"], false);
+        assert_eq!(value["fileRewind"]["code"], "timeline_only");
+        assert_eq!(
+            value["fileRewind"]["reason"],
+            "当前版本仅回退对话时间线，不恢复文件快照"
+        );
+        assert_eq!(
+            value["fileRewind"]["error"],
+            "当前版本仅回退对话时间线，不恢复文件快照"
+        );
+    }
+}

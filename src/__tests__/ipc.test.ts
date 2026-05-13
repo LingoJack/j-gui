@@ -20,6 +20,54 @@ describe('IPC module — settings', () => {
     const s = await ipc.getSettings()
     expect(s.themeMode).toBe('light')
   })
+
+  it('getStorageStats forwards to the backend command', async () => {
+    await vi.resetModules()
+
+    const stats = {
+      agentSessions: {
+        path: '/sessions',
+        exists: true,
+        fileCount: 2,
+        directoryCount: 1,
+        totalBytes: 42,
+      },
+      attachments: {
+        path: '/attachments',
+        exists: false,
+        fileCount: 0,
+        directoryCount: 0,
+        totalBytes: 0,
+      },
+      workspaces: {
+        path: '/workspaces',
+        exists: true,
+        fileCount: 1,
+        directoryCount: 2,
+        totalBytes: 7,
+      },
+      tempFiles: {
+        path: '/temp',
+        exists: true,
+        fileCount: 1,
+        directoryCount: 0,
+        totalBytes: 3,
+      },
+      checkedAt: 123,
+    }
+    const invokeMock = vi.fn(async () => stats)
+    vi.doMock('@tauri-apps/api/core', () => ({
+      invoke: invokeMock,
+      Channel: class ChannelMock {},
+    }))
+
+    const freshIpc = await import('@/lib/ipc')
+    await expect(freshIpc.getStorageStats()).resolves.toEqual(stats)
+    expect(invokeMock).toHaveBeenCalledWith('get_storage_stats', undefined)
+
+    vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
+  })
 })
 
 describe('IPC module — channels', () => {
@@ -48,6 +96,51 @@ describe('IPC module — channels', () => {
     expect(invokeMock).toHaveBeenCalledWith('set_tool_enabled', {
       name: 'WebSearch',
       enabled: true,
+    })
+
+    vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
+  })
+
+  it('updateAppendSetting uses the backend camelCase argument', async () => {
+    await vi.resetModules()
+
+    const invokeMock = vi.fn(async () => undefined)
+    vi.doMock('@tauri-apps/api/core', () => ({
+      invoke: invokeMock,
+      Channel: class ChannelMock {},
+    }))
+
+    const freshIpc = await import('@/lib/ipc')
+    await freshIpc.updateAppendSetting(true)
+
+    expect(invokeMock).toHaveBeenCalledWith('update_append_setting', {
+      appendDateTimeAndUserName: true,
+    })
+
+    vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
+  })
+
+  it('openFileDialog fallback keeps files as an empty array', async () => {
+    await vi.resetModules()
+
+    const invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'open_file_dialog') {
+        throw new Error('dialog unavailable')
+      }
+      return undefined
+    })
+    vi.doMock('@tauri-apps/api/core', () => ({
+      invoke: invokeMock,
+      Channel: class ChannelMock {},
+    }))
+
+    const freshIpc = await import('@/lib/ipc')
+    await expect(freshIpc.openFileDialog()).resolves.toEqual({
+      canceled: true,
+      filePaths: [],
+      files: [],
     })
 
     vi.doUnmock('@tauri-apps/api/core')
@@ -641,12 +734,134 @@ describe('IPC stream protocol helpers', () => {
       error: 'tagged boom',
     })
   })
+
+  it('decodeAgentStreamEvent normalizes runtime status events', () => {
+    expect(decodeAgentStreamEvent({ ModelResolved: { model: 'claude-sonnet-4-6' } }, 's1')).toEqual({
+      kind: 'payload',
+      sessionId: 's1',
+      payload: {
+        kind: 'jgui_event',
+        event: {
+          type: 'model_resolved',
+          model: 'claude-sonnet-4-6',
+        },
+      },
+    })
+    expect(
+      decodeAgentStreamEvent(
+        { Retrying: { attempt: 2, maxAttempts: 3, delaySeconds: 4, reason: 'rate_limited' } },
+        's1'
+      )
+    ).toEqual({
+      kind: 'payload',
+      sessionId: 's1',
+      payload: {
+        kind: 'jgui_event',
+        event: {
+          type: 'retry',
+          status: 'starting',
+          attempt: 2,
+          maxAttempts: 3,
+          delaySeconds: 4,
+          reason: 'rate_limited',
+        },
+      },
+    })
+    expect(decodeAgentStreamEvent({ Compacting: {} }, 's1')).toEqual({
+      kind: 'payload',
+      sessionId: 's1',
+      payload: {
+        kind: 'sdk_message',
+        message: {
+          type: 'system',
+          subtype: 'compacting',
+          session_id: 's1',
+        },
+      },
+    })
+    expect(decodeAgentStreamEvent({ event: 'compacting' }, 's1')).toEqual({
+      kind: 'payload',
+      sessionId: 's1',
+      payload: {
+        kind: 'sdk_message',
+        message: {
+          type: 'system',
+          subtype: 'compacting',
+          session_id: 's1',
+        },
+      },
+    })
+    expect(decodeAgentStreamEvent({ CompactComplete: {} }, 's1')).toEqual({
+      kind: 'payload',
+      sessionId: 's1',
+      payload: {
+        kind: 'sdk_message',
+        message: {
+          type: 'system',
+          subtype: 'compact_boundary',
+          session_id: 's1',
+        },
+      },
+    })
+    expect(decodeAgentStreamEvent({ event: 'compactComplete' }, 's1')).toEqual({
+      kind: 'payload',
+      sessionId: 's1',
+      payload: {
+        kind: 'sdk_message',
+        message: {
+          type: 'system',
+          subtype: 'compact_boundary',
+          session_id: 's1',
+        },
+      },
+    })
+    expect(decodeAgentStreamEvent({ Cancelled: {} }, 's1')).toEqual({
+      kind: 'complete',
+      sessionId: 's1',
+      resultSubtype: 'cancelled',
+    })
+    expect(decodeAgentStreamEvent({ event: 'cancelled' }, 's1')).toEqual({
+      kind: 'complete',
+      sessionId: 's1',
+      resultSubtype: 'cancelled',
+    })
+  })
 })
 
 describe('IPC module — conversations', () => {
   it('listConversations returns empty array as fallback', async () => {
     const convs = await ipc.listConversations()
     expect(Array.isArray(convs)).toBe(true)
+  })
+
+  it('normalizes blank conversation titles from backend list and toggle responses', async () => {
+    await vi.resetModules()
+
+    const invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'list_sessions') {
+        return [{ id: 'chat-blank', title: '   ', updatedAt: 1, pinned: false, archived: false, messageCount: 1 }]
+      }
+      if (cmd === 'toggle_pin_conversation') {
+        return { id: 'chat-blank', title: '', updatedAt: 2, pinned: true, archived: false, messageCount: 1 }
+      }
+      return undefined
+    })
+
+    vi.doMock('@tauri-apps/api/core', () => ({
+      invoke: invokeMock,
+      Channel: class ChannelMock {},
+    }))
+
+    const freshIpc = await import('@/lib/ipc')
+    await expect(freshIpc.listConversations()).resolves.toEqual([
+      expect.objectContaining({ id: 'chat-blank', title: '新对话' }),
+    ])
+    await expect(freshIpc.togglePinConversation('chat-blank')).resolves.toEqual(
+      expect.objectContaining({ id: 'chat-blank', title: '新对话', pinned: true }),
+    )
+
+    vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
   })
 
   it('createConversation throws when Tauri is unavailable', async () => {
@@ -660,11 +875,99 @@ describe('IPC module — agent', () => {
     expect(Array.isArray(sessions)).toBe(true)
   })
 
+  it('normalizes blank agent titles and deletes sessions with sessionId routing', async () => {
+    await vi.resetModules()
+
+    const invokeMock = vi.fn(async (cmd: string, args: Record<string, unknown> | undefined) => {
+      if (cmd === 'list_agent_sessions') {
+        return [{
+          id: 'agent-blank',
+          title: ' ',
+          updatedAt: 1,
+          pinned: false,
+          archived: false,
+          manualWorking: false,
+          stoppedByUser: false,
+          permissionMode: 'bypassPermissions',
+          messageCount: 1,
+        }]
+      }
+      if (cmd === 'delete_agent_session') {
+        expect(args).toEqual({ sessionId: 'agent-blank' })
+        return undefined
+      }
+      return undefined
+    })
+
+    vi.doMock('@tauri-apps/api/core', () => ({
+      invoke: invokeMock,
+      Channel: class ChannelMock {},
+    }))
+
+    const freshIpc = await import('@/lib/ipc')
+    await expect(freshIpc.listAgentSessions()).resolves.toEqual([
+      expect.objectContaining({ id: 'agent-blank', title: '新 Agent 会话' }),
+    ])
+    await expect(freshIpc.deleteAgentSession('agent-blank')).resolves.toBeUndefined()
+
+    vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
+  })
+
   it('onAgentStreamEvent registers and returns cleanup', () => {
     const cb = vi.fn()
     const cleanup = ipc.onAgentStreamEvent(cb)
     expect(typeof cleanup).toBe('function')
     cleanup()
+  })
+
+  it('rewindSession preserves structured fileRewind result', async () => {
+    await vi.resetModules()
+
+    const invokeMock = vi.fn(async (cmd: string, args: Record<string, unknown> | undefined) => {
+      if (cmd === 'rewind_session') {
+        expect(args).toEqual({
+          input: {
+            sessionId: 'agent-1',
+            assistantMessageUuid: 'assistant-1',
+          },
+        })
+        return {
+          remainingMessages: 4,
+          fileRewind: {
+            canRewind: false,
+            code: 'timeline_only',
+            reason: '当前版本仅回退对话时间线，不恢复文件快照',
+            error: '当前版本仅回退对话时间线，不恢复文件快照',
+          },
+        }
+      }
+      return undefined
+    })
+
+    vi.doMock('@tauri-apps/api/core', () => ({
+      invoke: invokeMock,
+      Channel: class ChannelMock {},
+    }))
+
+    const freshIpc = await import('@/lib/ipc')
+    await expect(
+      freshIpc.rewindSession({
+        sessionId: 'agent-1',
+        assistantMessageUuid: 'assistant-1',
+      })
+    ).resolves.toEqual({
+      remainingMessages: 4,
+      fileRewind: {
+        canRewind: false,
+        code: 'timeline_only',
+        reason: '当前版本仅回退对话时间线，不恢复文件快照',
+        error: '当前版本仅回退对话时间线，不恢复文件快照',
+      },
+    })
+
+    vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
   })
 
   it('sendAgentMessage emits canonical agent stream payloads', async () => {
@@ -745,16 +1048,11 @@ describe('IPC module — agent', () => {
         modelId: 'model-a',
         permissionModeOverride: 'plan',
         useJagent: false,
-        userMessage: undefined,
+        userMessage: 'hello',
       },
       onEvent: channelInstances[0],
     })
-    expect(invokeMock).toHaveBeenCalledWith('send_agent_message', {
-      input: {
-        sessionId: 'agent-1',
-        userMessage: 'hello',
-      },
-    })
+    expect(invokeMock).not.toHaveBeenCalledWith('send_agent_message', expect.anything())
 
     cleanup()
     vi.doUnmock('@tauri-apps/api/core')
@@ -796,10 +1094,10 @@ describe('IPC module — agent', () => {
     })
 
     expect(channelInstances).toHaveLength(1)
-    expect(invokeMock.mock.calls).toEqual([
-      ['start_agent', {
-        input: {
-          sessionId: 'agent-jagent',
+      expect(invokeMock.mock.calls).toEqual([
+        ['start_agent', {
+          input: {
+            sessionId: 'agent-jagent',
           channelId: 'channel-a',
           modelId: undefined,
           permissionModeOverride: 'bypassPermissions',
@@ -1039,12 +1337,10 @@ describe('IPC module — agent', () => {
       channelId: 'channel-b',
     })
 
-    expect(invokeMock.mock.calls).toEqual([
-      ['start_agent', expect.objectContaining({ input: expect.objectContaining({ sessionId: 'agent-a' }) })],
-      ['send_agent_message', { input: { sessionId: 'agent-a', userMessage: 'first' } }],
-      ['start_agent', expect.objectContaining({ input: expect.objectContaining({ sessionId: 'agent-b' }) })],
-      ['send_agent_message', { input: { sessionId: 'agent-b', userMessage: 'second' } }],
-    ])
+      expect(invokeMock.mock.calls).toEqual([
+        ['start_agent', expect.objectContaining({ input: expect.objectContaining({ sessionId: 'agent-a' }) })],
+        ['start_agent', expect.objectContaining({ input: expect.objectContaining({ sessionId: 'agent-b' }) })],
+      ])
 
     vi.doUnmock('@tauri-apps/api/core')
     await vi.resetModules()
@@ -1538,5 +1834,34 @@ describe('IPC module — agent workspaces', () => {
   it('listAgentWorkspaces returns empty array as fallback', async () => {
     const ws = await ipc.listAgentWorkspaces()
     expect(Array.isArray(ws)).toBe(true)
+  })
+
+  it('file workspace IPC wrappers preserve the canonical input envelope', async () => {
+    await vi.resetModules()
+
+    const invokeMock = vi.fn(async () => undefined)
+    vi.doMock('@tauri-apps/api/core', () => ({
+      invoke: invokeMock,
+      Channel: class ChannelMock {},
+    }))
+
+    const freshIpc = await import('@/lib/ipc')
+    const listInput = { dirPath: '/tmp/demo', sessionId: 'session-1' }
+    const searchInput = { workspacePath: '/tmp/workspace', query: 'guide', limit: 20 }
+    const renameInput = { filePath: '/tmp/workspace/a.txt', newName: 'b.txt' }
+    const moveInput = { filePath: '/tmp/workspace/a.txt', newDirPath: '/tmp/workspace/docs' }
+
+    await freshIpc.listAttachedDirectory(listInput)
+    await freshIpc.searchWorkspaceFiles(searchInput)
+    await freshIpc.renameAttachedFile(renameInput)
+    await freshIpc.moveAttachedFile(moveInput)
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'list_attached_directory', { input: listInput })
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'search_workspace_files', { input: searchInput })
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'rename_attached_file', { input: renameInput })
+    expect(invokeMock).toHaveBeenNthCalledWith(4, 'move_attached_file', { input: moveInput })
+
+    vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
   })
 })

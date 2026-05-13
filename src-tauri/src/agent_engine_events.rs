@@ -25,7 +25,7 @@ pub(super) fn parse_sdk_line(line: &str) -> Vec<AgentEvent> {
     match msg_type {
         "assistant" => parse_assistant_event(&value),
         "result" => parse_result_event(&value),
-        "system" | "stream_event" => Vec::new(),
+        "system" | "stream_event" => parse_system_event(&value),
         "user" => parse_user_event(&value),
         "plan" => parse_plan_event(&value),
         _ => {
@@ -50,7 +50,25 @@ fn parse_result_event(value: &serde_json::Value) -> Vec<AgentEvent> {
 
     vec![AgentEvent::Done {
         total_tokens: value["total_tokens"].as_u64().unwrap_or(0) as u32,
+        result_subtype: value["subtype"].as_str().map(ToString::to_string),
     }]
+}
+
+fn parse_system_event(value: &serde_json::Value) -> Vec<AgentEvent> {
+    match value["subtype"].as_str() {
+        Some("init") => value["model"]
+            .as_str()
+            .filter(|model| !model.is_empty())
+            .map(|model| {
+                vec![AgentEvent::ModelResolved {
+                    model: model.to_string(),
+                }]
+            })
+            .unwrap_or_default(),
+        Some("compacting") => vec![AgentEvent::Compacting],
+        Some("compact_boundary") => vec![AgentEvent::CompactComplete],
+        _ => Vec::new(),
+    }
 }
 
 fn parse_assistant_event(value: &serde_json::Value) -> Vec<AgentEvent> {
@@ -183,12 +201,23 @@ pub(super) fn json_stream_msg_to_agent_events(
 
     match value["type"].as_str() {
         Some("toolCallRequest") => parse_tool_call_request(&value, session_id, permission_mode),
-        Some("done") => vec![AgentEvent::Done { total_tokens: 0 }],
+        Some("done") => vec![AgentEvent::Done {
+            total_tokens: 0,
+            result_subtype: None,
+        }],
         Some("error") => vec![AgentEvent::Error {
             message: value["message"].as_str().unwrap_or("未知错误").to_string(),
         }],
-        Some("chunk") | Some("cancelled") | Some("retrying") | Some("compacting")
-        | Some("compacted") => Vec::new(),
+        Some("cancelled") => vec![AgentEvent::Cancelled],
+        Some("retrying") => vec![AgentEvent::Retrying {
+            attempt: value["attempt"].as_u64().unwrap_or(1) as u32,
+            max_attempts: value["maxAttempts"].as_u64().unwrap_or(1) as u32,
+            delay_seconds: value["delayMs"].as_u64().unwrap_or(0).div_ceil(1000) as u32,
+            reason: value["error"].as_str().unwrap_or("").to_string(),
+        }],
+        Some("compacting") => vec![AgentEvent::Compacting],
+        Some("compacted") => vec![AgentEvent::CompactComplete],
+        Some("chunk") => Vec::new(),
         _ => Vec::new(),
     }
 }

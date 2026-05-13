@@ -1,7 +1,6 @@
 import * as React from 'react'
 
-export interface AppShellContextType {
-}
+export type AppShellContextType = Record<string, never>
 
 export const APP_SHELL_CONTEXT_VALUE: AppShellContextType = {}
 

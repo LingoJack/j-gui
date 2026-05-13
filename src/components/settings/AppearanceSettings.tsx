@@ -8,7 +8,6 @@
 import * as React from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { Check } from 'lucide-react'
-import { toast } from 'sonner'
 import {
   SettingsSection,
   SettingsCard,
@@ -24,11 +23,7 @@ import {
   applyThemeToDOM,
 } from '@/atoms/theme'
 import { cn } from '@/lib/utils'
-import { detectIsWindows } from '@/lib/platform'
 import type { ThemeMode, ThemeStyle } from '@/types'
-
-// ===== Logo 资源导入（用于图标选择器） =====
-import * as ipc from '@/lib/ipc'
 
 /** 主题选项 */
 const THEME_OPTIONS = [

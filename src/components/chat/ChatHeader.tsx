@@ -1,16 +1,17 @@
 /**
  * ChatHeader - 对话头部
  *
- * 显示对话标题（可点击编辑）+ 置顶按钮 + 并排模式切换按钮。
+ * 显示对话标题（可点击编辑）+ 置顶按钮 + 右侧工作区侧栏开关。
  */
 
 import * as React from 'react'
-import { useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { Pencil, Check, X, Pin, Columns2 } from 'lucide-react'
 import { conversationsAtom } from '@/atoms/chat-atoms'
-import { useConversationParallelMode } from '@/hooks/useConversationSettings'
+import { agentSidePanelOpenMapAtom, sessionSidePanelOpenAtom } from '@/atoms/agent-atoms'
 import type { ConversationMeta } from '@jgui/shared'
 import { SystemPromptSelector } from './SystemPromptSelector'
+import { MigrateToAgentButton } from './MigrateToAgentButton'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -18,14 +19,19 @@ import * as ipc from '@/lib/ipc'
 
 interface ChatHeaderProps {
   conversation: ConversationMeta | null
+  canMigrateToAgent?: boolean
 }
 
-export function ChatHeader({ conversation }: ChatHeaderProps): React.ReactElement | null {
+export function ChatHeader({
+  conversation,
+  canMigrateToAgent = false,
+}: ChatHeaderProps): React.ReactElement | null {
   const setConversations = useSetAtom(conversationsAtom)
-  const [parallelMode, setParallelMode] = useConversationParallelMode()
+  const setSidePanelOpenMap = useSetAtom(agentSidePanelOpenMapAtom)
   const [editing, setEditing] = React.useState(false)
   const [editTitle, setEditTitle] = React.useState('')
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const sidePanelOpen = useAtomValue(sessionSidePanelOpenAtom(conversation?.id ?? '__missing__'))
 
   if (!conversation) return null
 
@@ -115,6 +121,9 @@ export function ChatHeader({ conversation }: ChatHeaderProps): React.ReactElemen
       {/* 右侧按钮组 */}
       <div className="flex items-center gap-1 titlebar-no-drag ml-auto">
         <SystemPromptSelector />
+        {canMigrateToAgent && (
+          <MigrateToAgentButton conversationId={conversation.id} />
+        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -138,13 +147,21 @@ export function ChatHeader({ conversation }: ChatHeaderProps): React.ReactElemen
               type="button"
               variant="ghost"
               size="icon"
-              className={cn('h-7 w-7', parallelMode && 'bg-accent text-accent-foreground')}
-              onClick={() => setParallelMode(!parallelMode)}
+              aria-label="切换右侧工作区"
+              className={cn('h-7 w-7', sidePanelOpen && 'bg-accent text-accent-foreground')}
+              onClick={() => {
+                // Chat 没有并排正文模式了，这个按钮现在只负责切右侧文件工作区。
+                setSidePanelOpenMap((prev) => {
+                  const map = new Map(prev)
+                  map.set(conversation.id, !sidePanelOpen)
+                  return map
+                })
+              }}
             >
               <Columns2 className="size-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom"><p>{parallelMode ? '关闭并排模式' : '并排模式'}</p></TooltipContent>
+          <TooltipContent side="bottom"><p>{sidePanelOpen ? '关闭右侧工作区' : '打开右侧工作区'}</p></TooltipContent>
         </Tooltip>
       </div>
     </div>

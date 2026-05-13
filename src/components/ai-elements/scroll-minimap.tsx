@@ -11,11 +11,14 @@ import * as React from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { AlertTriangle, Search } from 'lucide-react'
+import { useAtomValue } from 'jotai'
 import { useStickToBottomContext } from 'use-stick-to-bottom'
 import { Input } from '@/components/ui/input'
 import { UserAvatar } from '@/components/chat/UserAvatar'
-import { getModelLogo } from '@/lib/model-logo'
+import { channelsAtom } from '@/atoms/chat-atoms'
+import { resolveAssistantBranding } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
+import type { Channel } from '@jgui/shared'
 
 export interface MinimapItem {
   id: string
@@ -38,14 +41,12 @@ const MAX_BARS = 20
 
 const PREVIEW_REMARK_PLUGINS = [remarkGfm]
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- react-markdown components 类型复杂，使用内联对象即可 */
 const PREVIEW_MD_COMPONENTS = {
   pre: ({ children }: { children?: React.ReactNode }) => <pre className="text-[11px] opacity-70 truncate">{children}</pre>,
   code: ({ children }: { children?: React.ReactNode }) => <code className="text-[11px] bg-muted/50 px-0.5 rounded">{children}</code>,
   img: () => null as unknown as React.ReactElement,
   a: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
 } as const
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // ── 辅助函数 ──
 
@@ -69,6 +70,7 @@ function escapeRegExp(str: string): string {
 
 export function ScrollMinimap({ items }: ScrollMinimapProps): React.ReactElement | null {
   const { scrollRef, stopScroll, state: stickyState } = useStickToBottomContext()
+  const channels = useAtomValue(channelsAtom)
   const [hovered, setHovered] = React.useState(false)
   const [isLeaving, setIsLeaving] = React.useState(false)
   const [visibleIds, setVisibleIds] = React.useState<Set<string>>(new Set())
@@ -335,7 +337,7 @@ export function ScrollMinimap({ items }: ScrollMinimapProps): React.ReactElement
                     )}
                     onClick={() => scrollToMessage(item.id)}
                   >
-                    <ItemIcon item={item} />
+                    <ItemIcon item={item} channels={channels} />
                     <div className="flex-1 min-w-0">
                       <HighlightedPreview text={item.preview} query={searchQuery} />
                     </div>
@@ -406,14 +408,21 @@ export function ScrollMinimap({ items }: ScrollMinimapProps): React.ReactElement
 
 // ── 子组件 ──
 
-function ItemIcon({ item }: { item: MinimapItem }): React.ReactElement {
+function ItemIcon({
+  item,
+  channels,
+}: {
+  item: MinimapItem
+  channels: Channel[]
+}): React.ReactElement {
   if (item.role === 'user' && item.avatar) {
     return <UserAvatar avatar={item.avatar} size={16} className="mt-0.5" />
   }
   if ((item.role === 'assistant') && item.model) {
+    const branding = resolveAssistantBranding(item.model, channels)
     return (
       <img
-        src={getModelLogo(item.model)}
+        src={branding.logo}
         alt=""
         className="size-4 shrink-0 mt-0.5 rounded-[20%] object-cover"
       />

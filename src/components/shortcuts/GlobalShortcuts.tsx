@@ -19,15 +19,14 @@ import {
   tabsAtom,
   activeTabIdAtom,
   sidebarCollapsedAtom,
-  openTab,
 } from '@/atoms/tab-atoms'
 import { shortcutOverridesAtom, sendWithCmdEnterAtom } from '@/atoms/shortcut-atoms'
+import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
 import {
   agentSessionsAtom,
   currentAgentSessionIdAtom,
   currentAgentWorkspaceIdAtom,
 } from '@/atoms/agent-atoms'
-import { activeViewAtom } from '@/atoms/active-view'
 import { useCreateSession } from '@/hooks/useCreateSession'
 import { useShortcut } from '@/hooks/useShortcut'
 import { useCloseTab } from '@/hooks/useCloseTab'
@@ -37,6 +36,7 @@ import {
   initShortcutRegistry,
   updateShortcutOverrides,
 } from '@/lib/shortcut-registry'
+import { isDraftLikeAgentSession, isDraftLikeConversation } from '@/lib/session-meta'
 
 /**
  * 快捷键初始化 + 全局 Handler 注册
@@ -49,7 +49,7 @@ export function GlobalShortcuts(): null {
   const channelFormDirty = useAtomValue(channelFormDirtyAtom)
   const setSettingsCloseRequested = useSetAtom(settingsCloseRequestedAtom)
   const [searchOpen, setSearchOpen] = useAtom(searchDialogOpenAtom)
-  const [sidebarCollapsed, setSidebarCollapsed] = useAtom(sidebarCollapsedAtom)
+  const [, setSidebarCollapsed] = useAtom(sidebarCollapsedAtom)
   const setShortcutOverrides = useSetAtom(shortcutOverridesAtom)
   const shortcutOverrides = useAtomValue(shortcutOverridesAtom)
   const setSendWithCmdEnter = useSetAtom(sendWithCmdEnterAtom)
@@ -57,6 +57,7 @@ export function GlobalShortcuts(): null {
   const openSession = useOpenSession()
   const conversations = useAtomValue(conversationsAtom)
   const currentConversationId = useAtomValue(currentConversationIdAtom)
+  const draftSessionIds = useAtomValue(draftSessionIdsAtom)
   const agentSessions = useAtomValue(agentSessionsAtom)
   const currentAgentSessionId = useAtomValue(currentAgentSessionIdAtom)
   const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
@@ -116,72 +117,86 @@ export function GlobalShortcuts(): null {
     if (targetMode === 'chat') {
       if (currentConversationId) {
         const current = conversations.find((c) => c.id === currentConversationId)
-        if (current) {
+        if (current && !draftSessionIds.has(current.id) && !isDraftLikeConversation(current)) {
           openSession('chat', current.id, current.title)
           return
         }
       }
 
       const currentTabs = store.get(tabsAtom)
-      const chatTab = currentTabs.find((tab) => tab.type === 'chat')
+      const chatTab = currentTabs.find((tab) => tab.type === 'chat' && !draftSessionIds.has(tab.sessionId))
       if (chatTab) {
         openSession('chat', chatTab.sessionId, chatTab.title)
         return
       }
 
-      const recentConversation = conversations.find((c) => !c.archived)
-      if (recentConversation) {
-        openSession('chat', recentConversation.id, recentConversation.title)
+      const visibleConversation = conversations.find((c) =>
+        !c.archived && !draftSessionIds.has(c.id) && !isDraftLikeConversation(c),
+      )
+      if (visibleConversation) {
+        openSession('chat', visibleConversation.id, visibleConversation.title)
         return
       }
 
-      await createChat({ draft: true })
+      await createChat()
       return
     }
 
     if (currentAgentSessionId) {
       const current = agentSessions.find((s) => s.id === currentAgentSessionId)
-      if (current) {
+      if (current && !draftSessionIds.has(current.id) && !isDraftLikeAgentSession(current)) {
         openSession('agent', current.id, current.title)
         return
       }
     }
 
     const currentTabs = store.get(tabsAtom)
-    const agentTab = currentTabs.find((tab) => tab.type === 'agent')
+    const agentTab = currentTabs.find((tab) => tab.type === 'agent' && !draftSessionIds.has(tab.sessionId))
     if (agentTab) {
       openSession('agent', agentTab.sessionId, agentTab.title)
       return
     }
 
-    const recentAgentSession = agentSessions.find((s) => !s.archived)
+    const recentAgentSession = agentSessions.find((s) =>
+      !s.archived && !draftSessionIds.has(s.id) && !isDraftLikeAgentSession(s),
+    )
     if (recentAgentSession) {
       openSession('agent', recentAgentSession.id, recentAgentSession.title)
       return
     }
 
     if (currentWorkspaceId) {
-      const createdSessionId = await createAgent({ draft: true })
+      const createdSessionId = await createAgent()
       if (createdSessionId) {
         return
       }
     }
 
     setAppMode('agent')
-  }, [agentSessions, conversations, createAgent, createChat, currentAgentSessionId, currentConversationId, currentWorkspaceId, openSession, setAppMode, store])
+  }, [agentSessions, conversations, createAgent, createChat, currentAgentSessionId, currentConversationId, currentWorkspaceId, openSession, setAppMode, store, draftSessionIds])
 
   // ===== 快捷键 Handler =====
 
-  // Cmd+, → 打开设置
+  // Cmd+, → 开关设置
   useShortcut(
     'open-settings',
-    useCallback(() => setSettingsOpen(true), [setSettingsOpen]),
+    useCallback(() => {
+      if (settingsOpen) {
+        if (channelFormDirty) {
+          setSettingsCloseRequested(true)
+          return
+        }
+        setSettingsOpen(false)
+        return
+      }
+      setSettingsOpen(true)
+    }, [settingsOpen, channelFormDirty, setSettingsCloseRequested, setSettingsOpen]),
   )
 
   // Cmd+F → 全局搜索
   useShortcut(
     'global-search',
-    useCallback(() => setSearchOpen(true), [setSearchOpen]),
+    useCallback(() => setSearchOpen((prev) => !prev), [setSearchOpen]),
   )
 
   // Cmd+N → 新建对话/会话（根据当前模式）
@@ -189,9 +204,9 @@ export function GlobalShortcuts(): null {
     'new-session',
     useCallback(() => {
       if (appMode === 'agent') {
-        createAgent({ draft: true })
+        createAgent()
       } else {
-        createChat({ draft: true })
+        createChat()
       }
     }, [appMode, createAgent, createChat]),
   )
@@ -200,8 +215,8 @@ export function GlobalShortcuts(): null {
   useShortcut(
     'toggle-sidebar',
     useCallback(
-      () => setSidebarCollapsed(!sidebarCollapsed),
-      [sidebarCollapsed, setSidebarCollapsed],
+      () => setSidebarCollapsed((prev) => !prev),
+      [setSidebarCollapsed],
     ),
   )
 

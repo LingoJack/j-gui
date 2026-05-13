@@ -17,16 +17,12 @@ import * as React from "react";
 import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
 import { toast } from "sonner";
 import {
-  Bot,
   CornerDownLeft,
   Square,
   Settings,
   Paperclip,
   FolderPlus,
   X,
-  Copy,
-  Check,
-  Brain,
   Map as MapIcon,
   Sparkles,
 } from "lucide-react";
@@ -40,6 +36,7 @@ import { ExitPlanModeBanner } from "./ExitPlanModeBanner";
 import { PlanModeDashedBorder } from "./PlanModeDashedBorder";
 import { ModelSelector } from "@/components/chat/ModelSelector";
 import { AttachmentPreviewItem } from "@/components/chat/AttachmentPreviewItem";
+import { ThinkingModePopover } from "@/components/ai-elements/thinking-mode-popover";
 import { RichTextInput } from "@/components/ai-elements/rich-text-input";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,12 +44,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -64,6 +55,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { CENTERED_MAIN_CONTENT_CLASS } from "@/lib/layout-shell";
 import {
   getActiveAccelerator,
   getAcceleratorDisplay,
@@ -95,98 +87,13 @@ import {
   allPendingExitPlanRequestsAtom,
 } from "@/atoms/agent-atoms";
 import { settingsOpenAtom } from "@/atoms/settings-tab";
-import { channelsAtom, thinkingExpandedAtom } from "@/atoms/chat-atoms";
+import { channelsAtom } from "@/atoms/chat-atoms";
 import { useOpenSession } from "@/hooks/useOpenSession";
 import { AgentSessionProvider } from "@/contexts/session-context";
 import { sendWithCmdEnterAtom } from "@/atoms/shortcut-atoms";
 import type { ModelOption } from "@jgui/shared";
 import * as ipc from "@/lib/ipc";
 import { useAgentSendMessage } from "./useAgentSendMessage";
-
-// ===== 思考模式 Hover Popover =====
-
-interface AgentThinkingPopoverProps {
-  agentThinking: import("@jgui/shared").ThinkingConfig | undefined;
-  onToggle: () => void;
-}
-
-function AgentThinkingPopover({
-  agentThinking,
-  onToggle,
-}: AgentThinkingPopoverProps): React.ReactElement {
-  const [thinkingExpanded, setThinkingExpanded] = useAtom(thinkingExpandedAtom);
-  const [open, setOpen] = React.useState(false);
-  const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const isEnabled = agentThinking?.type === "adaptive";
-
-  const handleMouseEnter = React.useCallback(() => {
-    if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
-    setOpen(true);
-  }, []);
-
-  const handleMouseLeave = React.useCallback(() => {
-    hoverTimeout.current = setTimeout(() => setOpen(false), 150);
-  }, []);
-
-  React.useEffect(() => {
-    return () => {
-      if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
-    };
-  }, []);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className={cn(
-            "size-[36px] rounded-full",
-            isEnabled
-              ? "text-green-500"
-              : "text-foreground/60 hover:text-foreground",
-          )}
-          onClick={onToggle}
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-        >
-          <Brain className="size-5" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        align="center"
-        sideOffset={8}
-        className="w-auto min-w-[160px] p-2 px-2.5"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-xs text-foreground/70">思考模式</span>
-            <Switch
-              checked={isEnabled}
-              onCheckedChange={onToggle}
-              className="h-4 w-7 [&>span]:size-3 [&>span]:data-[state=checked]:translate-x-3"
-            />
-          </div>
-          <div className="h-px bg-border" />
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-xs text-foreground/70">展开思考</span>
-            <Switch
-              checked={thinkingExpanded}
-              onCheckedChange={setThinkingExpanded}
-              className="h-4 w-7 [&>span]:size-3 [&>span]:data-[state=checked]:translate-x-3"
-            />
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 export function AgentView({
   sessionId,
@@ -212,8 +119,6 @@ export function AgentView({
     isPlanMode,
     suggestion,
     hasAvailableModel,
-    agentError,
-    errorCopied,
     isDragOver,
     agentChannelId,
     agentModelId,
@@ -223,7 +128,6 @@ export function AgentView({
     handleCompact,
     handleRetry,
     handleRetryInNewSession,
-    handleCopyError,
     handleOpenFileDialog,
     handleAttachFolder,
     handleRemoveFile,
@@ -231,7 +135,6 @@ export function AgentView({
     handleDragOver,
     handleDragLeave,
     handleDrop,
-    setIsDragOver,
   } = useAgentSendMessage(sessionId);
 
   const setStreamingStates = useSetAtom(agentStreamingStatesAtom);
@@ -250,12 +153,13 @@ export function AgentView({
   const [agentThinking, setAgentThinking] = useAtom(agentThinkingAtom);
   const setSettingsOpen = useSetAtom(settingsOpenAtom);
   const globalWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom);
+  const workspaces = useAtomValue(agentWorkspacesAtom);
   const sessions = useAtomValue(agentSessionsAtom);
   const workspaceId = React.useMemo(() => {
     const meta = sessions.find((s) => s.id === sessionId);
-    if (!meta) return globalWorkspaceId;
-    return meta.workspaceId ?? null;
-  }, [sessions, sessionId, globalWorkspaceId]);
+    if (!meta) return globalWorkspaceId ?? workspaces[0]?.id ?? null;
+    return meta.workspaceId ?? globalWorkspaceId ?? workspaces[0]?.id ?? null;
+  }, [sessions, sessionId, globalWorkspaceId, workspaces]);
   const persistedSessionBackendMode = React.useMemo(() => {
     const meta = sessions.find((s) => s.id === sessionId);
     return meta?.backendMode;
@@ -264,11 +168,6 @@ export function AgentView({
     sessionBackendModeMap.get(sessionId) ??
     persistedSessionBackendMode ??
     agentBackendMode;
-  const workspaces = useAtomValue(agentWorkspacesAtom);
-  // 保持 channelId 稳定：初始化前使用上次有效值，避免工具栏抖动
-  const stableChannelIdRef = React.useRef(agentChannelId);
-  if (agentChannelId) stableChannelIdRef.current = agentChannelId;
-  const stableChannelId = agentChannelId ?? stableChannelIdRef.current;
 
   // 已有会话首次打开时，从全局默认值初始化 per-session map
   React.useEffect(() => {
@@ -315,9 +214,10 @@ export function AgentView({
   const openSession = useOpenSession();
   const setAttachedDirsMap = useSetAtom(agentAttachedDirectoriesMapAtom);
   const wsAttachedDirsMap = useAtomValue(workspaceAttachedDirectoriesMapAtom);
-  const wsAttachedDirs = workspaceId
-    ? (wsAttachedDirsMap.get(workspaceId) ?? [])
-    : [];
+  const wsAttachedDirs = React.useMemo(
+    () => (workspaceId ? (wsAttachedDirsMap.get(workspaceId) ?? []) : []),
+    [workspaceId, wsAttachedDirsMap],
+  );
 
   const sessionPathMap = useAtomValue(agentSessionPathMapAtom);
   const setSessionPathMap = useSetAtom(agentSessionPathMapAtom);
@@ -676,74 +576,78 @@ export function AgentView({
     <>
       <AgentSessionProvider sessionId={sessionId}>
         {/* 主内容区域 */}
-        <div className="flex flex-col h-full flex-1 min-w-0 max-w-[min(72rem,100%)] mx-auto">
+        <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden min-w-0">
           {/* Agent Header */}
           <AgentHeader sessionId={sessionId} />
 
-          {historyLoadError && (
-            <div className="mx-4 mt-3 rounded-lg border border-destructive/30 bg-destructive/[0.05] px-3 py-2 text-sm text-destructive">
-              历史回放加载失败：{historyLoadError}
+          <div className={CENTERED_MAIN_CONTENT_CLASS}>
+            {historyLoadError && (
+              <div className="mx-4 mt-3 rounded-lg border border-destructive/30 bg-destructive/[0.05] px-3 py-2 text-sm text-destructive">
+                历史回放加载失败：{historyLoadError}
+              </div>
+            )}
+
+            {/* 消息区域 */}
+            <div className="flex min-h-0 flex-1">
+              <AgentMessages
+                sessionId={sessionId}
+                sessionModelId={agentModelId || undefined}
+                messagesLoaded={messagesLoaded}
+                persistedSDKMessages={persistedSDKMessages}
+                streaming={streaming}
+                streamState={streamState}
+                liveMessages={liveMessages}
+                sessionPath={sessionPath}
+                attachedDirs={attachedDirs}
+                stoppedByUser={stoppedByUser}
+                onRetry={handleRetry}
+                onRetryInNewSession={handleRetryInNewSession}
+                onFork={handleFork}
+                onRewind={handleRewindRequest}
+                onCompact={handleCompact}
+              />
             </div>
-          )}
 
-          {/* 消息区域 */}
-          <AgentMessages
-            sessionId={sessionId}
-            sessionModelId={agentModelId || undefined}
-            messagesLoaded={messagesLoaded}
-            persistedSDKMessages={persistedSDKMessages}
-            streaming={streaming}
-            streamState={streamState}
-            liveMessages={liveMessages}
-            sessionPath={sessionPath}
-            attachedDirs={attachedDirs}
-            stoppedByUser={stoppedByUser}
-            onRetry={handleRetry}
-            onRetryInNewSession={handleRetryInNewSession}
-            onFork={handleFork}
-            onRewind={handleRewindRequest}
-            onCompact={handleCompact}
-          />
+            {/* 权限请求横幅 */}
+            <PermissionBanner sessionId={sessionId} />
 
-          {/* 权限请求横幅 */}
-          <PermissionBanner sessionId={sessionId} />
+            {/* AskUserQuestion 交互式问答横幅 */}
+            <AskUserBanner sessionId={sessionId} />
 
-          {/* AskUserQuestion 交互式问答横幅 */}
-          <AskUserBanner sessionId={sessionId} />
+            {/* Plan 模式指示条 */}
+            {isPlanMode && (
+              <div className="mx-4 mb-2 flex items-center gap-2 rounded-lg bg-primary/5 px-3 py-2 text-sm text-primary animate-in fade-in slide-in-from-bottom-1 duration-200">
+                <MapIcon className="size-4 animate-pulse" />
+                <span className="font-medium">Agent 正在规划中...</span>
+                <span className="text-xs text-muted-foreground">
+                  完成后将请求你的审批
+                </span>
+              </div>
+            )}
 
-          {/* Plan 模式指示条 */}
-          {isPlanMode && (
-            <div className="mx-4 mb-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/5 text-primary text-sm animate-in fade-in slide-in-from-bottom-1 duration-200">
-              <MapIcon className="size-4 animate-pulse" />
-              <span className="font-medium">Agent 正在规划中...</span>
-              <span className="text-xs text-muted-foreground">
-                完成后将请求你的审批
-              </span>
-            </div>
-          )}
+            {/* ExitPlanMode 计划审批横幅 */}
+            <ExitPlanModeBanner sessionId={sessionId} />
 
-          {/* ExitPlanMode 计划审批横幅 */}
-          <ExitPlanModeBanner sessionId={sessionId} />
-
-          {/* 输入区域 — 交互横幅显示时隐藏，由横幅替代 */}
-          {!hasBannerOverlay && (
-            <div
-              className="px-2.5 pb-2.5 md:px-[18px] md:pb-[18px]"
-              data-input-mode="agent"
-            >
+            {/* 输入区域 — 交互横幅显示时隐藏，由横幅替代 */}
+            {!hasBannerOverlay && (
               <div
-                className={cn(
-                  "rounded-[17px] border-[0.5px] border-border bg-background/70 backdrop-blur-sm transition-all duration-200",
-                  (isPlanMode || isPermissionPlanMode) &&
-                    !isDragOver &&
-                    "plan-mode-border",
-                  isDragOver &&
-                    "border-[2px] border-dashed border-[#2ecc71] bg-[#2ecc71]/[0.03]",
-                )}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
+                className="px-2.5 pb-2 md:px-[18px] md:pb-3"
+                data-input-mode="agent"
+                data-testid="agent-input-dock"
               >
+                <div
+                  className={cn(
+                    "rounded-[17px] border-[0.5px] border-border bg-background/70 backdrop-blur-sm transition-all duration-200",
+                    (isPlanMode || isPermissionPlanMode) &&
+                      !isDragOver &&
+                      "plan-mode-border",
+                    isDragOver &&
+                      "border-[2px] border-dashed border-[#2ecc71] bg-[#2ecc71]/[0.03]",
+                  )}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                >
                 {(isPlanMode || isPermissionPlanMode) && !isDragOver && (
                   <PlanModeDashedBorder />
                 )}
@@ -817,8 +721,8 @@ export function AgentView({
                   placeholder={
                     agentChannelId && hasAvailableModel
                       ? sendWithCmdEnter
-                        ? "输入消息... (⌘/Ctrl+Enter 发送，Enter 换行，@ 引用文件，/ 调用 Skill，# 调用 MCP)"
-                        : "输入消息... (Enter 发送，Shift+Enter 换行，@ 引用文件，/ 调用 Skill，# 调用 MCP)"
+                        ? "输入消息... (⌘/Ctrl+Enter 发送，Enter 换行，@ 引用文件，/ 调用 Skill，$ 引用 Chat，# 调用 MCP)"
+                        : "输入消息... (Enter 发送，Shift+Enter 换行，@ 引用文件，/ 调用 Skill，$ 引用 Chat，# 调用 MCP)"
                       : !agentChannelId
                         ? "请先在设置中选择 Agent 供应商"
                         : "暂无可用模型，请先在设置中启用渠道"
@@ -865,8 +769,9 @@ export function AgentView({
                     </Tooltip>
                     <PermissionModeSelector sessionId={sessionId} />
                     {/* 思考模式切换 + 展开偏好 */}
-                    <AgentThinkingPopover
-                      agentThinking={agentThinking}
+                    <ThinkingModePopover
+                      enabled={agentThinking?.type === "adaptive"}
+                      showExpandedToggle
                       onToggle={() => {
                         const next =
                           agentThinking?.type === "adaptive"
@@ -968,9 +873,10 @@ export function AgentView({
                     )}
                   </div>
                 </div>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </AgentSessionProvider>
 

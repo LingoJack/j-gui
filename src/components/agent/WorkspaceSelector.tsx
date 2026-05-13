@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
+  agentSessionsAtom,
   agentWorkspacesAtom,
   currentAgentWorkspaceIdAtom,
 } from '@/atoms/agent-atoms'
@@ -30,7 +31,9 @@ import * as ipc from '@/lib/ipc'
 
 export function WorkspaceSelector(): React.ReactElement {
   const [workspaces, setWorkspaces] = useAtom(agentWorkspacesAtom)
+  const [agentSessions] = useAtom(agentSessionsAtom)
   const [currentWorkspaceId, setCurrentWorkspaceId] = useAtom(currentAgentWorkspaceIdAtom)
+  const effectiveWorkspaceId = currentWorkspaceId ?? workspaces[0]?.id ?? null
   const [listHeight, setListHeight] = useAtom(workspaceListHeightAtom)
 
   // 高度拖拽调整
@@ -203,12 +206,19 @@ export function WorkspaceSelector(): React.ReactElement {
   const handleConfirmDelete = async (): Promise<void> => {
     if (!deleteTargetId) return
 
+    const sessionCount = agentSessions.filter((session) => session.workspaceId === deleteTargetId).length
+    if (sessionCount > 0) {
+      toast.error('请先迁移或删除该工作区下的会话')
+      setDeleteTargetId(null)
+      return
+    }
+
     try {
       await ipc.deleteAgentWorkspace(deleteTargetId)
       const remaining = workspaces.filter((w) => w.id !== deleteTargetId)
       setWorkspaces(remaining)
 
-      if (deleteTargetId === currentWorkspaceId && remaining.length > 0) {
+      if (deleteTargetId === effectiveWorkspaceId && remaining.length > 0) {
         setCurrentWorkspaceId(remaining[0]!.id)
         ipc.updateSettings({
           agentWorkspaceId: remaining[0]!.id,
@@ -222,7 +232,9 @@ export function WorkspaceSelector(): React.ReactElement {
   }
 
   const canDelete = (ws: AgentWorkspace): boolean => {
-    return ws.slug !== 'default' && workspaces.length > 1
+    return ws.slug !== 'default'
+      && workspaces.length > 1
+      && !agentSessions.some((session) => session.workspaceId === ws.id)
   }
 
   // ===== 拖拽排序 =====
@@ -334,7 +346,7 @@ export function WorkspaceSelector(): React.ReactElement {
                 onClick={() => handleSelect(ws)}
                 className={cn(
                   'group w-full flex items-center gap-1 px-1 py-[5px] rounded-md text-[13px] transition-colors duration-100 cursor-pointer titlebar-no-drag',
-                  ws.id === currentWorkspaceId
+                  ws.id === effectiveWorkspaceId
                     ? 'workspace-item-selected bg-foreground/[0.08] text-foreground shadow-[0_1px_2px_0_rgba(0,0,0,0.05)]'
                     : 'text-foreground/70 hover:bg-foreground/[0.04]',
                   dragId === ws.id && 'opacity-40',

@@ -14,6 +14,7 @@ import { ChevronDown, Cpu, Search } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -25,7 +26,7 @@ import {
 } from '@/atoms/chat-atoms'
 import { useConversationModelOptional } from '@/hooks/useConversationSettings'
 import { useConversationIdOptional } from '@/contexts/session-context'
-import { getModelLogo, getChannelLogo } from '@/lib/model-logo'
+import { getChannelLogo, getModelLogo } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
 import type { Channel, ModelOption } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
@@ -252,6 +253,7 @@ export function ModelSelector({
         <DialogContent className="p-0 gap-0 max-w-lg" aria-describedby={undefined}>
           <DialogHeader className="sr-only">
             <DialogTitle>选择模型</DialogTitle>
+            <DialogDescription>选择当前对话要使用的模型。</DialogDescription>
           </DialogHeader>
 
           {/* 搜索栏 */}
@@ -269,7 +271,7 @@ export function ModelSelector({
           </div>
 
           {/* 模型列表 */}
-          <div className="max-h-[420px] overflow-y-auto">
+          <div className="max-h-[420px] overflow-y-auto pb-2">
             {filteredGrouped.size === 0 ? (
               <div className="py-10 text-center text-sm text-muted-foreground">
                 未找到模型

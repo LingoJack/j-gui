@@ -1,0 +1,45 @@
+feature: 2026-05-12-agent-workbench-polish
+roadmap: j-gui-v1
+roadmap_item: agent-workbench-polish
+created: 2026-05-12
+status: draft
+
+steps:
+  - id: step-1
+    paradigm: planning
+    title: 从摩擦台账定义 Agent 修复批次
+    status: pending
+    description: "筛选 Agent finding，按 timeline、permission、tool-call、file-context、stop-continue、history-restore 聚类。"
+    exit: 修复批次有 finding 回指和验收目标。
+
+  - id: step-2
+    paradigm: ui
+    title: 收口可读性
+    status: pending
+    description: "让 timeline、工具调用、权限请求和状态变化更容易理解。"
+    exit: 对应 finding 可验证通过。
+
+  - id: step-3
+    paradigm: interaction
+    title: 收口可操作性
+    status: pending
+    description: "处理停止、继续、恢复、文件上下文等操作摩擦。"
+    exit: 对应 finding 可验证通过。
+
+  - id: step-4
+    paradigm: verification
+    title: 补验证记录
+    status: pending
+    description: "为每条 Agent finding 补自动化测试或手动验收记录。"
+    exit: 每条 P0/P1 finding 有验证证据。
+
+checks:
+  - id: check-source
+    target: step-1
+    description: "所有实现任务必须回指 product-friction-audit finding。"
+    status: pending
+
+  - id: check-runtime-boundary
+    target: step-3
+    description: "不改变 Agent runtime 协议，不伪装后端缺失能力。"
+    status: pending

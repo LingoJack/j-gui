@@ -914,13 +914,24 @@ export interface RewindSessionResult {
   /** 截断后剩余的消息数 */
   remainingMessages: number;
   /** 文件恢复结果（当前版本通常为不可用，用于明确告知边界） */
-  fileRewind?: {
-    canRewind: boolean;
-    error?: string;
-    filesChanged?: string[];
-    insertions?: number;
-    deletions?: number;
-  };
+  fileRewind?: FileRewindResult;
+}
+
+/** 文件回退结果码 */
+export type FileRewindCode = "timeline_only" | (string & {});
+
+/** 文件恢复结果 */
+export interface FileRewindResult {
+  canRewind: boolean;
+  /** 结构化结果码，供前端区分不同文件回退结果来源 */
+  code: FileRewindCode;
+  /** 人类可读原因 */
+  reason: string;
+  /** 兼容当前 UI 的旧字段，首版仍保留 */
+  error?: string;
+  filesChanged?: string[];
+  insertions?: number;
+  deletions?: number;
 }
 
 // ===== 后台任务管理 =====

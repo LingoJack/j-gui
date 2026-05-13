@@ -9,9 +9,9 @@
  */
 
 import * as React from 'react'
-import { useAtom, useSetAtom, useAtomValue } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { toast } from 'sonner'
-import { Pin, Settings, Plus, ChevronDown, ChevronRight, Plug, Zap, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
+import { Pin, Settings, Plus, ChevronDown, ChevronRight, Plug, Zap, PanelLeftClose, PanelLeftOpen, Search, Trash2, Archive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { ModeSwitcher } from './ModeSwitcher'
@@ -22,7 +22,6 @@ import { appModeAtom } from '@/atoms/app-mode'
 import { settingsTabAtom, settingsOpenAtom } from '@/atoms/settings-tab'
 import {
   conversationsAtom,
-  currentConversationIdAtom,
   selectedModelAtom,
   streamingConversationIdsAtom,
   conversationModelsAtom,
@@ -58,7 +57,6 @@ import { sidebarViewModeAtom, agentSidebarTopHeightAtom } from '@/atoms/sidebar-
 import { searchDialogOpenAtom } from '@/atoms/search-atoms'
 import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
 import { workingSessionGroupsAtom, workingSessionIdsSetAtom } from '@/atoms/working-atoms'
-import { atom } from 'jotai'
 // hasEnvironmentIssues 已移除 - 环境检查已从 roadmap 中排除
 const hasEnvironmentIssuesAtom = atom(false)
 import { promptConfigAtom, selectedPromptIdAtom, conversationPromptIdAtom } from '@/atoms/system-prompt-atoms'
@@ -66,8 +64,8 @@ import { useOpenSession } from '@/hooks/useOpenSession'
 import { useSyncActiveTabSideEffects } from '@/hooks/useSyncActiveTabSideEffects'
 import { WorkspaceSelector } from '@/components/agent/WorkspaceSelector'
 import { MoveSessionDialog } from '@/components/agent/MoveSessionDialog'
-import { externalSkillSlug } from '@/components/settings/skill-helpers'
 import { detectIsMac } from '@/lib/platform'
+import { isDraftLikeAgentSession, isDraftLikeConversation } from '@/lib/session-meta'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -81,7 +79,7 @@ import {
 import type { ActiveView } from '@/atoms/active-view'
 import type { ConversationMeta, AgentSessionMeta, WorkspaceCapabilities } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
-import { SessionListItems, type SessionListItemsProps, groupByDate } from './SessionListItems'
+import { SessionListItems, type SessionListItemsProps } from './SessionListItems'
 
 function isAgentSessionMeta(value: unknown): value is AgentSessionMeta {
   return typeof value === 'object' && value !== null && 'id' in value
@@ -130,16 +128,43 @@ const ITEM_TO_VIEW: Record<SidebarItemId, ActiveView> = {
   'all-chats': 'conversations',
 }
 
+function groupByDate<T extends { updatedAt: number }>(items: T[]): Array<{ label: '今天' | '昨天' | '更早'; items: T[] }> {
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const yesterdayStart = todayStart - 86_400_000
+
+  const today: T[] = []
+  const yesterday: T[] = []
+  const earlier: T[] = []
+
+  for (const item of items) {
+    if (item.updatedAt >= todayStart) {
+      today.push(item)
+    } else if (item.updatedAt >= yesterdayStart) {
+      yesterday.push(item)
+    } else {
+      earlier.push(item)
+    }
+  }
+
+  const groups: Array<{ label: '今天' | '昨天' | '更早'; items: T[] }> = []
+  if (today.length > 0) groups.push({ label: '今天', items: today })
+  if (yesterday.length > 0) groups.push({ label: '昨天', items: yesterday })
+  if (earlier.length > 0) groups.push({ label: '更早', items: earlier })
+  return groups
+}
+
 export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   const [activeView, setActiveView] = useAtom(activeViewAtom)
   const setSettingsTab = useSetAtom(settingsTabAtom)
   const setSettingsOpen = useSetAtom(settingsOpenAtom)
-  const [activeItem, setActiveItem] = React.useState<SidebarItemId>('all-chats')
+  const [, setActiveItem] = React.useState<SidebarItemId>('all-chats')
   const [conversations, setConversations] = useAtom(conversationsAtom)
-  const [currentConversationId, setCurrentConversationId] = useAtom(currentConversationIdAtom)
   const draftSessionIds = useAtomValue(draftSessionIdsAtom)
   const setDraftSessionIds = useSetAtom(draftSessionIdsAtom)
   const [hoveredId, setHoveredId] = React.useState<string | null>(null)
+  const [selectionMode, setSelectionMode] = React.useState(false)
+  const [selectedSessionIds, setSelectedSessionIds] = React.useState<Set<string>>(new Set())
 
   // 窗口失焦时清除 hover 状态，防止 Tooltip 残留
   React.useEffect(() => {
@@ -148,8 +173,12 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     return () => window.removeEventListener('blur', handleBlur)
   }, [])
 
-  /** 待删除对话 ID，非空时显示确认弹窗 */
-  const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null)
+  const clearSelection = React.useCallback(() => {
+    setSelectedSessionIds(new Set())
+  }, [])
+
+  /** 待删除会话 ID 列表，非空时显示确认弹窗 */
+  const [pendingDeleteIds, setPendingDeleteIds] = React.useState<string[]>([])
   /** 待迁移会话 ID，非空时显示迁移对话框 */
   const [moveTargetId, setMoveTargetId] = React.useState<string | null>(null)
   /** 置顶区域展开/收起 */
@@ -167,7 +196,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
 
   // Agent 模式状态
   const [agentSessions, setAgentSessions] = useAtom(agentSessionsAtom)
-  const [currentAgentSessionId, setCurrentAgentSessionId] = useAtom(currentAgentSessionIdAtom)
+  const [currentAgentSessionId] = useAtom(currentAgentSessionIdAtom)
   const agentIndicatorMap = useAtomValue(agentSessionIndicatorMapAtom)
   const unviewedCompletedSessionIds = useAtomValue(unviewedCompletedSessionIdsAtom)
   const setUnviewedCompleted = useSetAtom(unviewedCompletedSessionIdsAtom)
@@ -177,6 +206,14 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   const setSessionModelMap = useSetAtom(agentSessionModelMapAtom)
   const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
   const workspaces = useAtomValue(agentWorkspacesAtom)
+  const effectiveWorkspaceId = React.useMemo(
+    () => currentWorkspaceId ?? workspaces[0]?.id ?? null,
+    [currentWorkspaceId, workspaces],
+  )
+  const selectedAgentSessionWorkspaceId = React.useMemo(
+    () => agentSessions.find((session) => session.id === currentAgentSessionId)?.workspaceId ?? null,
+    [agentSessions, currentAgentSessionId],
+  )
 
   // 工作区能力（MCP + 技能计数）
   const [capabilities, setCapabilities] = React.useState<WorkspaceCapabilities | null>(null)
@@ -190,6 +227,8 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   const [sidebarCollapsed, setSidebarCollapsed] = useAtom(sidebarCollapsedAtom)
   const openSession = useOpenSession()
   const syncActiveTabSideEffects = useSyncActiveTabSideEffects()
+  const expandedSidebarWidth = width ?? 280
+  const collapsedSidebarWidth = 48
 
   // 归档 & 搜索状态
   const [viewMode, setViewMode] = useAtom(sidebarViewModeAtom)
@@ -253,12 +292,13 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
 
   // 当 activeTabId 变化时，自动滚动侧边栏使选中项可见
   React.useEffect(() => {
+    if (sidebarCollapsed) return
     if (!activeTabId) return
     requestAnimationFrame(() => {
       const el = document.querySelector('.session-item-selected')
       el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     })
-  }, [activeTabId])
+  }, [activeTabId, sidebarCollapsed])
 
   // 按对话/会话隔离的映射 atom（删除时清理）
   const setConvModels = useSetAtom(conversationModelsAtom)
@@ -288,15 +328,33 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   }, [setConvModels, setConvContextLength, setConvThinking, setConvParallel, setConvPromptId, setAgentSidePanelOpen, setSessionChannelMap, setSessionModelMap])
 
   const currentWorkspaceSlug = React.useMemo(() => {
-    if (!currentWorkspaceId) return null
-    return workspaces.find((w) => w.id === currentWorkspaceId)?.slug ?? null
-  }, [currentWorkspaceId, workspaces])
+    if (!effectiveWorkspaceId) return null
+    return workspaces.find((w) => w.id === effectiveWorkspaceId)?.slug ?? null
+  }, [effectiveWorkspaceId, workspaces])
 
   const workspaceNameMap = React.useMemo(() => {
     const map = new Map<string, string>()
     for (const w of workspaces) map.set(w.id, w.name)
     return map
   }, [workspaces])
+
+  const isVisibleConversation = React.useCallback(
+    (conversation: ConversationMeta) => !draftSessionIds.has(conversation.id) && !isDraftLikeConversation(conversation),
+    [draftSessionIds],
+  )
+
+  const isVisibleAgentSession = React.useCallback(
+    (session: AgentSessionMeta) => !draftSessionIds.has(session.id) && !isDraftLikeAgentSession(session),
+    [draftSessionIds],
+  )
+
+  const matchesWorkspaceFilter = React.useCallback(
+    (session: AgentSessionMeta) => {
+      if (!effectiveWorkspaceId) return true
+      return session.workspaceId === effectiveWorkspaceId || session.id === currentAgentSessionId
+    },
+    [effectiveWorkspaceId, currentAgentSessionId],
+  )
 
   React.useEffect(() => {
     if (!currentWorkspaceSlug || mode !== 'agent') {
@@ -305,72 +363,9 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
       lastCapabilitiesErrorRef.current = null
       return
     }
-    Promise.allSettled([
-      ipc.getWorkspaceCapabilities(currentWorkspaceSlug),
-      ipc.listMcpServers(),
-      ipc.scanGlobalSkills(),
-      ipc.listSkills(),
-    ])
-      .then(([workspaceCapabilitiesResult, jcliMcpServersResult, globalSkillsResult, jcliSkillsResult]) => {
-        if (
-          workspaceCapabilitiesResult.status !== 'fulfilled' ||
-          jcliMcpServersResult.status !== 'fulfilled' ||
-          globalSkillsResult.status !== 'fulfilled' ||
-          jcliSkillsResult.status !== 'fulfilled'
-        ) {
-          const firstFailure = [
-            workspaceCapabilitiesResult,
-            jcliMcpServersResult,
-            globalSkillsResult,
-            jcliSkillsResult,
-          ].find((result) => result.status === 'rejected')
-          const message = firstFailure?.reason instanceof Error ? firstFailure.reason.message : '未知错误'
-          console.error('[LeftSidebar] 加载工作区能力失败:', firstFailure?.reason)
-          setCapabilities(null)
-          setCapabilitiesError(message)
-          if (lastCapabilitiesErrorRef.current !== message) {
-            lastCapabilitiesErrorRef.current = message
-            toast.error('加载工作区能力失败', { description: message })
-          }
-          return
-        }
-
-        const workspaceCapabilities = workspaceCapabilitiesResult.value
-        const jcliMcpServers = jcliMcpServersResult.value
-        const globalSkills = globalSkillsResult.value
-        const jcliSkills = jcliSkillsResult.value
-        const mergedMcp = new Map<string, WorkspaceCapabilities['mcpServers'][number]>(
-          workspaceCapabilities.mcpServers.map((server) => [server.name, server]),
-        )
-        for (const server of jcliMcpServers) {
-          if (!mergedMcp.has(server.name)) {
-            mergedMcp.set(server.name, {
-              name: server.name,
-              enabled: !server.disabled,
-              type: server.transport as WorkspaceCapabilities['mcpServers'][number]['type'],
-            })
-          }
-        }
-
-        const mergedSkills = new Map<string, WorkspaceCapabilities['skills'][number]>(
-          workspaceCapabilities.skills.map((skill) => [skill.slug, skill]),
-        )
-        for (const skill of [...jcliSkills, ...globalSkills]) {
-          const slug = externalSkillSlug(skill.dirPath)
-          if (!mergedSkills.has(slug)) {
-            mergedSkills.set(slug, {
-              slug,
-              name: skill.name,
-              description: skill.description,
-              enabled: true,
-            })
-          }
-        }
-
-        setCapabilities({
-          mcpServers: [...mergedMcp.values()],
-          skills: [...mergedSkills.values()],
-        })
+    ipc.getResolvedWorkspaceCapabilities(currentWorkspaceSlug)
+      .then((resolvedCapabilities) => {
+        setCapabilities(resolvedCapabilities)
         setCapabilitiesError(null)
         lastCapabilitiesErrorRef.current = null
       })
@@ -388,8 +383,8 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
 
   /** 置顶对话列表（仅活跃模式显示，排除草稿） */
   const pinnedConversations = React.useMemo(
-    () => viewMode === 'active' ? conversations.filter((c) => c.pinned && !draftSessionIds.has(c.id)) : [],
-    [conversations, viewMode, draftSessionIds]
+    () => viewMode === 'active' ? conversations.filter((c) => c.pinned && isVisibleConversation(c)) : [],
+    [conversations, viewMode, isVisibleConversation]
   )
 
   /** Working 区域状态 */
@@ -399,8 +394,10 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
 
   /** 置顶 Agent 会话列表（仅活跃模式显示，按当前工作区过滤，排除草稿和工作中） */
   const pinnedAgentSessions = React.useMemo(
-    () => viewMode === 'active' ? agentSessions.filter((s) => s.pinned && !draftSessionIds.has(s.id) && !workingSessionIds.has(s.id) && (!currentWorkspaceId || s.workspaceId === currentWorkspaceId)) : [],
-    [agentSessions, viewMode, draftSessionIds, currentWorkspaceId, workingSessionIds]
+    () => viewMode === 'active'
+      ? agentSessions.filter((s) => s.pinned && isVisibleAgentSession(s) && !workingSessionIds.has(s.id) && matchesWorkspaceFilter(s))
+      : [],
+    [agentSessions, viewMode, isVisibleAgentSession, matchesWorkspaceFilter, workingSessionIds]
   )
 
   /** 顶部 TabBar 切换标签页时，自动同步上区子标签到对应分类 */
@@ -420,23 +417,23 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   const conversationGroups = React.useMemo(
     () => {
       const filtered = viewMode === 'archived'
-        ? conversations.filter((c) => c.archived && !draftSessionIds.has(c.id))
-        : conversations.filter((c) => !c.archived && !c.pinned && !draftSessionIds.has(c.id))
+        ? conversations.filter((c) => c.archived && isVisibleConversation(c))
+        : conversations.filter((c) => !c.archived && !c.pinned && isVisibleConversation(c))
       return groupByDate(filtered)
     },
-    [conversations, viewMode, draftSessionIds]
+    [conversations, viewMode, isVisibleConversation]
   )
 
   /** 已归档对话数量 */
   const archivedConversationCount = React.useMemo(
-    () => conversations.filter((c) => c.archived).length,
-    [conversations]
+    () => conversations.filter((c) => c.archived && isVisibleConversation(c)).length,
+    [conversations, isVisibleConversation]
   )
 
   /** 已归档 Agent 会话数量（当前工作区） */
   const archivedAgentSessionCount = React.useMemo(
-    () => agentSessions.filter((s) => s.archived && (!currentWorkspaceId || s.workspaceId === currentWorkspaceId)).length,
-    [agentSessions, currentWorkspaceId]
+    () => agentSessions.filter((s) => s.archived && isVisibleAgentSession(s) && matchesWorkspaceFilter(s)).length,
+    [agentSessions, isVisibleAgentSession, matchesWorkspaceFilter]
   )
 
   // 初始加载对话列表 + 用户档案 + Agent 会话
@@ -455,7 +452,6 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
       .listAgentSessions()
       .then(setAgentSessions)
       .catch(console.error)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setConversations, setUserProfile, setAgentSessions])
 
   // 窗口聚焦时重新同步列表，修复长时间后前后端不一致
@@ -517,7 +513,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
 
   /** 请求删除对话（弹出确认框） */
   const handleRequestDelete = (id: string): void => {
-    setPendingDeleteId(id)
+    setPendingDeleteIds([id])
   }
 
   /** 重命名对话标题 */
@@ -582,79 +578,107 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
 
   /** 确认删除对话 */
   const handleConfirmDelete = async (): Promise<void> => {
-    if (!pendingDeleteId) return
+    if (pendingDeleteIds.length === 0) return
 
-    // 关闭对应的标签页：setTabs 与 setActiveTabId 成组更新，便于阅读，
-    // 也避免将来在两者之间意外插入 await 导致跨渲染状态不一致。
-    // （React 18 在同一事件回调中会自动批处理多次 setState，所以单次渲染
-    // 的一致性由 React 保证，这里只是保持代码组织清晰。）
-    const wasActive = activeTabId === pendingDeleteId
-    const tabResult = closeTab(tabs, activeTabId, pendingDeleteId)
-    setTabs(tabResult.tabs)
-    setActiveTabId(tabResult.activeTabId)
-
-    // 若关闭的是当前活跃标签，同步新激活标签的副作用（appMode、
-    // currentXxxId、以及右侧文件面板等 per-tab 状态），保持与 TabBar
-    // 关闭逻辑一致，避免删除/归档当前会话后新标签状态缺失。
-    if (wasActive) {
-      const newActiveTab = tabResult.activeTabId
-        ? tabResult.tabs.find((t) => t.id === tabResult.activeTabId) ?? null
-        : null
-      syncActiveTabSideEffects(newActiveTab)
-    }
-
-    // 清理 draft 标记（如有）
-    setDraftSessionIds((prev: Set<string>) => {
-      if (!prev.has(pendingDeleteId)) return prev
-      const next = new Set(prev)
-      next.delete(pendingDeleteId)
-      return next
-    })
-
-    // 清理 per-conversation/session Map atoms 条目
-    cleanupMapAtoms(pendingDeleteId)
-
-    // 从 Working Done 集合移除
-    setWorkingDone((prev) => {
-      if (!prev.has(pendingDeleteId)) return prev
-      const next = new Set(prev)
-      next.delete(pendingDeleteId)
-      return next
-    })
+    const ids = [...pendingDeleteIds]
+    const deletedIds: string[] = []
+    let succeeded = 0
+    let failed = 0
 
     if (mode === 'agent') {
-      // Agent 模式：删除 Agent 会话
-      // 注意：当前会话指针（currentAgentSessionId）已由上面的
-      // syncActiveTabSideEffects 在 wasActive 分支同步到新激活标签，
-      // 这里不要再按旧闭包值强制置 null，否则会覆盖新 sessionId，
-      // 导致 RightSidePanel 消失（依赖 currentAgentSessionIdAtom）。
+      for (const id of ids) {
+        try {
+          await ipc.deleteAgentSession(id)
+          deletedIds.push(id)
+          succeeded += 1
+        } catch (error) {
+          console.error('[侧边栏] 删除 Agent 会话失败:', error)
+          failed += 1
+        }
+      }
+
       try {
-        await ipc.deleteAgentSession(pendingDeleteId)
-        // 全量刷新确保与后端同步
         const sessions = await ipc.listAgentSessions()
         setAgentSessions(sessions)
       } catch (error) {
-        console.error('[侧边栏] 删除 Agent 会话失败:', error)
-        // 即使后端报错，也从本地列表移除（可能是会话已不存在）
-        setAgentSessions((prev) => prev.filter((s) => s.id !== pendingDeleteId))
-      } finally {
-        setPendingDeleteId(null)
+        console.error('[侧边栏] 刷新 Agent 会话列表失败:', error)
+        const deletedSet = new Set(deletedIds)
+        setAgentSessions((prev) => prev.filter((session) => !deletedSet.has(session.id)))
       }
-      return
+    } else {
+      for (const id of ids) {
+        try {
+          await ipc.deleteConversation(id)
+          deletedIds.push(id)
+          succeeded += 1
+        } catch (error) {
+          console.error('[侧边栏] 删除对话失败:', error)
+          failed += 1
+        }
+      }
+
+      try {
+        const conversations = await ipc.listConversations()
+        setConversations(conversations)
+      } catch (error) {
+        console.error('[侧边栏] 刷新对话列表失败:', error)
+        const deletedSet = new Set(deletedIds)
+        setConversations((prev) => prev.filter((conversation) => !deletedSet.has(conversation.id)))
+      }
     }
 
-    try {
-      await ipc.deleteConversation(pendingDeleteId)
-      // 全量刷新确保与后端同步
-      const conversations = await ipc.listConversations()
-      setConversations(conversations)
-    } catch (error) {
-      console.error('[侧边栏] 删除对话失败:', error)
-      // 即使后端报错，也从本地列表移除（可能是对话已不存在）
-      setConversations((prev) => prev.filter((c) => c.id !== pendingDeleteId))
-    } finally {
-      setPendingDeleteId(null)
+    if (deletedIds.length > 0) {
+      const deletedSet = new Set(deletedIds)
+      let nextTabs = tabs
+      let nextActiveTabId = activeTabId
+      let activeChanged = false
+
+      for (const id of deletedIds) {
+        const wasActive = nextActiveTabId === id
+        const tabResult = closeTab(nextTabs, nextActiveTabId, id)
+        nextTabs = tabResult.tabs
+        nextActiveTabId = tabResult.activeTabId
+        cleanupMapAtoms(id)
+        activeChanged = activeChanged || wasActive
+      }
+
+      setTabs(nextTabs)
+      setActiveTabId(nextActiveTabId)
+      if (activeChanged) {
+        const newActiveTab = nextActiveTabId
+          ? nextTabs.find((tab) => tab.id === nextActiveTabId) ?? null
+          : null
+        syncActiveTabSideEffects(newActiveTab)
+      }
+
+      setDraftSessionIds((prev: Set<string>) => {
+        const next = new Set([...prev].filter((id) => !deletedSet.has(id)))
+        return next.size === prev.size ? prev : next
+      })
+
+      setWorkingDone((prev) => {
+        const next = new Set([...prev].filter((id) => !deletedSet.has(id)))
+        return next.size === prev.size ? prev : next
+      })
+
+      if (failed === 0) {
+        clearSelection()
+      } else {
+        setSelectedSessionIds(new Set(ids.filter((id) => !deletedSet.has(id))))
+      }
     }
+
+    if (succeeded > 0 && failed === 0) {
+      toast.success(ids.length > 1 ? '已批量删除' : '已删除')
+    } else if (succeeded > 0) {
+      toast.warning('删除部分成功', {
+        description: `成功 ${succeeded} 个，失败 ${failed} 个`,
+      })
+    } else {
+      toast.error('删除失败')
+    }
+
+    setPendingDeleteIds([])
   }
 
   /** 创建新 Agent 会话 */
@@ -663,7 +687,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
       const meta = await ipc.createAgentSession(
         undefined,
         agentChannelId || undefined,
-        currentWorkspaceId || undefined,
+        effectiveWorkspaceId || undefined,
       )
       setAgentSessions((prev) => [meta, ...prev])
       // 从全局默认值初始化 per-session 渠道/模型配置
@@ -818,10 +842,10 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     )
     // 如果迁移的是当前选中的会话，取消选中并关闭标签页
     if (currentAgentSessionId === updatedSession.id) {
+      const wasActive = activeTabId === updatedSession.id
       const tabResult = closeTab(tabs, activeTabId, updatedSession.id)
       setTabs(tabResult.tabs)
       setActiveTabId(tabResult.activeTabId)
-      setCurrentAgentSessionId(null)
       // 从 Working Done 集合移除
       setWorkingDone((prev) => {
         if (!prev.has(updatedSession.id)) return prev
@@ -829,6 +853,12 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
         next.delete(updatedSession.id)
         return next
       })
+      if (wasActive) {
+        const newActiveTab = tabResult.activeTabId
+          ? tabResult.tabs.find((t) => t.id === tabResult.activeTabId) ?? null
+          : null
+        syncActiveTabSideEffects(newActiveTab)
+      }
     }
     setMoveTargetId(null)
     toast.success('会话已迁移', {
@@ -839,12 +869,13 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   /** Agent 会话按工作区过滤 + 归档过滤 + 排除 draft + 排除 Working */
   const filteredAgentSessions = React.useMemo(
     () => {
-      const byWorkspace = agentSessions.filter((s) => s.workspaceId === currentWorkspaceId && !draftSessionIds.has(s.id))
+      const byWorkspace = agentSessions.filter((s) => matchesWorkspaceFilter(s))
+      const visibleByWorkspace = byWorkspace.filter((s) => isVisibleAgentSession(s))
       return viewMode === 'archived'
-        ? byWorkspace.filter((s) => s.archived)
-        : byWorkspace.filter((s) => !s.archived && !s.pinned && !workingSessionIds.has(s.id))
+        ? visibleByWorkspace.filter((s) => s.archived)
+        : visibleByWorkspace.filter((s) => !s.archived && !s.pinned && !workingSessionIds.has(s.id))
     },
-    [agentSessions, currentWorkspaceId, viewMode, draftSessionIds, workingSessionIds]
+    [agentSessions, matchesWorkspaceFilter, viewMode, workingSessionIds, isVisibleAgentSession]
   )
 
   /** Agent 会话按日期分组 */
@@ -853,30 +884,243 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     [filteredAgentSessions]
   )
 
+  const visibleSessionIds = React.useMemo(() => {
+    if (mode === 'chat') {
+      return new Set([
+        ...pinnedConversations.map((conversation) => conversation.id),
+        ...conversationGroups.flatMap((group) => group.items.map((conversation) => conversation.id)),
+      ])
+    }
+
+    return new Set([
+      ...pinnedAgentSessions.map((session) => session.id),
+      ...workingGroups.todo.map((session) => session.id),
+      ...workingGroups.running.map((session) => session.id),
+      ...workingGroups.done.map((session) => session.id),
+      ...agentSessionGroups.flatMap((group) => group.items.map((session) => session.id)),
+    ])
+  }, [
+    mode,
+    pinnedConversations,
+    conversationGroups,
+    pinnedAgentSessions,
+    workingGroups,
+    agentSessionGroups,
+  ])
+
+  React.useEffect(() => {
+    setSelectedSessionIds((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set([...prev].filter((id) => visibleSessionIds.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [visibleSessionIds])
+
+  React.useEffect(() => {
+    clearSelection()
+    setSelectionMode(false)
+  }, [mode, viewMode, clearSelection])
+
+  const toggleSessionSelection = React.useCallback((id: string) => {
+    setSelectedSessionIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }, [])
+
+  const toggleSelectAllVisibleSessions = React.useCallback(() => {
+    setSelectedSessionIds((prev) => {
+      const allVisibleIds = [...visibleSessionIds]
+      if (allVisibleIds.length === 0) return prev
+      const allSelected = allVisibleIds.every((id) => prev.has(id))
+      if (allSelected) {
+        return new Set([...prev].filter((id) => !visibleSessionIds.has(id)))
+      }
+      const next = new Set(prev)
+      for (const id of allVisibleIds) {
+        next.add(id)
+      }
+      return next
+    })
+  }, [visibleSessionIds])
+
+  const handleBulkDeleteSelection = React.useCallback((): void => {
+    if (selectedSessionIds.size === 0) return
+    setPendingDeleteIds([...selectedSessionIds])
+  }, [selectedSessionIds])
+
+  const handleBulkArchiveSelection = React.useCallback(async (): Promise<void> => {
+    const ids = [...selectedSessionIds]
+    if (ids.length === 0) return
+    let succeeded = 0
+    let failed = 0
+
+    if (mode === 'chat') {
+      let nextTabs = tabs
+      let nextActiveTabId = activeTabId
+      let activeChanged = false
+      const updatedConversations = new Map<string, ConversationMeta>()
+
+      for (const id of ids) {
+        try {
+          const updated = await ipc.toggleArchiveConversation(id)
+          updatedConversations.set(id, updated)
+          if (updated.archived) {
+            const wasActive = nextActiveTabId === id
+            const tabResult = closeTab(nextTabs, nextActiveTabId, id)
+            nextTabs = tabResult.tabs
+            nextActiveTabId = tabResult.activeTabId
+            cleanupMapAtoms(id)
+            activeChanged = activeChanged || wasActive
+          }
+          succeeded += 1
+        } catch (error) {
+          console.error('[侧边栏] 批量归档对话失败:', error)
+          failed += 1
+        }
+      }
+
+      setTabs(nextTabs)
+      setActiveTabId(nextActiveTabId)
+      if (activeChanged) {
+        const newActiveTab = nextActiveTabId
+          ? nextTabs.find((tab) => tab.id === nextActiveTabId) ?? null
+          : null
+        syncActiveTabSideEffects(newActiveTab)
+      }
+      try {
+        setConversations(await ipc.listConversations())
+      } catch (error) {
+        console.error('[侧边栏] 刷新对话列表失败:', error)
+        if (updatedConversations.size > 0) {
+          setConversations((prev) =>
+            prev.map((conversation) => updatedConversations.get(conversation.id) ?? conversation),
+          )
+        }
+      }
+      if (succeeded > 0 && failed === 0) {
+        toast.success(viewMode === 'archived' ? '已批量取消归档' : '已批量归档')
+      } else if (succeeded > 0) {
+        toast.warning('批量操作部分成功', {
+          description: `成功 ${succeeded} 个，失败 ${failed} 个`,
+        })
+      } else {
+        toast.error('批量操作失败')
+      }
+      clearSelection()
+      return
+    }
+
+    let nextTabs = tabs
+    let nextActiveTabId = activeTabId
+    let activeChanged = false
+    const updatedAgentSessions = new Map<string, AgentSessionMeta>()
+
+    for (const id of ids) {
+      try {
+        const updated = await ipc.toggleArchiveAgentSession(id)
+        updatedAgentSessions.set(id, updated)
+        if (updated.archived) {
+          const wasActive = nextActiveTabId === id
+          const tabResult = closeTab(nextTabs, nextActiveTabId, id)
+          nextTabs = tabResult.tabs
+          nextActiveTabId = tabResult.activeTabId
+          cleanupMapAtoms(id)
+          setWorkingDone((prev) => {
+            if (!prev.has(id)) return prev
+            const next = new Set(prev)
+            next.delete(id)
+            return next
+          })
+          activeChanged = activeChanged || wasActive
+        }
+        succeeded += 1
+      } catch (error) {
+        console.error('[侧边栏] 批量归档 Agent 会话失败:', error)
+        failed += 1
+      }
+    }
+
+    setTabs(nextTabs)
+    setActiveTabId(nextActiveTabId)
+    if (activeChanged) {
+      const newActiveTab = nextActiveTabId
+        ? nextTabs.find((tab) => tab.id === nextActiveTabId) ?? null
+        : null
+      syncActiveTabSideEffects(newActiveTab)
+    }
+    try {
+      setAgentSessions(await ipc.listAgentSessions())
+    } catch (error) {
+      console.error('[侧边栏] 刷新 Agent 会话列表失败:', error)
+      if (updatedAgentSessions.size > 0) {
+        setAgentSessions((prev) =>
+          prev.map((session) => updatedAgentSessions.get(session.id) ?? session),
+        )
+      }
+    }
+    if (succeeded > 0 && failed === 0) {
+      toast.success(viewMode === 'archived' ? '已批量取消归档' : '已批量归档')
+    } else if (succeeded > 0) {
+      toast.warning('批量操作部分成功', {
+        description: `成功 ${succeeded} 个，失败 ${failed} 个`,
+      })
+    } else {
+      toast.error('批量操作失败')
+    }
+    clearSelection()
+  }, [
+    activeTabId,
+    clearSelection,
+    cleanupMapAtoms,
+    mode,
+    selectedSessionIds,
+    setActiveTabId,
+    setAgentSessions,
+    setConversations,
+    setTabs,
+    setWorkingDone,
+    syncActiveTabSideEffects,
+    tabs,
+    viewMode,
+  ])
+
+  const deleteTargetCount = pendingDeleteIds.length
+  const deleteEntityLabel = mode === 'agent' ? '会话' : '对话'
+  const deleteDialogTitle = deleteTargetCount > 1 ? `确认删除所选${deleteEntityLabel}` : `确认删除${deleteEntityLabel}`
+  const deleteDialogDescription = deleteTargetCount > 1
+    ? `删除后将无法恢复，确定要删除选中的 ${deleteTargetCount} 个${deleteEntityLabel}吗？`
+    : `删除后将无法恢复，确定要删除这个${deleteEntityLabel}吗？`
+
   // 删除确认弹窗（折叠/展开态共用）
   const deleteDialog = (
     <AlertDialog
-      open={pendingDeleteId !== null}
-      onOpenChange={(open) => { if (!open) setPendingDeleteId(null) }}
+      open={pendingDeleteIds.length > 0}
+      onOpenChange={(open) => { if (!open) setPendingDeleteIds([]) }}
     >
       <AlertDialogContent
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault()
-            handleConfirmDelete()
+            void handleConfirmDelete()
           }
         }}
       >
         <AlertDialogHeader>
-          <AlertDialogTitle>确认删除对话</AlertDialogTitle>
+          <AlertDialogTitle>{deleteDialogTitle}</AlertDialogTitle>
           <AlertDialogDescription>
-            删除后将无法恢复，确定要删除这个对话吗？
+            {deleteDialogDescription}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>取消</AlertDialogCancel>
           <AlertDialogAction
-            onClick={handleConfirmDelete}
+            onClick={() => { void handleConfirmDelete() }}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
             删除
@@ -892,7 +1136,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
       open={moveTargetId !== null}
       onOpenChange={(open) => { if (!open) setMoveTargetId(null) }}
       sessionId={moveTargetId ?? ''}
-      currentWorkspaceId={currentWorkspaceId ?? undefined}
+      currentWorkspaceId={selectedAgentSessionWorkspaceId ?? effectiveWorkspaceId ?? undefined}
       workspaces={workspaces}
       onMoved={handleSessionMoved}
     />
@@ -904,6 +1148,8 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     viewMode,
     activeTabId,
     hoveredId,
+    selectionMode,
+    selectedSessionIds,
     pinnedExpanded,
     pinnedConversations,
     conversationGroups,
@@ -921,6 +1167,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     agentTopHeight,
     agentSubTab,
     onHoveredIdChange: setHoveredId,
+    onToggleSessionSelection: toggleSessionSelection,
     onSelectConversation: handleSelectConversation,
     onRequestDelete: handleRequestDelete,
     onRename: handleRename,
@@ -936,13 +1183,19 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     onAgentSubTabChange: setAgentSubTab,
     onSetViewMode: setViewMode,
   }
-
-  // ===== 折叠状态：精简图标视图 =====
-  if (sidebarCollapsed) {
-    return (
+  return (
+    <div
+      className="relative h-full overflow-hidden rounded-2xl bg-background shadow-xl transition-[width] duration-200"
+      style={{
+        width: sidebarCollapsed ? collapsedSidebarWidth : expandedSidebarWidth,
+        minWidth: sidebarCollapsed ? collapsedSidebarWidth : 180,
+        flexShrink: sidebarCollapsed ? 0 : 1,
+      }}
+    >
+      {sidebarCollapsed && (
       <div
-        className="h-full flex flex-col items-center bg-background rounded-2xl shadow-xl transition-[width] duration-300"
-        style={{ width: 48, flexShrink: 0 }}
+        aria-hidden={false}
+        className="absolute inset-0 flex flex-col items-center"
       >
         {/* macOS 需要避开左上角红绿灯，其他平台保留紧凑呼吸感。 */}
         <div className={cn(isMac ? 'pt-[50px]' : 'pt-2')} />
@@ -991,168 +1244,220 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
                 className="relative p-1 rounded-[10px] transition-colors titlebar-no-drag hover:bg-foreground/5"
               >
                 <UserAvatar avatar={userProfile.avatar} size={28} />
-                {(hasEnvironmentIssues) && (
-                  <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-red-500" />
+                {hasEnvironmentIssues && (
+                  <span className="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500" />
                 )}
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">设置</TooltipContent>
           </Tooltip>
         </div>
-
-        {deleteDialog}
-        {moveDialog}
-        <SearchDialog />
       </div>
-    )
-  }
+      )}
 
-  // ===== 展开状态：完整侧边栏 =====
-  return (
-    <div
-      className="h-full flex flex-col bg-background rounded-2xl shadow-xl transition-[width] duration-300"
-      style={{ width: width ?? 280, minWidth: 180, flexShrink: 1 }}
-    >
-      {/* macOS 需要避开左上角红绿灯，其他平台不占用这块空间。 */}
-      <div className={cn(isMac ? 'pt-[30px]' : 'pt-1')}>
-        {/* 模式切换器 + 折叠按钮 */}
-        <div className="flex items-start gap-1.5 px-3">
-          <div className="flex-1 min-w-0">
-            <ModeSwitcher />
+      {!sidebarCollapsed && (
+      <div
+        aria-hidden={false}
+        className="absolute inset-0 flex flex-col"
+      >
+        {/* macOS 需要避开左上角红绿灯，其他平台不占用这块空间。 */}
+        <div className={cn(isMac ? 'pt-[30px]' : 'pt-1')}>
+          {/* 模式切换器 + 折叠按钮 */}
+          <div className="flex items-start gap-1.5 px-3">
+            <div className="flex-1 min-w-0">
+              <ModeSwitcher />
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setSidebarCollapsed(true)}
+                  className="mt-2 size-[36px] flex-shrink-0 flex items-center justify-center rounded-[10px] bg-muted text-foreground/40 hover:bg-foreground/[0.08] hover:text-foreground/60 transition-colors titlebar-no-drag"
+                >
+                  <PanelLeftClose size={14} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">收起侧边栏</TooltipContent>
+            </Tooltip>
           </div>
+        </div>
+
+        {/* Agent 模式：工作区选择器 */}
+        {mode === 'agent' && (
+          <div className="px-3 pt-2">
+            <WorkspaceSelector />
+          </div>
+        )}
+
+        {/* 新对话/新会话按钮 + 搜索按钮 */}
+        <div className="px-3 pt-2 flex items-center gap-1.5">
+          <button
+            onClick={mode === 'agent' ? handleNewAgentSession : handleNewConversation}
+            className="flex-1 flex items-center gap-2 px-3 py-2 rounded-[10px] text-[13px] font-medium text-foreground/70 bg-primary/5 hover:bg-primary/10 transition-colors duration-100 titlebar-no-drag border border-dashed border-[hsl(var(--dashed-border))] hover:border-[hsl(var(--dashed-border-hover))]"
+          >
+            <Plus size={14} />
+            <span>{mode === 'agent' ? '新会话' : '新对话'}</span>
+          </button>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                onClick={() => setSidebarCollapsed(true)}
-                className="mt-2 size-[36px] flex-shrink-0 flex items-center justify-center rounded-[10px] bg-muted text-foreground/40 hover:bg-foreground/[0.08] hover:text-foreground/60 transition-colors titlebar-no-drag"
+                onClick={() => setSearchDialogOpen((prev) => !prev)}
+                className="flex-shrink-0 size-[36px] flex items-center justify-center rounded-[10px] text-foreground/40 bg-primary/5 hover:bg-primary/10 hover:text-foreground/60 transition-colors duration-100 titlebar-no-drag border border-dashed border-[hsl(var(--dashed-border))] hover:border-[hsl(var(--dashed-border-hover))]"
               >
-                <PanelLeftClose size={14} />
+                <Search size={14} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">收起侧边栏</TooltipContent>
+            <TooltipContent side="bottom">搜索 (⌘F)</TooltipContent>
           </Tooltip>
-        </div>
-      </div>
-
-      {/* Agent 模式：工作区选择器 */}
-      {mode === 'agent' && (
-        <div className="px-3 pt-2">
-          <WorkspaceSelector />
-        </div>
-      )}
-
-      {/* 新对话/新会话按钮 + 搜索按钮 */}
-      <div className="px-3 pt-2 flex items-center gap-1.5">
-        <button
-          onClick={mode === 'agent' ? handleNewAgentSession : handleNewConversation}
-          className="flex-1 flex items-center gap-2 px-3 py-2 rounded-[10px] text-[13px] font-medium text-foreground/70 bg-primary/5 hover:bg-primary/10 transition-colors duration-100 titlebar-no-drag border border-dashed border-[hsl(var(--dashed-border))] hover:border-[hsl(var(--dashed-border-hover))]"
-        >
-          <Plus size={14} />
-          <span>{mode === 'agent' ? '新会话' : '新对话'}</span>
-        </button>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => setSearchDialogOpen(true)}
-              className="flex-shrink-0 size-[36px] flex items-center justify-center rounded-[10px] text-foreground/40 bg-primary/5 hover:bg-primary/10 hover:text-foreground/60 transition-colors duration-100 titlebar-no-drag border border-dashed border-[hsl(var(--dashed-border))] hover:border-[hsl(var(--dashed-border-hover))]"
-            >
-              <Search size={14} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">搜索 (⌘F)</TooltipContent>
-        </Tooltip>
-      </div>
-
-      {/* Chat 模式：导航菜单（置顶区域） */}
-      {mode === 'chat' && (
-        <div className="flex flex-col gap-1 pt-3 px-3">
-          <SidebarItem
-            icon={<Pin size={16} />}
-            label="置顶对话"
-            suffix={
-              pinnedConversations.length > 0 ? (
-                pinnedExpanded
-                  ? <ChevronDown size={14} className="text-foreground/40" />
-                  : <ChevronRight size={14} className="text-foreground/40" />
-              ) : undefined
-            }
-            onClick={() => handleItemClick('pinned')}
-          />
-        </div>
-      )}
-
-      {mode === 'agent' && viewMode === 'active' ? (
-        <div ref={agentSplitContainerRef} className="flex-1 flex flex-col min-h-0">
-          <SessionListItems {...sessionListProps} />
-        </div>
-      ) : (
-        <div className="flex-1 flex flex-col min-h-0">
-          <SessionListItems {...sessionListProps} />
-        </div>
-      )}
-
-      {/* Agent 模式：工作区能力指示器 */}
-      {mode === 'agent' && capabilities && (
-        <div className="px-3 pb-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => { setSettingsTab('agent'); setSettingsOpen(true) }}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-[10px] text-[12px] text-foreground/50 hover:bg-foreground/[0.04] hover:text-foreground/70 transition-colors titlebar-no-drag"
-              >
-                <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                  <span className="flex items-center gap-1">
-                    <Plug size={13} className="text-foreground/40" />
-                    <span className="tabular-nums">{capabilities.mcpServers.filter((s) => s.enabled).length}</span>
-                    <span className="text-foreground/30">MCP</span>
-                  </span>
-                  <span className="text-foreground/20">·</span>
-                  <span className="flex items-center gap-1">
-                    <Zap size={13} className="text-foreground/40" />
-                    <span className="tabular-nums">{capabilities.skills.length}</span>
-                    <span className="text-foreground/30">Skills</span>
-                  </span>
-                </div>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">点击配置 MCP 与 Skills</TooltipContent>
-          </Tooltip>
-        </div>
-      )}
-
-      {mode === 'agent' && !capabilities && capabilitiesError && (
-        <div className="px-3 pb-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => { setSettingsTab('agent'); setSettingsOpen(true) }}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-[10px] text-[12px] text-amber-600 hover:bg-amber-500/10 transition-colors titlebar-no-drag"
-              >
-                <Plug size={13} />
-                <span className="truncate">能力加载失败</span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">{capabilitiesError}</TooltipContent>
-          </Tooltip>
-        </div>
-      )}
-
-      {/* 底部：用户资料 + 设置入口 */}
-      <div className="px-3 pb-3">
-        <button
-          onClick={() => setSettingsOpen(true)}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-[10px] transition-colors titlebar-no-drag text-foreground/70 hover:bg-foreground/[0.04] hover:text-foreground"
-        >
-          <UserAvatar avatar={userProfile.avatar} size={28} />
-          <span className="flex-1 text-sm truncate text-left">{userProfile.userName}</span>
-          <div className="relative flex-shrink-0 text-foreground/40">
-            <Settings size={16} />
-            {(hasEnvironmentIssues) && (
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />
+          <button
+            type="button"
+            onClick={() => {
+              const next = !selectionMode
+              setSelectionMode(next)
+              if (!next) clearSelection()
+            }}
+            className={cn(
+              'flex-shrink-0 h-[36px] rounded-[10px] px-2.5 text-[12px] font-medium transition-colors titlebar-no-drag border border-dashed',
+              selectionMode
+                ? 'bg-foreground/[0.08] text-foreground border-foreground/20'
+                : 'text-foreground/40 bg-primary/5 hover:bg-primary/10 hover:text-foreground/60 border-[hsl(var(--dashed-border))] hover:border-[hsl(var(--dashed-border-hover))]'
             )}
+          >
+            多选
+          </button>
+        </div>
+
+        {selectionMode && (
+          <div className="px-3 pt-2">
+            <div className="flex items-center justify-between gap-2 rounded-[10px] border border-border/60 bg-muted/40 px-2.5 py-2 text-[12px]">
+              <span className="min-w-0 text-foreground/70">
+                已选 {selectedSessionIds.size} 项
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={toggleSelectAllVisibleSessions}
+                  disabled={visibleSessionIds.size === 0}
+                  className="inline-flex items-center rounded-md px-2 py-1 text-foreground/60 hover:bg-foreground/[0.06] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {selectedSessionIds.size > 0 && selectedSessionIds.size === visibleSessionIds.size
+                    ? '取消全选'
+                    : '全选'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { void handleBulkArchiveSelection() }}
+                  disabled={selectedSessionIds.size === 0}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-foreground/60 hover:bg-foreground/[0.06] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Archive size={12} />
+                  <span>{viewMode === 'archived' ? '取消归档' : '归档'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkDeleteSelection}
+                  disabled={selectedSessionIds.size === 0}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-foreground/60 hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Trash2 size={12} />
+                  <span>删除</span>
+                </button>
+              </div>
+            </div>
           </div>
-        </button>
+        )}
+
+        {/* Chat 模式：导航菜单（置顶区域） */}
+        {mode === 'chat' && pinnedConversations.length > 0 && (
+          <div className="flex flex-col gap-1 pt-3 px-3">
+            <SidebarItem
+              icon={<Pin size={16} />}
+              label="置顶对话"
+              suffix={
+                pinnedConversations.length > 0 ? (
+                  pinnedExpanded
+                    ? <ChevronDown size={14} className="text-foreground/40" />
+                    : <ChevronRight size={14} className="text-foreground/40" />
+                ) : undefined
+              }
+              onClick={() => handleItemClick('pinned')}
+            />
+          </div>
+        )}
+
+        {mode === 'agent' && viewMode === 'active' ? (
+          <div ref={agentSplitContainerRef} className="flex-1 flex flex-col min-h-0">
+            <SessionListItems {...sessionListProps} />
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col min-h-0">
+            <SessionListItems {...sessionListProps} />
+          </div>
+        )}
+
+        {/* Agent 模式：工作区能力指示器 */}
+        {mode === 'agent' && capabilities && (
+          <div className="px-3 pb-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => { setSettingsTab('agent'); setSettingsOpen(true) }}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-[10px] text-[12px] text-foreground/50 hover:bg-foreground/[0.04] hover:text-foreground/70 transition-colors titlebar-no-drag"
+                >
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                    <span className="flex items-center gap-1">
+                      <Plug size={13} className="text-foreground/40" />
+                      <span className="tabular-nums">{capabilities.mcpServers.filter((s) => s.enabled).length}</span>
+                      <span className="text-foreground/30">MCP</span>
+                    </span>
+                    <span className="text-foreground/20">·</span>
+                    <span className="flex items-center gap-1">
+                      <Zap size={13} className="text-foreground/40" />
+                      <span className="tabular-nums">{capabilities.skills.filter((skill) => skill.enabled).length}</span>
+                      <span className="text-foreground/30">Skills</span>
+                    </span>
+                  </div>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">点击配置 MCP 与 Skills</TooltipContent>
+            </Tooltip>
+          </div>
+        )}
+
+        {mode === 'agent' && !capabilities && capabilitiesError && (
+          <div className="px-3 pb-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => { setSettingsTab('agent'); setSettingsOpen(true) }}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-[10px] text-[12px] text-amber-600 hover:bg-amber-500/10 transition-colors titlebar-no-drag"
+                >
+                  <Plug size={13} />
+                  <span className="truncate">能力加载失败</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{capabilitiesError}</TooltipContent>
+            </Tooltip>
+          </div>
+        )}
+
+        {/* 底部：用户资料 + 设置入口 */}
+        <div className="px-3 pb-3">
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-[10px] transition-colors titlebar-no-drag text-foreground/70 hover:bg-foreground/[0.04] hover:text-foreground"
+          >
+            <UserAvatar avatar={userProfile.avatar} size={28} />
+            <span className="flex-1 truncate text-left text-sm">{userProfile.userName}</span>
+            <div className="relative flex-shrink-0 text-foreground/40">
+              <Settings size={16} />
+              {hasEnvironmentIssues && (
+                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500" />
+              )}
+            </div>
+          </button>
+        </div>
       </div>
+      )}
 
       {deleteDialog}
       {moveDialog}

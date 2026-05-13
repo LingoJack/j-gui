@@ -63,16 +63,6 @@ export function useGlobalChatListeners(): void {
       })
     }
 
-    /** 辅助函数：从 Map 中移除某个对话的流式状态 */
-    const removeState = (convId: string): void => {
-      store.set(streamingStatesAtom, (prev) => {
-        if (!prev.has(convId)) return prev
-        const map = new Map(prev)
-        map.delete(convId)
-        return map
-      })
-    }
-
     // ===== 1. 流式内容块 =====
     const cleanupChunk = ipc.onStreamChunk(
       (event: StreamChunkEvent) => {
@@ -118,14 +108,11 @@ export function useGlobalChatListeners(): void {
         const titleInput = pendingTitles.get(event.conversationId)
         if (titleInput) {
           pendingTitles.delete(event.conversationId)
-          console.log('[GlobalChatListeners] 开始生成标题:', titleInput)
           ipc.generateTitle(titleInput).then((title) => {
-            console.log('[GlobalChatListeners] 标题生成结果:', title)
             if (!title) return
             ipc
               .updateConversationTitle(event.conversationId, title)
               .then((updated) => {
-                console.log('[GlobalChatListeners] 标题更新成功:', updated.title)
                 store.set(conversationsAtom, (prev) =>
                   prev.map((c) => (c.id === updated.id ? updated : c))
                 )
