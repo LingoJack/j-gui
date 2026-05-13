@@ -530,35 +530,37 @@ type ProductFrictionFinding = {
   - LeftSidebar 改为在 width transition 结束后再挂载 SessionListItems，并保留超时兜底
   - 快速展开后再收起不会出现迟到挂载
   - Agent 折叠启动后首次展开时，上区分栏高度会正确初始化
+- [x] `desktop-shell-platform-polish`
+  - Tauri bundle 图标已切到 J logo 生成产物，不再沿用默认图标
+  - Windows 主窗口改为在 Rust setup 阶段直接关闭原生 decorations，并接入自定义最小化/最大化/关闭按钮
+  - macOS 保持 `decorations + Overlay + trafficLightPosition` 代码配置，且显式防守非 Tauri 环境与迟到 resize 监听泄漏
 
 ### 10.2 当前正在推进
 
 - 无
-- Phase E 已完成事实输入阶段、第一批核心工作流硬化，以及 `shortcut-system-hardening` / `sidebar-performance-hardening`；下一步进入桌面壳层、设置区、Agent 工作台与视觉布局硬化
+- Phase E 已完成事实输入阶段、第一批核心工作流硬化，以及 `shortcut-system-hardening` / `sidebar-performance-hardening` / `desktop-shell-platform-polish`；下一步进入 Agent 后端切换、设置区、环境配置与工作台硬化
 
 ### 10.3 下一步明确要做
 
-1. 先推进 `desktop-shell-platform-polish`
-   - 图标切到 J logo，并按平台收口窗口控制方案
-2. 推进 `agent-backend-switch-ux-hardening`
+1. 先推进 `agent-backend-switch-ux-hardening`
    - 让 Agent 输入区里的 `Claude SDK / JAgent` 变成直接、可感知、可回滚的后端切换入口
-3. 推进 `about-update-surface-refresh`
+2. 推进 `about-update-surface-refresh`
    - 补产品信息与版本真相：`j-gui` / `j-cli` / 本地 `j` CLI / 本机 Claude Code CLI 版本，以及更中性的更新状态表达
-4. 推进 `environment-configuration-surface`
+3. 推进 `environment-configuration-surface`
    - 单独提供 Shell 选择、fallback、推荐 shell、Node/Git/Bun/Git Bash/WSL 状态与失败原因
-5. 推进 `agent-governance-surface-hardening` 和 `system-prompt-runtime-hardening`
+4. 推进 `agent-governance-surface-hardening` 和 `system-prompt-runtime-hardening`
    - 分别收口全局/工作区 Skills / MCP / Hooks 治理面，以及系统提示词默认值/恢复默认/增强选项的运行时真相
-6. 按当前收口后的界面与领域边界，推进 `frontend-domain-reorganization`
+5. 按当前收口后的界面与领域边界，推进 `frontend-domain-reorganization`
    - 把 `src/` 从技术分桶收拢到桌面主应用的领域组织
-7. 按台账推进 `settings-experience-hardening` 和 `agent-workbench-polish`
+6. 按台账推进 `settings-experience-hardening` 和 `agent-workbench-polish`
    - 分别收设置区可理解性与 Agent 工作台可操作性
-8. 按台账推进 `visual-layout-polish`
+7. 按台账推进 `visual-layout-polish`
    - 只处理已证实的布局/视觉/溢出/焦点问题，不做全局换肤
-9. 提前推进 `dogfooding-blocker-burn-down`
+8. 提前推进 `dogfooding-blocker-burn-down`
    - 清掉真实使用中迫使用户退回外部终端或手工补救的阻塞
-10. 在上述桌面主链路稳定后，再推进 `proma-backend-capability-absorption`
+9. 在上述桌面主链路稳定后，再推进 `proma-backend-capability-absorption`
     - 先把 CLI backend 的恢复状态机、事件语义、存储防线、环境探测和磁盘治理补成真实 Rust 能力
-11. 最后再回到 `agent-engine-jagent`、`agent-backend-parity-hardening`、`dogfooding-self-development-loop` 和 `remote-access-integration`
+10. 最后再回到 `agent-engine-jagent`、`agent-backend-parity-hardening`、`dogfooding-self-development-loop` 和 `remote-access-integration`
 
 ### 10.4 Phase B 最后收尾 Checklist
 
@@ -602,21 +604,20 @@ Phase C 当前判断：
 
 ### 10.6 推荐执行顺序
 
-1. `desktop-shell-platform-polish`
-2. `agent-backend-switch-ux-hardening`
-3. `about-update-surface-refresh`
-4. `environment-configuration-surface`
-5. `agent-governance-surface-hardening`
-6. `system-prompt-runtime-hardening`
-7. `frontend-domain-reorganization`
-8. `settings-experience-hardening` + `agent-workbench-polish`
-9. `visual-layout-polish`
-10. `dogfooding-blocker-burn-down`
-11. `proma-backend-capability-absorption`
-12. `agent-engine-jagent`
-13. `agent-backend-parity-hardening`
-14. `dogfooding-self-development-loop`
-15. `remote-access-integration`
+1. `agent-backend-switch-ux-hardening`
+2. `about-update-surface-refresh`
+3. `environment-configuration-surface`
+4. `agent-governance-surface-hardening`
+5. `system-prompt-runtime-hardening`
+6. `frontend-domain-reorganization`
+7. `settings-experience-hardening` + `agent-workbench-polish`
+8. `visual-layout-polish`
+9. `dogfooding-blocker-burn-down`
+10. `proma-backend-capability-absorption`
+11. `agent-engine-jagent`
+12. `agent-backend-parity-hardening`
+13. `dogfooding-self-development-loop`
+14. `remote-access-integration`
 
 ## 11. 变更日志
 
@@ -641,3 +642,4 @@ Phase C 当前判断：
 - `2026-05-13`：继续细化 About/Environment 方向，避免遗漏最新澄清：将原 `about-runtime-observability-hardening` 拆成 `about-update-surface-refresh` 与 `environment-configuration-surface` 两条主线，明确需要暴露“本机 Claude Code CLI 版本 = 当前 Claude Code Agent 模式实际后端版本”、Node 不是统一硬依赖而是 npm 安装/扩展工具链相关项、PowerShell 为官方支持 Shell 之一、Git Bash / WSL 为推荐/增强与 fallback 选项，同时把“已是最新”的视觉状态收口为更中性的产品表达。
 - `2026-05-13`：完成 `shortcut-system-hardening`，把 `Ctrl/Cmd+Shift+P` 与 `Ctrl/Cmd + + / - / 0` 从提示文案/默认行为回退修成真实能力；同时显式补齐 Tauri global-shortcut/window/webview ACL，增加 capability 回归测试，并将 Phase E 进度与下一步顺序更新为以 `sidebar-performance-hardening` 为首。
 - `2026-05-13`：完成 `sidebar-performance-hardening` 的当前最小闭环：LeftSidebar 重新展开时改为跟随 width transition 结束后再挂载 SessionListItems，并保留超时兜底；同时补上快速展开后再收起的迟到挂载取消、Agent 折叠启动后首次展开的分栏高度初始化防回退，以及对应回归测试。下一步顺序更新为先做 `desktop-shell-platform-polish`。
+- `2026-05-13`：完成 `desktop-shell-platform-polish`：Tauri bundle 图标已切到 J logo 生成产物；Windows 主窗口在 Rust setup 阶段直接关闭原生 decorations，并接入自定义最小化/最大化/关闭按钮；macOS 保持 `decorations=true + titleBarStyle=Overlay + trafficLightPosition` 的代码级配置。同时吸收双子代理审查里的两个真实 P1：补上非 Tauri 环境保护，避免浏览器/测试壳误调 `getCurrentWindow()`；补上迟到 `onResized` 监听清理与最大化状态同步防回写竞争。图标“不是 J logo”的 finding 经源图核对为误报，未吸收。

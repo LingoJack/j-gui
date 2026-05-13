@@ -347,10 +347,10 @@ items:
   - slug: desktop-shell-platform-polish
     description: 桌面壳层平台打磨——图标切到 J logo，并按平台收口窗口控制、titlebar 与桌面壳交互真相
     depends_on: [product-friction-audit]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: Windows 侧重点是自定义最小化/最大化/关闭；macOS 侧重点是保留系统红绿灯与 overlay/titlebar 行为。Windows 机器不能把 macOS 效果直接视为已验证。
+    notes: 2026-05-13 完成——Tauri bundle 图标已切到 J logo 生成产物；Windows 主窗口在 Rust setup 阶段直接关闭原生 decorations，并由前端提供最小化/最大化/关闭控制；macOS 配置保持 decorations=true + titleBarStyle=Overlay + trafficLightPosition，明确仅做代码级配置，不把 Windows 机器上的本地验证包装成 macOS 已验收。额外补上非 Tauri 环境保护、迟到 onResized 监听清理与窗口控制回归测试。
 
   - slug: agent-backend-switch-ux-hardening
     description: Agent 后端切换交互硬化——把 Claude SDK / JAgent 收口成直接、可感知、可回滚的 backend mode 切换，而不是与模型供应商设置混淆

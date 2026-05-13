@@ -13,6 +13,7 @@ mod kernel;
 
 use commands::agent::AgentState;
 use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 macro_rules! register_invoke_handler {
     ($builder:expr) => {
@@ -160,6 +161,15 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_decorations(false);
+                }
+            }
+            Ok(())
+        })
         .manage(AgentState(Arc::new(Mutex::new(
             std::collections::HashMap::new()
         ))))
