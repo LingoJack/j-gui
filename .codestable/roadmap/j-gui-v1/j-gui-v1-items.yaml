@@ -339,10 +339,10 @@ items:
   - slug: sidebar-performance-hardening
     description: 侧边栏性能硬化——继续按 explore 证据拆 LeftSidebar / SessionListItems / main 壳层订阅，解决展开收起不够丝滑的结构性卡顿
     depends_on: [product-friction-audit, core-workflow-ux-hardening]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: 当前主因仍是 mega-component 体量、atom 订阅面、折叠展开重渲染范围和同步持久化写入，不应先把问题归咎为动画曲线。
+    notes: 2026-05-13 完成——LeftSidebar 在重新展开时改为跟随 width transition 结束后再挂载 SessionListItems，并保留超时兜底与快速反向切换取消；同时补上 Agent 折叠启动后首次展开的分栏高度初始化防回退，以及展开/回滚/延迟挂载回归测试。LeftSidebar 的长期结构拆分仍留给 frontend-domain-reorganization。
 
   - slug: desktop-shell-platform-polish
     description: 桌面壳层平台打磨——图标切到 J logo，并按平台收口窗口控制、titlebar 与桌面壳交互真相

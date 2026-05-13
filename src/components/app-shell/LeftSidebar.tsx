@@ -154,7 +154,11 @@ function groupByDate<T extends { updatedAt: number }>(items: T[]): Array<{ label
   return groups
 }
 
+const SIDEBAR_WIDTH_TRANSITION_MS = 200
+
 export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
+  const sidebarExpandDelayTimerRef = React.useRef<number | null>(null)
+  const sidebarContainerRef = React.useRef<HTMLDivElement>(null)
   const [activeView, setActiveView] = useAtom(activeViewAtom)
   const setSettingsTab = useSetAtom(settingsTabAtom)
   const setSettingsOpen = useSetAtom(settingsOpenAtom)
@@ -225,6 +229,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   const [tabs, setTabs] = useAtom(tabsAtom)
   const [activeTabId, setActiveTabId] = useAtom(activeTabIdAtom)
   const [sidebarCollapsed, setSidebarCollapsed] = useAtom(sidebarCollapsedAtom)
+  const [sessionListMounted, setSessionListMounted] = React.useState(() => !sidebarCollapsed)
   const openSession = useOpenSession()
   const syncActiveTabSideEffects = useSyncActiveTabSideEffects()
   const expandedSidebarWidth = width ?? 280
@@ -247,13 +252,14 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
 
   React.useEffect(() => {
     if (agentTopHeight > 0) return
+    if (mode !== 'agent' || viewMode !== 'active' || !sessionListMounted) return
     const el = agentSplitContainerRef.current
     if (!el) return
     const h = el.getBoundingClientRect().height
     if (h > 0) {
       setAgentTopHeight(Math.round(h * 0.4))
     }
-  }, [agentTopHeight, setAgentTopHeight, mode, viewMode])
+  }, [agentTopHeight, setAgentTopHeight, mode, sessionListMounted, viewMode])
 
   const handleAgentTopResizeStart = React.useCallback(
     (e: React.MouseEvent) => {
@@ -292,13 +298,48 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
 
   // 当 activeTabId 变化时，自动滚动侧边栏使选中项可见
   React.useEffect(() => {
-    if (sidebarCollapsed) return
+    if (sidebarCollapsed || !sessionListMounted) return
     if (!activeTabId) return
     requestAnimationFrame(() => {
       const el = document.querySelector('.session-item-selected')
       el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     })
-  }, [activeTabId, sidebarCollapsed])
+  }, [activeTabId, sessionListMounted, sidebarCollapsed])
+
+  React.useEffect(() => {
+    if (sidebarExpandDelayTimerRef.current !== null) {
+      window.clearTimeout(sidebarExpandDelayTimerRef.current)
+      sidebarExpandDelayTimerRef.current = null
+    }
+
+    if (sidebarCollapsed) {
+      setSessionListMounted(false)
+      return
+    }
+
+    // 优先跟随真实 width transition 结束，再兜底定时，避免动画和重子树挂载抢同一帧。
+    sidebarExpandDelayTimerRef.current = window.setTimeout(() => {
+      setSessionListMounted(true)
+      sidebarExpandDelayTimerRef.current = null
+    }, SIDEBAR_WIDTH_TRANSITION_MS)
+
+    return () => {
+      if (sidebarExpandDelayTimerRef.current !== null) {
+        window.clearTimeout(sidebarExpandDelayTimerRef.current)
+        sidebarExpandDelayTimerRef.current = null
+      }
+    }
+  }, [sidebarCollapsed])
+
+  const handleSidebarWidthTransitionEnd = React.useCallback((event: React.TransitionEvent<HTMLDivElement>) => {
+    if (event.target !== sidebarContainerRef.current || event.propertyName !== 'width') return
+    if (sidebarCollapsed) return
+    if (sidebarExpandDelayTimerRef.current !== null) {
+      window.clearTimeout(sidebarExpandDelayTimerRef.current)
+      sidebarExpandDelayTimerRef.current = null
+    }
+    setSessionListMounted(true)
+  }, [sidebarCollapsed])
 
   // 按对话/会话隔离的映射 atom（删除时清理）
   const setConvModels = useSetAtom(conversationModelsAtom)
@@ -1185,11 +1226,14 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   }
   return (
     <div
-      className="relative h-full overflow-hidden rounded-2xl bg-background shadow-xl transition-[width] duration-200"
+      ref={sidebarContainerRef}
+      onTransitionEnd={handleSidebarWidthTransitionEnd}
+      className="relative h-full overflow-hidden rounded-2xl bg-background shadow-xl transition-[width]"
       style={{
         width: sidebarCollapsed ? collapsedSidebarWidth : expandedSidebarWidth,
         minWidth: sidebarCollapsed ? collapsedSidebarWidth : 180,
         flexShrink: sidebarCollapsed ? 0 : 1,
+        transitionDuration: `${SIDEBAR_WIDTH_TRANSITION_MS}ms`,
       }}
     >
       {sidebarCollapsed && (
@@ -1205,6 +1249,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
           <Tooltip>
             <TooltipTrigger asChild>
               <button
+                aria-label="展开侧边栏"
                 onClick={() => setSidebarCollapsed(false)}
                 className="p-2 rounded-[10px] text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground transition-colors titlebar-no-drag"
               >
@@ -1270,6 +1315,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
+                  aria-label="收起侧边栏"
                   onClick={() => setSidebarCollapsed(true)}
                   className="mt-2 size-[36px] flex-shrink-0 flex items-center justify-center rounded-[10px] bg-muted text-foreground/40 hover:bg-foreground/[0.08] hover:text-foreground/60 transition-colors titlebar-no-drag"
                 >
@@ -1384,14 +1430,16 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
           </div>
         )}
 
-        {mode === 'agent' && viewMode === 'active' ? (
+        {sessionListMounted && mode === 'agent' && viewMode === 'active' ? (
           <div ref={agentSplitContainerRef} className="flex-1 flex flex-col min-h-0">
             <SessionListItems {...sessionListProps} />
           </div>
-        ) : (
+        ) : sessionListMounted ? (
           <div className="flex-1 flex flex-col min-h-0">
             <SessionListItems {...sessionListProps} />
           </div>
+        ) : (
+          <div className="flex-1" />
         )}
 
         {/* Agent 模式：工作区能力指示器 */}
