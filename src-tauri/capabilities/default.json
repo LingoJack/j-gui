@@ -5,16 +5,19 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:webview:allow-set-webview-zoom",
+    "core:window:allow-show",
+    "core:window:allow-unminimize",
+    "core:window:allow-set-focus",
     "opener:default",
     "shell:default",
     "fs:default",
     "dialog:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
     {
       "identifier": "fs:scope",
-      "allow": [
-        { "path": "$HOME/.jdata/**" },
-        { "path": "$CWD/**" }
-      ]
+      "allow": [{ "path": "$HOME/.jdata/**" }, { "path": "$CWD/**" }]
     }
   ]
 }

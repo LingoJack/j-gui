@@ -425,9 +425,9 @@ type ProductFrictionFinding = {
 ### 9.1 总体数字
 
 - roadmap 总条目：`56`
-- 已完成：`37 / 56`（`66.1%`）
+- 已完成：`38 / 56`（`67.9%`）
 - 进行中：`0 / 56`
-- 已规划未开始：`19 / 56`
+- 已规划未开始：`18 / 56`
 - 最小闭环项（`minimal_loop: true`）：`5 / 5` 已完成
 
 ### 9.2 分阶段进度
@@ -438,7 +438,7 @@ type ProductFrictionFinding = {
 | B P0 能力闭环 | 3 | 3 | 0 | 0 | P0 主链路已收口，后续不再把 Agent 长期工作台列为 v1 的未完成阻塞 |
 | C P1 体验与治理闭环 | 5 | 5 | 0 | 0 | Phase C 已整体收尾，治理真相与此前已完成项都已翻正 |
 | D P1 质量与证据收口 | 3 | 3 | 0 | 0 | Phase D 已完成；质量门禁、Proma 证据骨架与 TDD 收口基线都已翻正 |
-| E P0/P1 产品体验硬化 | 14 | 2 | 0 | 12 | `product-friction-audit` 与 `core-workflow-ux-hardening` 已完成；后续继续按台账推进快捷键、侧栏性能、桌面壳层、Agent 后端切换、外部工具治理、提示词运行时、关于/更新页、环境配置页、设置区、Agent 工作台与视觉布局 |
+| E P0/P1 产品体验硬化 | 14 | 3 | 0 | 11 | `product-friction-audit`、`core-workflow-ux-hardening` 与 `shortcut-system-hardening` 已完成；后续继续按台账推进侧栏性能、桌面壳层、Agent 后端切换、外部工具治理、提示词运行时、关于/更新页、环境配置页、设置区、Agent 工作台与视觉布局 |
 | F P2 自我开发闭环 | 6 | 0 | 0 | 6 | 先做 Proma 后端能力吸收与 `src/` 领域化重组，再评估 `jagent` 深化、双后端收口、自开发和远程接入 |
 | G 远期 | 1 | 0 | 0 | 1 | 不进入当前 v1 完成度判断 |
 
@@ -448,7 +448,6 @@ type ProductFrictionFinding = {
 - 当前已直接解锁的下游主线是：
   - `product-friction-audit`
 - `product-friction-audit` 已完成；它的直接下游是：
-  - `shortcut-system-hardening`
   - `sidebar-performance-hardening`
   - `desktop-shell-platform-polish`
   - `agent-backend-switch-ux-hardening`
@@ -461,11 +460,17 @@ type ProductFrictionFinding = {
   - `visual-layout-polish`
   - `dogfooding-blocker-burn-down`
 - `core-workflow-ux-hardening` 已完成第一批主路径硬化；当前直接下游是：
-  - `shortcut-system-hardening`
   - `sidebar-performance-hardening`
   - `desktop-shell-platform-polish`
   - `agent-backend-switch-ux-hardening`
   - `dogfooding-blocker-burn-down`
+- `shortcut-system-hardening` 已完成；它进一步翻正了：
+  - 全局显示主窗口快捷键
+  - 缩放快捷键
+  - 快捷键相关 Tauri ACL 与键位回归测试
+  后续直接下游继续是：
+  - `sidebar-performance-hardening`
+  - `desktop-shell-platform-polish`
 - `agent-governance-surface-hardening`、`system-prompt-runtime-hardening`、`about-update-surface-refresh` 与 `environment-configuration-surface` 收口后，设置区的后续硬化应继续汇入：
   - `settings-experience-hardening`
 - `sidebar-performance-hardening`、`desktop-shell-platform-polish` 与设置/治理关键面收口后，再继续推进：
@@ -512,39 +517,41 @@ type ProductFrictionFinding = {
 - [x] `session-archive`
   - Chat / Agent 归档都已接通正式后端命令
   - archived 视图、搜索结果与打开链路保持一致
+- [x] `shortcut-system-hardening`
+  - `Ctrl/Cmd+Shift+P` 已接通全局显示主窗口，不再落到浏览器/系统默认打印
+  - `Ctrl/Cmd + + / - / 0` 已接通真实 webview 缩放
+  - Tauri ACL 与 capability 回归测试已显式补齐，不再依赖默认权限误判
 
 ### 10.2 当前正在推进
 
 - 无
-- Phase E 已完成事实输入阶段和第一批核心工作流硬化，下一步进入快捷键、侧栏性能、桌面壳层、设置区、Agent 工作台与视觉布局硬化
+- Phase E 已完成事实输入阶段、第一批核心工作流硬化与 `shortcut-system-hardening`，下一步进入侧栏性能、桌面壳层、设置区、Agent 工作台与视觉布局硬化
 
 ### 10.3 下一步明确要做
 
-1. 先推进 `shortcut-system-hardening`
-   - 修全局快捷键与缩放快捷键真 bug，避免继续落到浏览器默认行为
-2. 紧接推进 `sidebar-performance-hardening`
+1. 先推进 `sidebar-performance-hardening`
    - 继续按 explore 证据拆 mega-component 与订阅范围，解决左侧栏展开仍不够丝滑的问题
-3. 再推进 `desktop-shell-platform-polish`
+2. 再推进 `desktop-shell-platform-polish`
    - 图标切到 J logo，并按平台收口窗口控制方案
-4. 推进 `agent-backend-switch-ux-hardening`
+3. 推进 `agent-backend-switch-ux-hardening`
    - 让 Agent 输入区里的 `Claude SDK / JAgent` 变成直接、可感知、可回滚的后端切换入口
-5. 推进 `about-update-surface-refresh`
+4. 推进 `about-update-surface-refresh`
    - 补产品信息与版本真相：`j-gui` / `j-cli` / 本地 `j` CLI / 本机 Claude Code CLI 版本，以及更中性的更新状态表达
-6. 推进 `environment-configuration-surface`
+5. 推进 `environment-configuration-surface`
    - 单独提供 Shell 选择、fallback、推荐 shell、Node/Git/Bun/Git Bash/WSL 状态与失败原因
-7. 推进 `agent-governance-surface-hardening` 和 `system-prompt-runtime-hardening`
+6. 推进 `agent-governance-surface-hardening` 和 `system-prompt-runtime-hardening`
    - 分别收口全局/工作区 Skills / MCP / Hooks 治理面，以及系统提示词默认值/恢复默认/增强选项的运行时真相
-8. 按当前收口后的界面与领域边界，推进 `frontend-domain-reorganization`
+7. 按当前收口后的界面与领域边界，推进 `frontend-domain-reorganization`
    - 把 `src/` 从技术分桶收拢到桌面主应用的领域组织
-9. 按台账推进 `settings-experience-hardening` 和 `agent-workbench-polish`
+8. 按台账推进 `settings-experience-hardening` 和 `agent-workbench-polish`
    - 分别收设置区可理解性与 Agent 工作台可操作性
-10. 按台账推进 `visual-layout-polish`
+9. 按台账推进 `visual-layout-polish`
    - 只处理已证实的布局/视觉/溢出/焦点问题，不做全局换肤
-11. 提前推进 `dogfooding-blocker-burn-down`
+10. 提前推进 `dogfooding-blocker-burn-down`
    - 清掉真实使用中迫使用户退回外部终端或手工补救的阻塞
-12. 在上述桌面主链路稳定后，再推进 `proma-backend-capability-absorption`
+11. 在上述桌面主链路稳定后，再推进 `proma-backend-capability-absorption`
     - 先把 CLI backend 的恢复状态机、事件语义、存储防线、环境探测和磁盘治理补成真实 Rust 能力
-13. 最后再回到 `agent-engine-jagent`、`agent-backend-parity-hardening`、`dogfooding-self-development-loop` 和 `remote-access-integration`
+12. 最后再回到 `agent-engine-jagent`、`agent-backend-parity-hardening`、`dogfooding-self-development-loop` 和 `remote-access-integration`
 
 ### 10.4 Phase B 最后收尾 Checklist
 
@@ -588,23 +595,22 @@ Phase C 当前判断：
 
 ### 10.6 推荐执行顺序
 
-1. `shortcut-system-hardening`
-2. `sidebar-performance-hardening`
-3. `desktop-shell-platform-polish`
-4. `agent-backend-switch-ux-hardening`
-5. `about-update-surface-refresh`
-6. `environment-configuration-surface`
-7. `agent-governance-surface-hardening`
-8. `system-prompt-runtime-hardening`
-9. `frontend-domain-reorganization`
-10. `settings-experience-hardening` + `agent-workbench-polish`
-11. `visual-layout-polish`
-12. `dogfooding-blocker-burn-down`
-13. `proma-backend-capability-absorption`
-14. `agent-engine-jagent`
-15. `agent-backend-parity-hardening`
-16. `dogfooding-self-development-loop`
-17. `remote-access-integration`
+1. `sidebar-performance-hardening`
+2. `desktop-shell-platform-polish`
+3. `agent-backend-switch-ux-hardening`
+4. `about-update-surface-refresh`
+5. `environment-configuration-surface`
+6. `agent-governance-surface-hardening`
+7. `system-prompt-runtime-hardening`
+8. `frontend-domain-reorganization`
+9. `settings-experience-hardening` + `agent-workbench-polish`
+10. `visual-layout-polish`
+11. `dogfooding-blocker-burn-down`
+12. `proma-backend-capability-absorption`
+13. `agent-engine-jagent`
+14. `agent-backend-parity-hardening`
+15. `dogfooding-self-development-loop`
+16. `remote-access-integration`
 
 ## 11. 变更日志
 
@@ -627,3 +633,4 @@ Phase C 当前判断：
 - `2026-05-13`：把本轮新增证据纳入 roadmap：补入 `agent-backend-switch-ux-hardening`、`agent-governance-surface-hardening`、`system-prompt-runtime-hardening`、`frontend-domain-reorganization`、`proma-backend-capability-absorption` 五条主线，明确 Agent 后端切换误导、全局 Skills/MCP/Hooks 治理偏弱、System Prompt 运行时语义未收口、`src/` 领域化重组缺位、Proma 后端吸收项尚未进入执行主线，都属于当前真实未完成范围。
 - `2026-05-13`：基于 About/Update 当前实现与现有环境探测后端，新增 `about-runtime-observability-hardening`，把“关于/更新”从薄版本页升级为运行时/环境可观测面；同时按 roadmap audit 修正依赖图与推荐顺序的三处漂移：`desktop-shell-platform-polish` 不再被正文提前却依赖 `visual-layout-polish`，`agent-governance-surface-hardening` / `system-prompt-runtime-hardening` 改为作为 `settings-experience-hardening` 的前置输入，`dogfooding-blocker-burn-down` 的解锁关系与依赖图重新对齐。
 - `2026-05-13`：继续细化 About/Environment 方向，避免遗漏最新澄清：将原 `about-runtime-observability-hardening` 拆成 `about-update-surface-refresh` 与 `environment-configuration-surface` 两条主线，明确需要暴露“本机 Claude Code CLI 版本 = 当前 Claude Code Agent 模式实际后端版本”、Node 不是统一硬依赖而是 npm 安装/扩展工具链相关项、PowerShell 为官方支持 Shell 之一、Git Bash / WSL 为推荐/增强与 fallback 选项，同时把“已是最新”的视觉状态收口为更中性的产品表达。
+- `2026-05-13`：完成 `shortcut-system-hardening`，把 `Ctrl/Cmd+Shift+P` 与 `Ctrl/Cmd + + / - / 0` 从提示文案/默认行为回退修成真实能力；同时显式补齐 Tauri global-shortcut/window/webview ACL，增加 capability 回归测试，并将 Phase E 进度与下一步顺序更新为以 `sidebar-performance-hardening` 为首。

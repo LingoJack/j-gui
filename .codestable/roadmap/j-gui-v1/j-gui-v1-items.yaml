@@ -331,10 +331,10 @@ items:
   - slug: shortcut-system-hardening
     description: 快捷键系统硬化——修全局快捷键与缩放快捷键真 bug，消除浏览器默认行为回退，统一文案、渲染进程注册与主进程能力真相
     depends_on: [product-friction-audit, core-workflow-ux-hardening]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: 当前证据显示渲染进程有 keydown 注册表，但未看到“显示主窗口”类主进程全局快捷键落地；Ctrl+Shift+P 会落到 Windows 打印页面，Ctrl++ / Ctrl+- / Ctrl+0 只出现在提示文案中，尚未形成真实能力。
+    notes: 2026-05-13 完成——Ctrl/Cmd+Shift+P 已接通全局显示主窗口与前台防默认打印拦截；Ctrl/Cmd + + / - / 0 已接通 webview 缩放；Tauri ACL 显式补齐 register/unregister/show/unminimize/set-focus/set-webview-zoom，并补 capability/键位回归测试。
 
   - slug: sidebar-performance-hardening
     description: 侧边栏性能硬化——继续按 explore 证据拆 LeftSidebar / SessionListItems / main 壳层订阅，解决展开收起不够丝滑的结构性卡顿

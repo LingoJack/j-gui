@@ -146,6 +146,11 @@ src-tauri/              Rust 后端（commands/ + kernel/ + agent_engine.rs）
   - 文档或 CodeStable 产物优先用 `docs(...)`；涉及 `.codestable/` 的提交可用 `docs(codestable): ...`
   - 多主题改动在条件允许时优先拆分 commit；必须合并提交时，文案应覆盖这次提交的主闭环，不要罗列零碎细节
   - 涉及不兼容变更时，使用 `!` 或 `BREAKING CHANGE:` 明确标注
+- **固定收尾工作流**（强制）：
+  - 对 roadmap 条目做实现落地时，条目闭环后的固定顺序是：`git 提交 → 回写 roadmap → 明确下一步`
+  - 回写 roadmap 至少包括：items 状态、roadmap 进度数字、当前解锁关系、推荐执行顺序、变更日志
+  - “明确下一步”必须落到一个具体 roadmap item，默认直接承接当前推荐执行顺序的第一项，而不是给泛泛建议
+  - 若该条目属于核心逻辑，还需先完成条目级审查与门禁验证，再进入上述固定收尾顺序
 - **Git 排除**：`.claude/` 不提交；`.codestable/` 是否提交以当前任务指令为准，不要沿用旧结论擅自排除
 
 ### 任务完成验证（强制）
