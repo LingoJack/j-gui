@@ -48,7 +48,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── 计数器 ────────────────────────────────────────────────────────────────────
-FIXED_CHECK_GROUPS=20
+FIXED_CHECK_GROUPS=21
 N_PASS=0; N_WARN=0; N_FAIL=0
 
 # ── 临时文件统一管理 ──────────────────────────────────────────────────────────
@@ -136,6 +136,7 @@ CARGO_BIN="$(resolve_bin cargo)"
 BUN_BIN="$(resolve_bin bun)"
 CARGO_MANIFEST_NATIVE="$(to_host_path "$CARGO_MANIFEST")"
 CARGO_LOCK_NATIVE="$(to_host_path "$CARGO_LOCK")"
+IPC_CONTRACT_SCRIPT_NATIVE="$(to_host_path "$PROJECT_ROOT/scripts/check_ipc_contract.mjs")"
 
 # ── 超时包装（Linux/Mac 可用 timeout，Windows 用 fallback）──────────────────
 run_with_timeout() {
@@ -775,6 +776,18 @@ if bash "$PROJECT_ROOT/scripts/check_commit_message.sh" --ref HEAD >"$commit_msg
 else
     show_log_tail "$commit_msg_log" 20
     fail "最新提交文案不符合中文 Conventional Commits 约束"
+fi
+
+# D12. 前后端 IPC 命令面对账
+hdr "=== D12. IPC 命令注册面对账 (前端 invoke/tryInvoke vs Rust generate_handler) ==="
+ipc_contract_log="$(make_temp)"
+if [[ -z "$BUN_BIN" ]]; then
+    fail "未找到 bun，无法执行 IPC 命令注册面对账"
+elif "$BUN_BIN" "$IPC_CONTRACT_SCRIPT_NATIVE" >"$ipc_contract_log" 2>&1; then
+    pass "前后端 IPC 命令注册面对账通过"
+else
+    show_log_tail "$ipc_contract_log" 30
+    fail "发现前端 IPC 命令未在 Rust generate_handler 注册"
 fi
 
 # =============================================================================

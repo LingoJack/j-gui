@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [[ -z "$local_sha" ]] && continue
+
+    if [[ "$remote_sha" == "0000000000000000000000000000000000000000" ]]; then
+        range="$(git rev-list "$local_sha" --not --remotes)"
+        if [[ -n "$range" ]]; then
+            while IFS= read -r commit_sha; do
+                [[ -z "$commit_sha" ]] && continue
+                bash "$PROJECT_ROOT/scripts/check_commit_message.sh" --ref "$commit_sha"
+            done <<<"$range"
+        else
+            bash "$PROJECT_ROOT/scripts/check_commit_message.sh" --ref "$local_sha"
+        fi
+    else
+        bash "$PROJECT_ROOT/scripts/check_commit_message.sh" --range "${remote_sha}..${local_sha}"
+    fi
+done
+
+echo "[j-gui pre-push] 运行默认门禁: bash scripts/check_lint.sh"
+bash "$PROJECT_ROOT/scripts/check_lint.sh"

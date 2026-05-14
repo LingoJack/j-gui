@@ -16,6 +16,44 @@ EOF
 }
 
 MESSAGE=""
+RANGE=""
+
+validate_message() {
+    local message="$1"
+
+    if [[ ! "$message" =~ ^(feat|fix|refactor|docs|style|test|build|ci|chore|perf|revert)\(([^()]+)\):[[:space:]](.+)$ ]]; then
+        cat >&2 <<EOF
+提交文案不符合格式:
+  $message
+
+期望格式:
+  <type>(<scope>): <description>
+
+示例:
+  fix(桌面壳层): 收口窗口控件宿主并稳定全局快捷键链路
+EOF
+        return 1
+    fi
+
+    local scope="${BASH_REMATCH[2]}"
+    local description="${BASH_REMATCH[3]}"
+
+    contains_non_ascii() {
+        LC_ALL=C grep -q '[^ -~]' <<<"$1"
+    }
+
+    if ! contains_non_ascii "$scope"; then
+        echo "提交 scope 需要包含中文，当前为: $scope" >&2
+        return 1
+    fi
+
+    if ! contains_non_ascii "$description"; then
+        echo "提交 description 需要包含中文，当前为: $description" >&2
+        return 1
+    fi
+
+    echo "commit message 校验通过: $message"
+}
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -31,6 +69,10 @@ while [[ $# -gt 0 ]]; do
             MESSAGE="$(git log -1 --format=%s "$2" | tr -d '\r')"
             shift 2
             ;;
+        --range)
+            RANGE="$2"
+            shift 2
+            ;;
         -h|--help)
             usage
             exit 0
@@ -43,41 +85,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ -n "$RANGE" ]]; then
+    while IFS= read -r message; do
+        [[ -z "$message" ]] && continue
+        validate_message "$message"
+    done < <(git log --format=%s "$RANGE")
+    exit 0
+fi
+
 if [[ -z "$MESSAGE" ]]; then
     echo "缺少提交信息输入。" >&2
     usage >&2
     exit 2
 fi
 
-if [[ ! "$MESSAGE" =~ ^(feat|fix|refactor|docs|style|test|build|ci|chore|perf|revert)\(([^()]+)\):[[:space:]](.+)$ ]]; then
-    cat >&2 <<EOF
-提交文案不符合格式:
-  $MESSAGE
-
-期望格式:
-  <type>(<scope>): <description>
-
-示例:
-  fix(桌面壳层): 收口窗口控件宿主并稳定全局快捷键链路
-EOF
-    exit 1
-fi
-
-SCOPE="${BASH_REMATCH[2]}"
-DESCRIPTION="${BASH_REMATCH[3]}"
-
-contains_non_ascii() {
-    LC_ALL=C grep -q '[^ -~]' <<<"$1"
-}
-
-if ! contains_non_ascii "$SCOPE"; then
-    echo "提交 scope 需要包含中文，当前为: $SCOPE" >&2
-    exit 1
-fi
-
-if ! contains_non_ascii "$DESCRIPTION"; then
-    echo "提交 description 需要包含中文，当前为: $DESCRIPTION" >&2
-    exit 1
-fi
-
-echo "commit message 校验通过: $MESSAGE"
+validate_message "$MESSAGE"
