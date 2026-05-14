@@ -2,6 +2,7 @@ use crate::agent_engine::AgentEvent;
 use crate::agent_session::{self, AgentTimelineItem, InterruptSnapshot, ToolCallSnapshot};
 use tauri::ipc::Channel;
 
+/// 在当前系统中定位可执行的 Claude CLI。
 pub(crate) fn which_claude() -> Result<String, String> {
     for name in &["claude", "claude-code", "claude-cli"] {
         let finder = if cfg!(windows) { "where" } else { "which" };
@@ -59,6 +60,7 @@ pub(crate) fn which_claude() -> Result<String, String> {
     Err("未找到 claude CLI。请先按项目约束安装 Claude Code CLI，并确保其 Windows 全局 shim 目录已加入 PATH。".to_string())
 }
 
+/// 转发一条 CLI 事件，并同步更新 transcript 与工具结果状态。
 pub(crate) fn forward_cli_event(
     on_event: &Channel<AgentEvent>,
     session_id: &str,
@@ -99,6 +101,7 @@ fn interrupt_kind(tool_name: &str) -> &'static str {
     }
 }
 
+/// 将 Agent 事件投影为需要落盘的时间线记录。
 pub(crate) fn timeline_items_from_event(mode: &str, event: &AgentEvent) -> Vec<AgentTimelineItem> {
     match event {
         AgentEvent::ToolUse {
@@ -216,6 +219,7 @@ fn persist_timeline_items(session_id: &str, items: Vec<AgentTimelineItem>) {
     }
 }
 
+/// 从 SDK 原始事件中提取并持久化 session_id。
 pub(crate) fn persist_sdk_session_id(session_id: &str, line: &str) {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
         return;

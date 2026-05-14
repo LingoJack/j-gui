@@ -341,7 +341,8 @@ type ProductFrictionFinding = {
    - 把 `关于/更新` 收口为稳定的产品信息页：`j-gui` 版本、内嵌 `j-cli` crate 版本、本地 `j` CLI、实际被 Agent 模式调用的本机 Claude Code CLI 版本、运行时、开源协议、项目地址、软件更新
    - 更新区只保留必要的检查/下载/状态提示，状态色改为中性而不是成功绿；不照搬 Proma 的版本历史/更新中心 UI
 24. `environment-configuration-surface`
-   - 单独提供 `环境配置` 页面：让用户显式选择 Shell（PowerShell / CMD / Git Bash / WSL），并展示当前可用性、fallback 规则、推荐 shell 与失败原因
+   - 单独提供真实 `环境配置` 页面：展示当前 shell、推荐 shell、fallback 顺序、平台明细与失败原因，并让 Node/Git/Bun/Git Bash/WSL/PowerShell 的状态可直接查看
+   - 本阶段保持只读真相展示与重检入口，不在页面里伪造“已生效 shell 选择”，也不在本项内接 profile 写入或执行链路切换
    - Node 只按“安装方式/扩展工具链相关能力”展示，不再作为统一硬前提；需要明确区分 `j-gui` 本体、Claude Code CLI、npm 安装链路和 Shell tool 能力
 25. `appearance-theme-customization`
    - 在保留浅/深/系统/预设主题的前提下，开放受控的外观 token：强调色、背景/前景、UI/代码字体、对比度、侧栏透明度、字号与类似 Codex 的实时预览/复制/导入/重置
@@ -561,7 +562,7 @@ type ProductFrictionFinding = {
 2. 推进 `about-update-surface-refresh`
    - 补产品信息与版本真相：`j-gui` / `j-cli` / 本地 `j` CLI / 本机 Claude Code CLI 版本，以及更中性的更新状态表达
 3. 推进 `environment-configuration-surface`
-   - 单独提供 Shell 选择、fallback、推荐 shell、Node/Git/Bun/Git Bash/WSL 状态与失败原因
+   - 单独提供真实环境配置页，展示 shell current/recommended/fallback、Node/Git/Bun/Git Bash/WSL 状态与失败原因，并保留重检入口
 4. 推进 `agent-governance-surface-hardening` 和 `system-prompt-runtime-hardening`
    - 分别收口全局/工作区 Skills / MCP / Hooks 治理面，以及系统提示词默认值/恢复默认/增强选项的运行时真相
 5. 推进 `agent-hooks-config-integration`
@@ -665,3 +666,4 @@ Phase C 当前判断：
 - `2026-05-13`：完成 `desktop-shell-platform-polish`：Tauri bundle 图标已切到 J logo 生成产物；Windows 主窗口在 Rust setup 阶段直接关闭原生 decorations，并接入自定义最小化/最大化/关闭按钮；macOS 保持 `decorations=true + titleBarStyle=Overlay + trafficLightPosition` 的代码级配置。同时吸收双子代理审查里的两个真实 P1：补上非 Tauri 环境保护，避免浏览器/测试壳误调 `getCurrentWindow()`；补上迟到 `onResized` 监听清理与最大化状态同步防回写竞争。图标“不是 J logo”的 finding 经源图核对为误报，未吸收。
 - `2026-05-13`：按本轮新需求继续细化 Phase E：新增 `agent-hooks-config-integration`，明确 Hooks 需要并入 Agent 配置、按 backend mode 区分支持矩阵、按工作区切换并在 runtime 支持时按类型添加；新增 `appearance-theme-customization`，明确外观自定义应走受控 token、实时预览、复制/导入/重置路线，而不是任意换肤。同时把相关观察项、推荐顺序与总体进度数字同步到当前真相。
 - `2026-05-14`：补齐仓库级 GitHub Actions 默认 CI，并扩到 Release 资产分发：`.github/workflows/desktop-ci.yml` 现在由 Ubuntu 执行 `bash scripts/check_lint.sh`，Linux / macOS Intel / macOS Apple Silicon / Windows 负责 Tauri bundle 构建；Linux 工件显式拆成 `deb / rpm / AppImage / snapshot tar.gz`，Windows 额外补一条 `portable zip`，tag 推送会自动把跨平台工件挂到 GitHub Release。同时让 D11 在 PR 场景校验 `refs/pull/<num>/head` 的真实提交文案而不是 GitHub 合成 merge commit。该能力为 `dogfooding-self-development-loop` 提供基础自动化，但不单独代表该 roadmap 主线已完成。
+- `2026-05-14`：`environment-configuration-surface` 收口到分阶段真相：跨平台 shell 契约与环境 atoms 已先落地，当前继续把它接入真实 `环境配置` 设置页，展示 current/recommended/fallback、平台明细、失败原因与重检入口；“显式选择 shell / profile 写入 / 执行链路切换”不属于这一阶段。

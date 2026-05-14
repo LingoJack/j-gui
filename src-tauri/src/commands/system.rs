@@ -6,6 +6,7 @@ use crate::kernel::{ConfigKernel, JcliAdapter};
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 内嵌 j-cli 与本机 j CLI 的版本信息。
 pub struct KernelInfo {
     /// 编译期内嵌在 j-gui 中的 j-cli crate 版本。
     pub crate_version: String,
@@ -19,6 +20,7 @@ pub struct KernelInfo {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// j-cli crate 更新检查结果。
 pub struct UpdateInfo {
     /// 当前内嵌 crate 版本。
     pub current: String,
@@ -30,6 +32,7 @@ pub struct UpdateInfo {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// j-gui 应用更新检查结果。
 pub struct AppUpdateInfo {
     /// 当前 j-gui 应用版本。
     pub current: String,
@@ -42,6 +45,7 @@ pub struct AppUpdateInfo {
 }
 
 #[tauri::command]
+/// 返回内嵌 j-cli 与本机 j CLI 的版本信息。
 pub fn get_kernel_info(state: tauri::State<'_, Arc<JcliAdapter>>) -> KernelInfo {
     get_kernel_info_impl(state.config())
 }
@@ -104,6 +108,7 @@ fn detect_local_j_cli() -> (Option<String>, bool) {
 }
 
 #[tauri::command]
+/// 检查内嵌 j-cli crate 是否存在新版本。
 pub async fn check_kernel_update(
     state: tauri::State<'_, Arc<JcliAdapter>>,
 ) -> Result<UpdateInfo, String> {
@@ -142,6 +147,7 @@ async fn fetch_latest_jcli_version() -> Option<String> {
 }
 
 #[tauri::command]
+/// 检查 j-gui 应用是否存在新版本。
 pub async fn check_app_update() -> Result<AppUpdateInfo, String> {
     check_app_update_impl().await
 }
@@ -179,6 +185,7 @@ async fn check_app_update_impl() -> Result<AppUpdateInfo, String> {
 }
 
 #[tauri::command]
+/// 返回内嵌 j-cli 的当前版本号。
 pub fn get_version(state: tauri::State<'_, Arc<JcliAdapter>>) -> Result<String, String> {
     Ok(get_version_impl(state.config()))
 }
@@ -188,6 +195,7 @@ fn get_version_impl(config: &dyn ConfigKernel) -> String {
 }
 
 #[tauri::command]
+/// 设置主题并向前端广播主题变更事件。
 pub fn set_theme(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     app: tauri::AppHandle,

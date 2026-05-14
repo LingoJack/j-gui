@@ -9,6 +9,7 @@ import { atom } from 'jotai'
 export type SettingsTab =
   | 'general'
   | 'channels'
+  | 'environment'
   | 'appearance'
   | 'about'
   | 'agent'

@@ -48,7 +48,7 @@ import {
 import { registerPendingTitle } from '@/hooks/useGlobalChatListeners'
 import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
 import { cn } from '@/lib/utils'
-import { CENTERED_MAIN_CONTENT_CLASS } from '@/lib/layout-shell'
+import { CENTERED_MAIN_SURFACE_CLASS } from '@/lib/layout-shell'
 import * as ipc from '@/lib/ipc'
 import type {
   ChatMessage,
@@ -616,9 +616,9 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
           conversation={conversation}
           canMigrateToAgent={canMigrateToAgent && !pendingRecommendation}
         />
-        <div className={CENTERED_MAIN_CONTENT_CLASS}>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* 中间：消息区域 */}
-          <div className="flex-1 min-h-0">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <ChatMessages
               conversationId={conversationId}
               fallbackModelId={conversation?.modelId ?? selectedModel?.modelId ?? null}
@@ -645,52 +645,58 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
 
           {/* 错误提示 */}
           {chatError && (
-            <div className="mx-4 mb-2 px-4 py-2.5 rounded-lg bg-destructive/10 text-destructive text-sm flex items-center gap-2">
-              <AlertCircle className="size-4 shrink-0" />
-              <span className="flex-1 break-all">{chatError}</span>
-              <button
-                type="button"
-                className="shrink-0 p-0.5 rounded hover:bg-destructive/10 transition-colors"
-                onClick={() => {
-                  setChatStreamErrors((prev) => {
-                    const map = new Map(prev)
-                    map.delete(conversationId)
-                    return map
-                  })
-                }}
-              >
-                <X className="size-3.5" />
-              </button>
+            <div className={CENTERED_MAIN_SURFACE_CLASS}>
+              <div className="mx-4 mb-2 px-4 py-2.5 rounded-lg bg-destructive/10 text-destructive text-sm flex items-center gap-2">
+                <AlertCircle className="size-4 shrink-0" />
+                <span className="flex-1 break-all">{chatError}</span>
+                <button
+                  type="button"
+                  className="shrink-0 p-0.5 rounded hover:bg-destructive/10 transition-colors"
+                  onClick={() => {
+                    setChatStreamErrors((prev) => {
+                      const map = new Map(prev)
+                      map.delete(conversationId)
+                      return map
+                    })
+                  }}
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
             </div>
           )}
 
           {toolActivities.length > 0 && (
-            <div className="mx-4 mb-3 rounded-xl border border-border/60 bg-card/70 px-4 py-3">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-foreground">工具活动</div>
-                  <div className="text-xs text-muted-foreground">
-                    当前消息正在调用工具，执行进度会在这里持续更新。
+            <div className={CENTERED_MAIN_SURFACE_CLASS}>
+              <div className="mx-4 mb-3 rounded-xl border border-border/60 bg-card/70 px-4 py-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-foreground">工具活动</div>
+                    <div className="text-xs text-muted-foreground">
+                      当前消息正在调用工具，执行进度会在这里持续更新。
+                    </div>
                   </div>
                 </div>
+                <ChatToolActivityIndicator activities={toolActivities} isStreaming={isStreaming} />
               </div>
-              <ChatToolActivityIndicator activities={toolActivities} isStreaming={isStreaming} />
             </div>
           )}
 
-          {/* Agent 模式推荐横幅 */}
-          <AgentRecommendBanner />
+          <div className={CENTERED_MAIN_SURFACE_CLASS}>
+            {/* Agent 模式推荐横幅 */}
+            <AgentRecommendBanner />
 
-          {/* 底部：输入框 */}
-          <ChatInput
-            conversationId={conversationId}
-            streaming={isStreaming}
-            pendingAttachments={pendingAttachments}
-            onSetPendingAttachments={setPendingAttachments}
-            onSend={handleSend}
-            onStop={handleStop}
-            onClearContext={handleClearContext}
-          />
+            {/* 底部：输入框 */}
+            <ChatInput
+              conversationId={conversationId}
+              streaming={isStreaming}
+              pendingAttachments={pendingAttachments}
+              onSetPendingAttachments={setPendingAttachments}
+              onSend={handleSend}
+              onStop={handleStop}
+              onClearContext={handleClearContext}
+            />
+          </div>
         </div>
       </div>
 

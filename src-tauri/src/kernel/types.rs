@@ -92,6 +92,7 @@ pub struct KernelChatMessage {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Agent 计划审批的结构化决策。
 pub enum KernelPlanDecision {
     None,
     Approve,
@@ -100,6 +101,7 @@ pub enum KernelPlanDecision {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// 反馈给 Agent 工具调用的一次结果。
 pub struct KernelAgentToolResult {
     pub tool_call_id: String,
     pub result: String,
@@ -108,6 +110,7 @@ pub struct KernelAgentToolResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// 前端对 Agent 中断的结构化响应。
 pub enum KernelAgentInterruptResponse {
     Permission {
         allowed: bool,
@@ -123,12 +126,14 @@ pub enum KernelAgentInterruptResponse {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// 单次聊天请求可携带的额外选项。
 pub struct KernelChatRequestOptions {
     pub thinking_enabled: Option<bool>,
     pub protocol_family: Option<ChatProtocolFamily>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// 聊天接口所属的协议家族。
 pub enum ChatProtocolFamily {
     OpenAiChatCompletions,
     OpenAiResponses,
@@ -136,6 +141,7 @@ pub enum ChatProtocolFamily {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// 一次聊天调用最终选择的传输路由。
 pub struct ChatTransportRoute {
     pub family: ChatProtocolFamily,
     pub provider_key: String,

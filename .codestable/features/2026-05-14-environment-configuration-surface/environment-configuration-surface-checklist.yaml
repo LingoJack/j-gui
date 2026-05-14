@@ -1,0 +1,69 @@
+feature: 2026-05-14-environment-configuration-surface
+roadmap: j-gui-v1
+roadmap_item: environment-configuration-surface
+created: 2026-05-14
+status: in-progress
+
+steps:
+  - id: step-1
+    paradigm: contract
+    title: 重建跨平台 shell 共享契约
+    status: completed
+    description: "调整 Rust 与 TypeScript 的 runtime shell 类型，明确公共层 current/recommended/fallbackOrder，以及 windows/posix 平台分支。"
+    exit: 共享类型已对齐，前端公共消费面不再依赖 Windows 专属字段。
+
+  - id: step-2
+    paradigm: backend
+    title: 补 POSIX shell 探测并保留 Windows 明细
+    status: completed
+    description: "在 settings_environment.rs 中补齐 Linux/macOS 默认 shell 与 bash/zsh/fish/sh 候选探测，同时保持 Windows 的 Git Bash/WSL/PowerShell/CMD 探测能力。"
+    exit: get_runtime_status 在 win32/linux/darwin 三平台都能返回 shell 结构。
+
+  - id: step-3
+    paradigm: policy
+    title: 收口推荐 shell 与 fallback 规则
+    status: completed
+    description: "把三平台的推荐策略和 fallback 顺序显式编码进后端输出，而不是让前端猜测。"
+    exit: shell.recommended 与 shell.fallbackOrder 在三平台都有稳定输出。
+
+  - id: step-4
+    paradigm: frontend
+    title: 更新环境 atoms 的 shell readiness 判断
+    status: completed
+    description: "调整前端环境派生逻辑，不再把非 Windows 的 shell 状态直接判为 true，并兼容新的共享结构。"
+    exit: 前端能基于结构化 shell 状态判定 readiness，非 Windows 不再走空值放行。
+
+  - id: step-5
+    paradigm: frontend
+    title: 在设置区接入真实环境配置页
+    status: in_progress
+    description: "新增独立环境配置标签页，展示 Node/Git/Bun、shell current/recommended/fallback、平台明细、失败原因与重检入口，并保持只读真相展示。"
+    exit: 设置区出现真实 `环境配置` 标签页，且展示内容直接来自 runtime 契约而不是占位文案。
+
+  - id: step-6
+    paradigm: verification
+    title: 补测试并跑默认门禁
+    status: in_progress
+    description: "补 Rust 探测单测、前端消费测试和设置页渲染测试，最后执行 bash scripts/check_lint.sh 验证整个闭环。"
+    exit: "`bash scripts/check_lint.sh` 通过，且 shell 契约新增路径有针对性测试。"
+
+checks:
+  - id: check-cross-platform
+    target: step-2
+    description: "必须让 RuntimeStatus.shell 在 Windows/Linux/macOS 都有结构化输出，不能继续靠非 Windows 空值兜底。"
+    status: completed
+
+  - id: check-windows-regression
+    target: step-2
+    description: "新增 POSIX 支持不能打碎现有 Windows Git Bash / WSL / PowerShell 语义。"
+    status: completed
+
+  - id: check-scope
+    target: step-5
+    description: "本轮页面只展示真实运行时与 shell 状态，不实现 shell profile 写入、PATH 注入、执行链路切换或 shell 选择持久化。"
+    status: in_progress
+
+  - id: check-gate
+    target: step-6
+    description: "完成判定仍以默认门禁 bash scripts/check_lint.sh 为准。"
+    status: in_progress

@@ -1,0 +1,44 @@
+refactor: 2026-05-14-sidebar-css-perf
+steps:
+  - id: "1"
+    action: "拆清左右侧栏的 shell/content 边界，统一引入 contentMounted 语义"
+    method: M-L3-01
+    files:
+      - src/components/app-shell/LeftSidebar.tsx
+      - src/components/agent/SidePanel.tsx
+      - src/components/app-shell/AppShell.tsx
+      - src/components/app-shell/RightSidePanel.tsx
+    checks:
+      - 左右侧栏的开关状态仅驱动壳层
+      - 重内容存在独立挂载语义，不再直接等同于开关布尔值
+    verify: HUMAN
+    revert: git revert single step
+
+  - id: "2"
+    action: "统一左右侧栏开关时序：壳层即时响应，重内容延后接入/延后卸载"
+    method: M-L4-03
+    files:
+      - src/components/app-shell/LeftSidebar.tsx
+      - src/components/agent/SidePanel.tsx
+    checks:
+      - 点击按钮或 Ctrl+B 后壳层立即开始开关
+      - 左侧不再整段等待后才出内容
+      - 右侧关闭后重内容不会长期常驻
+    verify: HUMAN
+    revert: git revert single step
+
+  - id: "3"
+    action: "迁移侧栏副作用到稳定可见后执行，并补开关性能回归测试"
+    method: M-L2-01
+    files:
+      - src/components/app-shell/LeftSidebar.tsx
+      - src/components/agent/SidePanel.tsx
+      - src/__tests__/left-sidebar-selection-actions.test.tsx
+      - src/__tests__/side-panel-chat-workspace.test.tsx
+      - src/__tests__/global-shortcuts.test.tsx
+    checks:
+      - bun run test 相关测试通过
+      - bash scripts/check_lint.sh 通过
+      - HUMAN 目视确认左右侧栏点击和快捷键无明显等待感
+    verify: AI+HUMAN
+    revert: git revert single step

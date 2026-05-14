@@ -8,15 +8,18 @@
 
 import * as React from 'react'
 import { atom, useAtomValue } from 'jotai'
-import { LeftSidebar } from './LeftSidebar'
+import {
+  COLLAPSED_SIDEBAR_WIDTH,
+  DEFAULT_EXPANDED_SIDEBAR_WIDTH,
+  LeftSidebar,
+} from './LeftSidebar'
 import { RightSidePanel } from './RightSidePanel'
 import { TopRightWindowControls } from './TopRightWindowControls'
 import { MainArea } from '@/components/tabs/MainArea'
 import { AppShellProvider, type AppShellContextType } from '@/contexts/AppShellContext'
 import { appModeAtom } from '@/atoms/app-mode'
-import { currentAgentSessionIdAtom, sessionSidePanelOpenAtom } from '@/atoms/agent-atoms'
-import { currentConversationIdAtom } from '@/atoms/chat-atoms'
-import { activeTabIdAtom, tabsAtom } from '@/atoms/tab-atoms'
+import { sessionSidePanelOpenAtom } from '@/atoms/agent-atoms'
+import { activeTabIdAtom, sidebarCollapsedAtom, tabsAtom } from '@/atoms/tab-atoms'
 import { cn } from '@/lib/utils'
 
 export interface AppShellProps {
@@ -24,12 +27,14 @@ export interface AppShellProps {
   contextValue: AppShellContextType
 }
 
+const LEFT_SIDEBAR_SLOT_PADDING = 8
+const RIGHT_PANEL_SLOT_WIDTH = 328
+
 export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
   const appMode = useAtomValue(appModeAtom)
-  const currentSessionId = useAtomValue(currentAgentSessionIdAtom)
-  const currentConversationId = useAtomValue(currentConversationIdAtom)
   const tabs = useAtomValue(tabsAtom)
   const activeTabId = useAtomValue(activeTabIdAtom)
+  const sidebarCollapsed = useAtomValue(sidebarCollapsedAtom)
 
   const activeTab = React.useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) ?? null,
@@ -39,41 +44,54 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
   const showRightPanel = React.useMemo(() => {
     if (!activeTab) return false
     if (activeTab.type === 'agent') {
-      return appMode === 'agent' && !!currentSessionId
+      return appMode === 'agent'
     }
-    return appMode === 'chat' && !!currentConversationId
-  }, [activeTab, appMode, currentSessionId, currentConversationId])
+    return appMode === 'chat'
+  }, [activeTab, appMode])
 
   const activePanelSessionId = React.useMemo(() => {
     if (!activeTab) return null
     // 右侧面板必须跟着当前激活 tab 的真实 sessionId 走，避免 Chat/Agent 共用开关串台。
-    return activeTab.type === 'agent' ? currentSessionId : currentConversationId
-  }, [activeTab, currentConversationId, currentSessionId])
-
-  const panelAtom = React.useMemo(
+    return activeTab.sessionId
+  }, [activeTab])
+  const activePanelAtom = React.useMemo(
     () => (activePanelSessionId ? sessionSidePanelOpenAtom(activePanelSessionId) : null),
     [activePanelSessionId],
   )
-  useAtomValue(panelAtom ?? FALLBACK_CLOSED_PANEL_ATOM)
-
+  const isRightPanelOpen = useAtomValue(activePanelAtom ?? FALLBACK_CLOSED_PANEL_ATOM)
+  const leftColumnWidth = (sidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : DEFAULT_EXPANDED_SIDEBAR_WIDTH) + LEFT_SIDEBAR_SLOT_PADDING
+  const rightColumnWidth = showRightPanel && isRightPanelOpen ? RIGHT_PANEL_SLOT_WIDTH : 0
   return (
     <AppShellProvider value={contextValue}>
-      <div className="shell-bg h-screen w-screen flex overflow-hidden bg-gradient-to-br from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">
+      <div
+        data-app-shell-layout="true"
+        className="shell-bg relative grid h-screen w-screen overflow-hidden bg-gradient-to-br from-zinc-50 to-zinc-100 transition-[grid-template-columns] duration-300 ease-in-out dark:from-zinc-950 dark:to-zinc-900"
+        style={{
+          gridTemplateColumns: `${leftColumnWidth}px minmax(0, 1fr) ${rightColumnWidth}px`,
+        }}
+      >
+        <MemoizedTopRightWindowControls />
+
         {/* 左侧边栏：可折叠，带圆角和内边距 */}
-        <div className="p-2 pr-0 relative z-[60]">
+        <div className="min-w-0 overflow-hidden p-2 pr-0 relative z-[60]">
           <LeftSidebar />
         </div>
 
-        {/* 中间容器：relative z-[60] 使其在 z-50 拖动区域之上 */}
-        <div className="flex-1 min-w-0 p-2 relative z-[60]">
-          <TopRightWindowControls />
+        {/* 三列宽度由 AppShell 统一过渡，避免左右栏各自动画造成主内容跳闪或露出异常空隙。 */}
+        <div
+          data-main-content-slot="true"
+          className="min-w-0 overflow-hidden p-2 relative z-[60]"
+        >
           {/* 主内容区域（TabBar + TabContent） */}
-          <MainArea />
+          <MemoizedMainArea />
         </div>
 
         {/* 右侧边栏：Agent 文件面板，带圆角和内边距 */}
         {showRightPanel && (
-          <RightPanelSlot sessionId={activePanelSessionId} />
+          <MemoizedRightPanelSlot
+            sessionId={activePanelSessionId}
+            isPanelOpen={isRightPanelOpen}
+          />
         )}
       </div>
     </AppShellProvider>
@@ -82,20 +100,34 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
 
 interface RightPanelSlotProps {
   sessionId: string | null
+  isPanelOpen: boolean
 }
 
-function RightPanelSlot({ sessionId }: RightPanelSlotProps): React.ReactElement | null {
-  const panelAtom = React.useMemo(
-    () => (sessionId ? sessionSidePanelOpenAtom(sessionId) : null),
-    [sessionId],
-  )
-  const isPanelOpen = useAtomValue(panelAtom ?? FALLBACK_CLOSED_PANEL_ATOM)
+function RightPanelSlot({
+  sessionId,
+  isPanelOpen,
+}: RightPanelSlotProps): React.ReactElement | null {
+  if (!sessionId) return null
 
   return (
-    <div className={cn('relative z-[60] transition-[padding] duration-300 ease-in-out', isPanelOpen ? 'p-2 pl-0' : 'p-0')}>
-      <RightSidePanel />
+    <div
+      data-right-panel-slot="true"
+      className={cn(
+        'relative z-[60] min-w-0 overflow-hidden transition-[padding] duration-300 ease-in-out',
+        isPanelOpen ? 'p-2 pl-0' : 'p-0',
+      )}
+      style={{
+        contain: 'layout paint style',
+      }}
+    >
+      <RightSidePanel sessionId={sessionId} />
     </div>
   )
 }
 
 const FALLBACK_CLOSED_PANEL_ATOM = atom(false)
+
+// AppShell 会响应左右栏折叠状态；这些重组件不应因为列宽动画而跟着整树重渲染。
+const MemoizedTopRightWindowControls = React.memo(TopRightWindowControls)
+const MemoizedMainArea = React.memo(MainArea)
+const MemoizedRightPanelSlot = React.memo(RightPanelSlot)

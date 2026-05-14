@@ -12,6 +12,7 @@ use crate::commands::files::{
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 文件树视图中的单个条目。
 pub struct FileEntry {
     pub name: String,
     pub path: String,
@@ -20,6 +21,7 @@ pub struct FileEntry {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 搜索工作区文件时用于前端展示的索引条目。
 pub struct FileIndexEntry {
     pub name: String,
     pub path: String,
@@ -30,6 +32,7 @@ pub struct FileIndexEntry {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 需要写入会话/工作区目录的单个文件项。
 pub struct AgentSaveFileItem {
     pub filename: String,
     pub data: String,
@@ -37,6 +40,7 @@ pub struct AgentSaveFileItem {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 批量保存文件到 Agent 会话目录的请求体。
 pub struct SaveFilesToAgentSessionInput {
     pub workspace_slug: String,
     pub session_id: String,
@@ -45,6 +49,7 @@ pub struct SaveFilesToAgentSessionInput {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 已保存到 Agent 会话目录中的单个文件结果。
 pub struct SavedAgentFile {
     pub filename: String,
     pub target_path: String,
@@ -52,6 +57,7 @@ pub struct SavedAgentFile {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 批量保存文件到工作区 files 目录的请求体。
 pub struct SaveFilesToWorkspaceInput {
     pub workspace_slug: String,
     pub files: Vec<AgentSaveFileItem>,
@@ -59,6 +65,7 @@ pub struct SaveFilesToWorkspaceInput {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 列出附加目录内容时的请求体。
 pub struct ListAttachedDirectoryInput {
     pub dir_path: String,
     pub session_id: Option<String>,
@@ -66,6 +73,7 @@ pub struct ListAttachedDirectoryInput {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 重命名附加目录中文件时的请求体。
 pub struct RenameAttachedFileInput {
     pub file_path: String,
     pub new_name: String,
@@ -73,6 +81,7 @@ pub struct RenameAttachedFileInput {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 移动附加目录中文件时的请求体。
 pub struct MoveAttachedFileInput {
     pub file_path: String,
     pub new_dir_path: String,
@@ -80,6 +89,7 @@ pub struct MoveAttachedFileInput {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 路径类型检测结果。
 pub struct CheckPathsTypeResult {
     pub directories: Vec<String>,
     pub files: Vec<String>,
@@ -87,6 +97,7 @@ pub struct CheckPathsTypeResult {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 搜索工作区文件索引时的请求体。
 pub struct SearchWorkspaceFilesInput {
     pub workspace_path: String,
     pub query: String,
@@ -306,6 +317,7 @@ fn filter_index_entries(
 }
 
 #[tauri::command]
+/// 将一批文件保存到指定 Agent 会话目录。
 pub fn save_files_to_agent_session(
     input: SaveFilesToAgentSessionInput,
 ) -> Result<Vec<SavedAgentFile>, String> {
@@ -316,6 +328,7 @@ pub fn save_files_to_agent_session(
 }
 
 #[tauri::command]
+/// 将一批文件保存到指定工作区的 files 目录。
 pub fn save_files_to_workspace_files(
     input: SaveFilesToWorkspaceInput,
 ) -> Result<Vec<String>, String> {
@@ -325,11 +338,13 @@ pub fn save_files_to_workspace_files(
 }
 
 #[tauri::command]
+/// 预览一个文件，本质上等同于系统打开。
 pub fn preview_file(file_path: String) -> Result<(), String> {
     open_file(file_path)
 }
 
 #[tauri::command]
+/// 列出指定附加目录下的一层内容。
 pub fn list_attached_directory(
     input: ListAttachedDirectoryInput,
 ) -> Result<Vec<FileEntry>, String> {
@@ -344,11 +359,13 @@ pub fn list_attached_directory(
 }
 
 #[tauri::command]
+/// 使用系统默认程序打开附加目录中的文件。
 pub fn open_attached_file(file_path: String) -> Result<(), String> {
     open_file(file_path)
 }
 
 #[tauri::command]
+/// 读取附加目录中的文件并返回 base64 内容。
 pub fn read_attached_file(file_path: String) -> Result<String, String> {
     let path = ensure_existing_path(&file_path)?;
     let bytes = fs::read(&path).map_err(|e| format!("读取文件失败: {}", e))?;
@@ -356,11 +373,13 @@ pub fn read_attached_file(file_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+/// 在系统文件管理器中定位附加目录中的文件。
 pub fn show_attached_in_folder(file_path: String) -> Result<(), String> {
     show_in_folder(file_path)
 }
 
 #[tauri::command]
+/// 重命名附加目录中的一个文件。
 pub fn rename_attached_file(input: RenameAttachedFileInput) -> Result<(), String> {
     let source = ensure_existing_path(&input.file_path)?;
     let new_name = sanitize_filename(&input.new_name)?;
@@ -375,11 +394,13 @@ pub fn rename_attached_file(input: RenameAttachedFileInput) -> Result<(), String
 }
 
 #[tauri::command]
+/// 将附加目录中的文件移动到另一个目录。
 pub fn move_attached_file(input: MoveAttachedFileInput) -> Result<(), String> {
     move_base_file(input.file_path, input.new_dir_path)
 }
 
 #[tauri::command]
+/// 批量区分一组路径是目录还是文件。
 pub fn check_paths_type(paths: Vec<String>) -> Result<CheckPathsTypeResult, String> {
     let mut directories = Vec::new();
     let mut files = Vec::new();
@@ -404,6 +425,7 @@ pub fn check_paths_type(paths: Vec<String>) -> Result<CheckPathsTypeResult, Stri
 }
 
 #[tauri::command]
+/// 按名称或路径搜索工作区文件索引。
 pub fn search_workspace_files(
     input: SearchWorkspaceFilesInput,
 ) -> Result<Vec<FileIndexEntry>, String> {

@@ -11,6 +11,7 @@ const GENERATED_TITLE_MAX_TOKENS: u32 = 30;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 更新 Agent 会话标题的请求体。
 pub struct UpdateSessionTitleRequest {
     pub session_id: String,
     pub title: String,
@@ -18,6 +19,7 @@ pub struct UpdateSessionTitleRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 更新 Agent 会话标题后的返回结果。
 pub struct UpdateSessionTitleResult {
     pub session_id: String,
     pub title: String,
@@ -25,6 +27,7 @@ pub struct UpdateSessionTitleResult {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 权限中断的前端响应体。
 pub struct PermissionRequest {
     #[allow(dead_code)]
     pub session_id: String,
@@ -35,6 +38,7 @@ pub struct PermissionRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// ask_user 中单个问题的作答结果。
 pub struct AskUserAnswer {
     pub question_id: String,
     #[serde(default)]
@@ -45,6 +49,7 @@ pub struct AskUserAnswer {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// ask_user 中断的前端响应体。
 pub struct AskUserRequest {
     #[allow(dead_code)]
     pub session_id: String,
@@ -160,6 +165,7 @@ pub(crate) fn toggle_manual_working_agent_session(
     agent_session::toggle_manual_working_agent_session(&session_id)
 }
 
+/// 更新 Agent 会话的权限模式，并校验模式值是否合法。
 pub(crate) fn update_session_permission_mode(
     session_id: String,
     mode: String,

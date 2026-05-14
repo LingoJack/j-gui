@@ -10,6 +10,7 @@ use governance_mcp as mcp_commands;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Skill 列表项。
 pub struct SkillInfo {
     pub name: String,
     pub description: String,
@@ -19,6 +20,7 @@ pub struct SkillInfo {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Hook 列表项。
 pub struct HookInfo {
     pub name: Option<String>,
     pub event: String,     // 可选值："PreSendMessage" | "PostLlmResponse" | ...
@@ -32,6 +34,7 @@ pub struct HookInfo {
 }
 
 #[tauri::command]
+/// 列出当前可见的全部 Skill。
 pub fn list_skills(state: tauri::State<'_, Arc<JcliAdapter>>) -> Result<Vec<SkillInfo>, String> {
     list_skills_impl(state.governance())
 }
@@ -50,6 +53,7 @@ fn list_skills_impl(kernel: &dyn GovernanceKernel) -> Result<Vec<SkillInfo>, Str
 }
 
 #[tauri::command]
+/// 列出当前可见的全部 Hook。
 pub fn list_hooks(state: tauri::State<'_, Arc<JcliAdapter>>) -> Result<Vec<HookInfo>, String> {
     list_hooks_impl(state.governance())
 }
@@ -76,6 +80,7 @@ fn list_hooks_impl(kernel: &dyn GovernanceKernel) -> Result<Vec<HookInfo>, Strin
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// MCP 服务配置项。
 pub struct McpServerConfig {
     pub name: String,
     pub transport: String, // 可选值："stdio" | "sse"
@@ -87,6 +92,7 @@ pub struct McpServerConfig {
 }
 
 #[tauri::command]
+/// 列出全局 MCP 服务配置。
 pub fn list_mcp_servers(
     state: tauri::State<'_, Arc<JcliAdapter>>,
 ) -> Result<Vec<McpServerConfig>, String> {
@@ -109,6 +115,7 @@ pub fn list_mcp_servers(
 }
 
 #[tauri::command]
+/// 覆盖保存全局 MCP 服务配置。
 pub fn save_mcp_servers(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     servers: Vec<McpServerConfig>,
@@ -135,6 +142,7 @@ pub fn save_mcp_servers(
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 聊天工具列表项。
 pub struct ToolInfo {
     pub name: String,
     pub description: String,
@@ -142,6 +150,7 @@ pub struct ToolInfo {
 }
 
 #[tauri::command]
+/// 列出全部聊天工具及其开关状态。
 pub fn list_chat_tools(state: tauri::State<'_, Arc<JcliAdapter>>) -> Result<Vec<ToolInfo>, String> {
     let tools = state
         .governance()
@@ -158,6 +167,7 @@ pub fn list_chat_tools(state: tauri::State<'_, Arc<JcliAdapter>>) -> Result<Vec<
 }
 
 #[tauri::command]
+/// 切换单个聊天工具的启用状态。
 pub fn set_tool_enabled(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     name: String,
@@ -287,6 +297,7 @@ fn scan_skills_dir(home_dir: &Path, subpath: &str) -> Vec<SkillInfo> {
 }
 
 #[tauri::command]
+/// 扫描用户全局技能目录中的可导入 Skill。
 pub fn scan_global_skills() -> Result<Vec<SkillInfo>, String> {
     let home = crate::kernel::home_dir();
     let mut skills = Vec::new();
@@ -297,6 +308,7 @@ pub fn scan_global_skills() -> Result<Vec<SkillInfo>, String> {
 }
 
 #[tauri::command]
+/// 将一个全局 Skill 复制到指定工作区。
 pub fn copy_skill_to_workspace(
     source_dir: String,
     workspace_slug: String,
@@ -332,12 +344,14 @@ pub fn copy_skill_to_workspace(
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 工作区级 MCP 配置结构。
 pub struct McpWorkspaceConfig {
     pub servers: Vec<McpServerConfig>,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 工作区能力视图中的 Skill 项。
 pub struct WorkspaceCapabilitySkill {
     pub slug: String,
     pub name: String,
@@ -347,6 +361,7 @@ pub struct WorkspaceCapabilitySkill {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 工作区能力视图中的 MCP 服务项。
 pub struct WorkspaceCapabilityServer {
     pub name: String,
     pub enabled: bool,
@@ -355,12 +370,14 @@ pub struct WorkspaceCapabilityServer {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 工作区聚合能力视图。
 pub struct WorkspaceCapabilities {
     pub mcp_servers: Vec<WorkspaceCapabilityServer>,
     pub skills: Vec<WorkspaceCapabilitySkill>,
 }
 
 #[tauri::command]
+/// 切换指定 Hook 的启用状态。
 pub fn toggle_hook(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     unique_id: String,
@@ -373,6 +390,7 @@ pub fn toggle_hook(
 }
 
 #[tauri::command]
+/// 读取工作区 Skill 的原始内容。
 pub fn read_skill_content(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     workspace_slug: String,
@@ -385,6 +403,7 @@ pub fn read_skill_content(
 }
 
 #[tauri::command]
+/// 覆盖保存工作区 Skill 的原始内容。
 pub fn write_skill_content(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     workspace_slug: String,
@@ -398,6 +417,7 @@ pub fn write_skill_content(
 }
 
 #[tauri::command]
+/// 切换工作区 Skill 的启用状态。
 pub fn toggle_workspace_skill(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     workspace_slug: String,
@@ -411,6 +431,7 @@ pub fn toggle_workspace_skill(
 }
 
 #[tauri::command]
+/// 删除一个工作区 Skill。
 pub fn delete_workspace_skill(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     workspace_slug: String,
@@ -423,6 +444,7 @@ pub fn delete_workspace_skill(
 }
 
 #[tauri::command]
+/// 列出指定工作区下的全部 Skill。
 pub fn get_workspace_skills(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     workspace_slug: String,
@@ -443,6 +465,7 @@ pub fn get_workspace_skills(
 }
 
 #[tauri::command]
+/// 返回指定工作区的 Skill 目录路径。
 pub fn get_workspace_skills_dir(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     workspace_slug: String,
@@ -454,6 +477,7 @@ pub fn get_workspace_skills_dir(
 }
 
 #[tauri::command]
+/// 列出除当前工作区外其他工作区的 Skill。
 pub fn get_other_workspace_skills(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     current_slug: String,
@@ -474,6 +498,7 @@ pub fn get_other_workspace_skills(
 }
 
 #[tauri::command]
+/// 从另一个工作区导入一个 Skill 到当前工作区。
 pub fn import_skill_from_workspace(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     target_slug: String,
@@ -488,12 +513,14 @@ pub fn import_skill_from_workspace(
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// MCP 连接测试结果。
 pub struct ConnectionTestResult {
     pub success: bool,
     pub message: String,
 }
 
 #[tauri::command]
+/// 读取指定工作区的 MCP 配置。
 pub fn get_workspace_mcp_config(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     workspace_slug: String,
@@ -502,6 +529,7 @@ pub fn get_workspace_mcp_config(
 }
 
 #[tauri::command]
+/// 保存指定工作区的 MCP 配置。
 pub fn save_workspace_mcp_config(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     workspace_slug: String,
@@ -511,6 +539,7 @@ pub fn save_workspace_mcp_config(
 }
 
 #[tauri::command]
+/// 读取指定工作区的聚合能力视图。
 pub fn get_workspace_capabilities(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     workspace_slug: String,
@@ -519,6 +548,7 @@ pub fn get_workspace_capabilities(
 }
 
 #[tauri::command]
+/// 测试单条 MCP 服务配置是否可用。
 pub fn test_mcp_server(
     name: String,
     entry: serde_json::Value,
@@ -527,6 +557,7 @@ pub fn test_mcp_server(
 }
 
 #[tauri::command]
+/// 从 CC SDK 导入 Hook 配置。
 pub fn import_cc_sdk_hooks(
     state: tauri::State<'_, Arc<JcliAdapter>>,
 ) -> Result<Vec<HookInfo>, String> {
@@ -551,6 +582,7 @@ pub fn import_cc_sdk_hooks(
 }
 
 #[tauri::command]
+/// 从 CC SDK 导入 MCP 配置。
 pub fn import_cc_sdk_mcp(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     workspace_slug: String,

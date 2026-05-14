@@ -37,11 +37,7 @@ import { ScrollMinimap } from '@/components/ai-elements/scroll-minimap'
 import type { MinimapItem } from '@/components/ai-elements/scroll-minimap'
 import { useStickToBottomContext } from 'use-stick-to-bottom'
 import { ContextDivider } from '@/components/ai-elements/context-divider'
-import {
-  Reasoning,
-  ReasoningTrigger,
-  ReasoningContent,
-} from '@/components/ai-elements/reasoning'
+import { ChatReasoningBlock } from './ChatReasoningBlock'
 import { useSmoothStream } from '@jgui/ui'
 import { ScrollPositionManager } from '@/hooks/useScrollPositionMemory'
 import { useConversationParallelMode } from '@/hooks/useConversationSettings'
@@ -217,32 +213,6 @@ export function ChatMessages({
   const [loadingMore, setLoadingMore] = React.useState(false)
 
   /**
-   * 流式完成过渡：streaming 结束到持久化消息加载完成之间，
-   * 强制 resize="instant" 避免中间高度变化触发平滑滚动动画。
-   *
-   * render-phase 计算保证第一帧就能切到 instant（不依赖 useEffect 延迟）。
-   */
-  const [transitioningCooldown, setTransitioningCooldown] = React.useState(false)
-  const wasStreamingRef = React.useRef(streaming)
-
-  const needsInstant = !streaming && (!!streamingContent || !!smoothContent)
-
-  React.useEffect(() => {
-    if (wasStreamingRef.current && !streaming) {
-      setTransitioningCooldown(true)
-    }
-    wasStreamingRef.current = streaming
-  }, [streaming])
-
-  React.useEffect(() => {
-    if (needsInstant) return
-    const timer = setTimeout(() => setTransitioningCooldown(false), 150)
-    return () => clearTimeout(timer)
-  }, [needsInstant])
-
-  const transitioning = needsInstant || transitioningCooldown
-
-  /**
    * 淡入控制：切换对话时先隐藏，等 StickToBottom 定位完成后再显示。
    * 避免 "先看到顶部消息再跳到底部" 的闪烁。
    */
@@ -328,8 +298,8 @@ export function ChatMessages({
 
   // 迷你地图数据（必须在所有条件分支之前调用，遵守 hooks 规则）
   const minimapItems: MinimapItem[] = React.useMemo(
-    () => messages.map((m) => ({
-      id: m.id,
+    () => messages.map((m, idx) => ({
+      id: m.id || `chat-index-${idx}`,
       role: m.role as MinimapItem['role'],
       preview: m.content.slice(0, 200),
       avatar: m.role === 'user' ? userProfile.avatar : undefined,
@@ -377,7 +347,7 @@ export function ChatMessages({
   const dividerSet = new Set(contextDividers)
 
   return (
-    <Conversation resize={ready && !transitioning ? 'smooth' : 'instant'} className={ready ? 'opacity-100 transition-opacity duration-200' : 'opacity-0'}>
+    <Conversation resize="instant" className={ready ? 'opacity-100 transition-opacity duration-200' : 'opacity-0'}>
       <ScrollPositionManager id={conversationId} ready={ready} />
       {/* 滚动到顶部时自动加载更多历史 */}
       <ScrollTopLoader
@@ -441,13 +411,10 @@ export function ChatMessages({
 
                   {/* 推理内容（如果有） */}
                   {smoothReasoning && (
-                    <Reasoning
+                    <ChatReasoningBlock
+                      reasoning={smoothReasoning}
                       isStreaming={streaming && !smoothContent}
-                      defaultOpen={true}
-                    >
-                      <ReasoningTrigger />
-                      <ReasoningContent>{smoothReasoning}</ReasoningContent>
-                    </Reasoning>
+                    />
                   )}
 
                   {/* 流式内容（经过平滑处理） */}

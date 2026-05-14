@@ -12,12 +12,13 @@ import { useStore } from 'jotai'
 import { Bot, Loader2, ArrowRight } from 'lucide-react'
 import { MessageAction } from '@/components/ai-elements/message'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { openAgentWithChatReference } from './open-agent-with-chat-reference'
 
 interface MigrateToAgentButtonProps {
   /** 当前对话 ID */
   conversationId: string
-  variant?: 'icon' | 'button'
+  variant?: 'icon' | 'button' | 'headerIcon'
   className?: string
 }
 
@@ -59,6 +60,36 @@ export function MigrateToAgentButton({
         <span>{migrating ? '打开中...' : '在 Agent 中引用'}</span>
         {!migrating && <ArrowRight className="size-3.5" />}
       </Button>
+    )
+  }
+
+  if (variant === 'headerIcon') {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={migrating ? '打开中...' : '在 Agent 中引用'}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => { void handleMigrate() }}
+              disabled={migrating}
+              className={className}
+            >
+              {migrating ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Bot className="size-4" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <p>{migrating ? '打开中...' : '在 Agent 中引用'}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     )
   }
 

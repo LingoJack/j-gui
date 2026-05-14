@@ -43,6 +43,7 @@ fn is_masked_api_key(key: &str) -> bool {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 渠道列表项。
 pub struct ChannelInfo {
     pub id: String,
     pub name: String,
@@ -56,6 +57,7 @@ pub struct ChannelInfo {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 创建渠道时的请求体。
 pub struct CreateChannelInput {
     pub name: String,
     pub provider: Option<String>,
@@ -69,6 +71,7 @@ pub struct CreateChannelInput {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 更新渠道时的请求体。
 pub struct UpdateChannelInput {
     pub name: Option<String>,
     pub provider: Option<String>,
@@ -82,6 +85,7 @@ pub struct UpdateChannelInput {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 拉取模型列表时的统一返回结构。
 pub struct FetchModelsResult {
     pub success: bool,
     pub message: String,
@@ -90,6 +94,7 @@ pub struct FetchModelsResult {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 模型列表中的单个选项。
 pub struct FetchModelOption {
     pub id: String,
     pub name: Option<String>,
@@ -97,6 +102,7 @@ pub struct FetchModelOption {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 直接测试未保存渠道时的请求体。
 pub struct TestChannelInput {
     pub api_base: String,
     pub api_key: String,
@@ -107,6 +113,7 @@ pub struct TestChannelInput {
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 测试已保存渠道时允许覆盖的输入项。
 pub struct TestSavedChannelInput {
     pub provider: Option<String>,
     #[serde(alias = "baseUrl", alias = "apiBase")]
@@ -116,6 +123,7 @@ pub struct TestSavedChannelInput {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 渠道连通性测试结果。
 pub struct TestChannelResult {
     pub success: bool,
     pub message: String,
@@ -124,6 +132,7 @@ pub struct TestChannelResult {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 供测试结果返回的模型选项。
 pub struct ModelOption {
     pub id: String,
     pub name: Option<String>,
@@ -155,6 +164,7 @@ fn provider_to_channel_info(p: &KernelProvider) -> ChannelInfo {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
+/// 列出全部渠道配置。
 pub fn list_channels(
     state: tauri::State<'_, Arc<JcliAdapter>>,
 ) -> Result<Vec<ChannelInfo>, String> {
@@ -162,6 +172,7 @@ pub fn list_channels(
 }
 
 #[tauri::command]
+/// 创建一条新的渠道配置。
 pub fn create_channel(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     input: CreateChannelInput,
@@ -170,6 +181,7 @@ pub fn create_channel(
 }
 
 #[tauri::command]
+/// 更新指定渠道配置。
 pub fn update_channel(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     id: String,
@@ -179,11 +191,13 @@ pub fn update_channel(
 }
 
 #[tauri::command]
+/// 删除指定渠道配置。
 pub fn delete_channel(state: tauri::State<'_, Arc<JcliAdapter>>, id: String) -> Result<(), String> {
     delete_channel_impl(state.config(), &id)
 }
 
 #[tauri::command]
+/// 解密并返回指定渠道的原始 API Key。
 pub fn decrypt_api_key(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     channel_id: String,
@@ -192,6 +206,7 @@ pub fn decrypt_api_key(
 }
 
 #[tauri::command]
+/// 直接请求远端 `/models` 接口以拉取模型列表。
 pub async fn fetch_models(api_base: String, api_key: String) -> Result<FetchModelsResult, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
@@ -230,11 +245,13 @@ pub async fn fetch_models(api_base: String, api_key: String) -> Result<FetchMode
 }
 
 #[tauri::command]
+/// 直接测试一条临时渠道配置是否可用。
 pub async fn test_channel_direct(input: TestChannelInput) -> Result<TestChannelResult, String> {
     test_channel_input(input).await
 }
 
 #[tauri::command]
+/// 测试一条已保存渠道配置是否可用。
 pub async fn test_saved_channel(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     id: String,

@@ -194,6 +194,33 @@ export const ReasoningTrigger = React.memo(function ReasoningTrigger({
   )
 })
 
+// ===== ReasoningToggleText 文字开关 =====
+
+interface ReasoningToggleTextProps extends ComponentProps<'span'> {
+  /** 展开时显示的文案 */
+  expandedLabel?: string
+  /** 折叠时显示的文案 */
+  collapsedLabel?: string
+}
+
+export const ReasoningToggleText = React.memo(function ReasoningToggleText({
+  className,
+  expandedLabel = '收起',
+  collapsedLabel = '展开思考',
+  ...props
+}: ReasoningToggleTextProps): React.ReactElement {
+  const { isOpen } = useReasoning()
+
+  return (
+    <span
+      className={cn('text-xs text-muted-foreground/70', className)}
+      {...props}
+    >
+      {isOpen ? expandedLabel : collapsedLabel}
+    </span>
+  )
+})
+
 // ===== ReasoningContent 折叠内容区 =====
 
 interface ReasoningContentProps extends ComponentProps<typeof CollapsibleContent> {

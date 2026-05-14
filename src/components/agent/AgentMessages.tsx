@@ -403,38 +403,6 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
   // 用原始 streamingContent 作为守卫：内容已清空且不在流式中，立即归零。
   const smoothContent = (streaming || streamingContent) ? rawSmoothContent : ''
 
-  /**
-   * 流式完成过渡：streaming 结束到持久化消息加载完成之间，
-   * 强制 resize="instant" 避免中间高度变化触发平滑滚动动画。
-   *
-   * 使用 render-phase 计算避免 useEffect 延迟一帧的问题：
-   * - streaming 变 false 的第一帧就能立即切到 instant，防止闪动
-   * - 后续通过 ref+timeout 延迟 150ms 才允许切回 smooth
-   */
-  const [transitioningCooldown, setTransitioningCooldown] = React.useState(false)
-  const wasStreamingRef = React.useRef(streaming)
-
-  // render-phase 判断：是否处于需要 instant resize 的过渡期
-  // liveMessages 非空说明持久化消息还没加载完（加载完后会清空 liveMessages）
-  const needsInstant = !streaming && (!!streamingContent || !!smoothContent || (liveMessages != null && liveMessages.length > 0))
-
-  React.useEffect(() => {
-    // 刚从 streaming → not-streaming：启动 cooldown
-    if (wasStreamingRef.current && !streaming) {
-      setTransitioningCooldown(true)
-    }
-    wasStreamingRef.current = streaming
-  }, [streaming])
-
-  React.useEffect(() => {
-    if (needsInstant) return
-    // 过渡完成后延迟 150ms 才关闭 cooldown，给 StickToBottom 时间稳定
-    const timer = setTimeout(() => setTransitioningCooldown(false), 150)
-    return () => clearTimeout(timer)
-  }, [needsInstant])
-
-  const transitioning = needsInstant || transitioningCooldown
-
   // 合并持久化 + 实时 SDKMessage（供 ContentBlock 内查找工具结果）
   const allSDKMessages = React.useMemo(() => {
     const persisted = persistedSDKMessages ?? []
@@ -549,7 +517,7 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
 
   return (
     <BasePathsProvider basePaths={attachedDirs}>
-    <Conversation resize={ready && !transitioning ? 'smooth' : 'instant'} className={ready ? 'opacity-100 transition-opacity duration-200' : 'opacity-0'}>
+    <Conversation resize="instant" className={ready ? 'opacity-100 transition-opacity duration-200' : 'opacity-0'}>
       <ScrollPositionManager id={sessionId} ready={ready} />
       <ConversationContent className={!hasContent && !streaming ? 'flex-1' : undefined}>
         {!hasContent && !streaming ? (

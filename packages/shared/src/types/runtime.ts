@@ -97,21 +97,34 @@ export interface GitRepoStatus {
 }
 
 /**
- * Git Bash 运行时状态（Windows 平台）
+ * 单个 shell 候选项状态
  */
-export interface GitBashStatus {
+export interface ShellCandidateStatus {
+  /** shell 家族 */
+  family:
+    | 'powershell'
+    | 'cmd'
+    | 'git-bash'
+    | 'wsl'
+    | 'bash'
+    | 'zsh'
+    | 'fish'
+    | 'sh'
+    | 'unknown'
   /** 是否可用 */
   available: boolean
-  /** bash.exe 可执行路径 */
+  /** 可执行路径 */
   path: string | null
-  /** Bash 版本号 */
+  /** 版本号 */
   version: string | null
+  /** 探测来源 */
+  source: 'default' | 'path-scan' | 'registry' | 'env' | 'unknown'
   /** 错误信息（如果不可用）*/
   error: string | null
 }
 
 /**
- * WSL 运行时状态（Windows 平台）
+ * Windows 下 WSL 的探测结果
  */
 export interface WslStatus {
   /** 是否可用 */
@@ -127,15 +140,75 @@ export interface WslStatus {
 }
 
 /**
- * Shell 环境状态（Windows 平台特有）
+ * POSIX shell 环境状态
  */
-export interface ShellEnvironmentStatus {
+export interface PosixShellStatus {
+  /** 当前默认 shell */
+  current: ShellCandidateStatus | null
+  /** 候选 shell 列表 */
+  candidates: ShellCandidateStatus[]
+  /** 推荐 shell */
+  recommended:
+    | 'bash'
+    | 'zsh'
+    | 'fish'
+    | 'sh'
+    | 'unknown'
+    | null
+}
+
+/**
+ * Windows shell 环境状态
+ */
+export interface WindowsShellStatus {
+  /** PowerShell 状态 */
+  powershell: ShellCandidateStatus
+  /** CMD 状态 */
+  cmd: ShellCandidateStatus
   /** Git Bash 状态 */
-  gitBash: GitBashStatus
+  gitBash: ShellCandidateStatus
   /** WSL 状态 */
   wsl: WslStatus
-  /** 推荐使用的 Shell 环境 */
-  recommended: 'git-bash' | 'wsl' | null
+  /** 推荐使用的 shell */
+  recommended: 'git-bash' | 'wsl' | 'powershell' | 'cmd' | 'unknown' | null
+}
+
+/**
+ * Shell 环境状态
+ */
+export interface ShellEnvironmentStatus {
+  /** 当前平台 */
+  platform: Platform
+  /** 当前默认 shell */
+  current: ShellCandidateStatus | null
+  /** 推荐使用的 shell */
+  recommended:
+    | 'powershell'
+    | 'cmd'
+    | 'git-bash'
+    | 'wsl'
+    | 'bash'
+    | 'zsh'
+    | 'fish'
+    | 'sh'
+    | 'unknown'
+    | null
+  /** fallback 顺序 */
+  fallbackOrder: Array<
+    | 'powershell'
+    | 'cmd'
+    | 'git-bash'
+    | 'wsl'
+    | 'bash'
+    | 'zsh'
+    | 'fish'
+    | 'sh'
+    | 'unknown'
+  >
+  /** Windows 平台明细 */
+  windows: WindowsShellStatus | null
+  /** POSIX 平台明细 */
+  posix: PosixShellStatus | null
 }
 
 /**
@@ -148,8 +221,8 @@ export interface RuntimeStatus {
   bun: BunRuntimeStatus
   /** Git 运行时状态 */
   git: GitRuntimeStatus
-  /** Shell 环境状态（仅 Windows 平台）*/
-  shell?: ShellEnvironmentStatus
+  /** Shell 环境状态 */
+  shell: ShellEnvironmentStatus
   /** Shell 环境变量是否已加载（仅 macOS 相关）*/
   envLoaded: boolean
   /** 初始化时间戳 */
@@ -200,7 +273,7 @@ export interface RuntimeInitOptions {
   skipBunDetection?: boolean
   /** 是否跳过 Git 检测 */
   skipGitDetection?: boolean
-  /** 是否跳过 Shell 环境检测（仅 Windows）*/
+  /** 是否跳过 Shell 环境检测 */
   skipShellDetection?: boolean
 }
 

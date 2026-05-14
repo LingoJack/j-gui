@@ -15,6 +15,7 @@ mod agent_runtime_state;
 mod agent_session_commands;
 use agent_compat as compat;
 #[cfg(test)]
+/// 测试中复用的 Agent 兼容层请求/响应结构。
 pub(crate) use agent_compat::{
     AskUserAnswer, AskUserRequest, PermissionRequest, UpdateSessionTitleRequest,
     UpdateSessionTitleResult,
@@ -33,6 +34,7 @@ pub struct AgentState(pub Arc<Mutex<HashMap<String, AgentEngine>>>);
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
+/// 启动 Agent 会话时的前端请求体。
 pub struct AgentStartRequest {
     pub session_id: Option<String>,
     pub channel_id: Option<String>,
@@ -46,6 +48,7 @@ pub struct AgentStartRequest {
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+/// 向已启动 Agent 会话发送消息的请求体。
 pub struct AgentSendMessageRequest {
     pub session_id: String,
     pub user_message: String,
@@ -53,6 +56,7 @@ pub struct AgentSendMessageRequest {
 
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
+/// 创建 Agent 会话时允许传入的初始元数据。
 pub struct CreateAgentSessionRequest {
     pub title: Option<String>,
     pub channel_id: Option<String>,
@@ -61,6 +65,7 @@ pub struct CreateAgentSessionRequest {
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+/// 把 Agent 会话迁移到目标工作区的请求体。
 pub struct MoveSessionToWorkspaceInput {
     pub session_id: String,
     pub target_workspace_id: String,
@@ -68,6 +73,7 @@ pub struct MoveSessionToWorkspaceInput {
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+/// 基于历史时间线分叉 Agent 会话的请求体。
 pub struct ForkSessionInput {
     pub session_id: String,
     pub up_to_message_uuid: Option<String>,
@@ -75,6 +81,7 @@ pub struct ForkSessionInput {
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+/// 把 Agent 会话回退到指定助手消息之前的请求体。
 pub struct RewindSessionInput {
     pub session_id: String,
     pub assistant_message_uuid: String,
@@ -82,6 +89,7 @@ pub struct RewindSessionInput {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Agent 会话回退操作的返回结果。
 pub struct RewindSessionResult {
     pub remaining_messages: usize,
     pub file_rewind: Option<FileRewindResult>,
@@ -89,6 +97,7 @@ pub struct RewindSessionResult {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+/// 文件快照回退能力的结构化结果。
 pub struct FileRewindResult {
     pub can_rewind: bool,
     pub code: String,
@@ -118,6 +127,7 @@ fn timeline_only_file_rewind_result() -> FileRewindResult {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 响应 Agent 中断请求时的前端请求体。
 pub struct RespondAgentInterruptRequest {
     pub session_id: String,
     pub interrupt_id: String,
@@ -196,6 +206,7 @@ enum AgentInterruptResponse {
 }
 
 #[tauri::command]
+/// 启动一个 Agent 运行时，并把事件流桥接到前端。
 pub fn start_agent(
     state: tauri::State<'_, AgentState>,
     kernel: tauri::State<'_, Arc<JcliAdapter>>,
@@ -262,6 +273,7 @@ pub fn start_agent(
 }
 
 #[tauri::command]
+/// 创建一个新的 Agent 会话。
 pub fn create_agent_session(
     input: Option<CreateAgentSessionRequest>,
 ) -> Result<AgentSessionInfo, String> {
@@ -269,21 +281,25 @@ pub fn create_agent_session(
 }
 
 #[tauri::command]
+/// 列出所有 Agent 会话摘要。
 pub fn list_agent_sessions() -> Result<Vec<AgentSessionInfo>, String> {
     agent_session_commands::list_agent_sessions()
 }
 
 #[tauri::command]
+/// 读取指定 Agent 会话的完整时间线。
 pub fn get_agent_session(session_id: String) -> Result<Vec<AgentTimelineItem>, String> {
     agent_session_commands::get_agent_session(session_id)
 }
 
 #[tauri::command]
+/// 将指定 Agent 会话的时间线投影为 SDK 消息序列。
 pub fn get_agent_session_sdk_messages(id: String) -> Result<Vec<serde_json::Value>, String> {
     agent_session_commands::get_agent_session_sdk_messages(id)
 }
 
 #[tauri::command]
+/// 按关键词搜索 Agent 会话消息。
 pub fn search_agent_session_messages(
     query: String,
 ) -> Result<Vec<agent_session::AgentMessageSearchResult>, String> {
@@ -291,11 +307,13 @@ pub fn search_agent_session_messages(
 }
 
 #[tauri::command]
+/// 删除指定 Agent 会话及其落盘目录。
 pub fn delete_agent_session(session_id: String) -> Result<(), String> {
     agent_session_commands::delete_agent_session(session_id)
 }
 
 #[tauri::command]
+/// 向运行中的 Agent 会话提交一次中断响应。
 pub fn respond_agent_interrupt(
     state: tauri::State<'_, AgentState>,
     input: RespondAgentInterruptRequest,
@@ -303,6 +321,7 @@ pub fn respond_agent_interrupt(
     respond_agent_interrupt_impl(state, input)
 }
 
+/// 真正执行 Agent 中断响应分发的内部实现。
 pub(crate) fn respond_agent_interrupt_impl(
     state: tauri::State<'_, AgentState>,
     input: RespondAgentInterruptRequest,
@@ -323,6 +342,7 @@ pub(crate) fn respond_agent_interrupt_impl(
 }
 
 #[tauri::command]
+/// 为指定 Agent 会话生成一个建议标题。
 pub async fn generate_agent_title(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     session_id: String,
@@ -331,6 +351,7 @@ pub async fn generate_agent_title(
 }
 
 #[tauri::command]
+/// 更新指定 Agent 会话标题。
 pub fn update_agent_session_title(
     request: compat::UpdateSessionTitleRequest,
 ) -> Result<compat::UpdateSessionTitleResult, String> {
@@ -338,26 +359,31 @@ pub fn update_agent_session_title(
 }
 
 #[tauri::command]
+/// 切换指定 Agent 会话的置顶状态。
 pub fn toggle_pin_agent_session(session_id: String) -> Result<AgentSessionInfo, String> {
     compat::toggle_pin_agent_session(session_id)
 }
 
 #[tauri::command]
+/// 切换指定 Agent 会话的归档状态。
 pub fn toggle_archive_agent_session(session_id: String) -> Result<AgentSessionInfo, String> {
     compat::toggle_archive_agent_session(session_id)
 }
 
 #[tauri::command]
+/// 切换指定 Agent 会话的手动工作中状态。
 pub fn toggle_manual_working_agent_session(session_id: String) -> Result<AgentSessionInfo, String> {
     compat::toggle_manual_working_agent_session(session_id)
 }
 
 #[tauri::command]
+/// 更新指定 Agent 会话的权限模式。
 pub fn update_session_permission_mode(session_id: String, mode: String) -> Result<(), String> {
     compat::update_session_permission_mode(session_id, mode)
 }
 
 #[tauri::command]
+/// 响应一个权限审批型中断。
 pub fn respond_permission(
     state: tauri::State<'_, AgentState>,
     request: compat::PermissionRequest,
@@ -366,6 +392,7 @@ pub fn respond_permission(
 }
 
 #[tauri::command]
+/// 响应一个 ask_user 型中断。
 pub fn respond_ask_user(
     state: tauri::State<'_, AgentState>,
     request: compat::AskUserRequest,
@@ -374,6 +401,7 @@ pub fn respond_ask_user(
 }
 
 #[tauri::command]
+/// 向运行中的 Agent 会话发送一条新的用户消息。
 pub fn send_agent_message(
     state: tauri::State<'_, AgentState>,
     input: Option<AgentSendMessageRequest>,
@@ -403,6 +431,7 @@ pub fn send_agent_message(
 }
 
 #[tauri::command]
+/// 停止指定 Agent 会话，并标记为用户主动中断。
 pub fn stop_agent(state: tauri::State<'_, AgentState>, session_id: String) -> Result<(), String> {
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
     if let Some(mut engine) = guard.remove(&session_id) {
@@ -413,6 +442,7 @@ pub fn stop_agent(state: tauri::State<'_, AgentState>, session_id: String) -> Re
 }
 
 #[tauri::command]
+/// 把 Agent 会话迁移到另一个工作区。
 pub fn move_agent_session_to_workspace(
     input: MoveSessionToWorkspaceInput,
 ) -> Result<AgentSessionInfo, String> {
@@ -434,6 +464,7 @@ pub fn move_agent_session_to_workspace(
 }
 
 #[tauri::command]
+/// 以当前会话为基础创建一个分叉会话。
 pub fn fork_agent_session(
     state: tauri::State<'_, AgentState>,
     input: ForkSessionInput,
@@ -446,6 +477,7 @@ pub fn fork_agent_session(
 }
 
 #[tauri::command]
+/// 将 Agent 会话回退到指定助手消息之前。
 pub fn rewind_session(
     state: tauri::State<'_, AgentState>,
     input: RewindSessionInput,

@@ -7,6 +7,7 @@ use std::process::Command;
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 
+/// 返回 GUI 附件目录根路径。
 pub(crate) fn attachments_dir() -> PathBuf {
     let mut p = dirs_next().unwrap_or_else(|| PathBuf::from("."));
     p.push("attachments");
@@ -33,6 +34,7 @@ fn sanitize_relative_path(user_path: &str) -> Result<PathBuf, String> {
     Ok(clean)
 }
 
+/// 将附件相对路径解析到本地附件目录中。
 pub(crate) fn resolve_attachment_path(local_path: &str) -> Result<PathBuf, String> {
     let clean = sanitize_relative_path(local_path)?;
     Ok(attachments_dir().join(clean))
@@ -68,6 +70,7 @@ fn infer_media_type(path: &Path) -> String {
     .to_string()
 }
 
+/// 校验一个路径存在，并返回其规范化绝对路径。
 pub(crate) fn ensure_existing_path(file_path: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(file_path);
     if !path.exists() {
@@ -85,6 +88,7 @@ fn spawn_open_command(program: &str, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// 校验工作区 slug 是否符合目录约束。
 pub(crate) fn validate_workspace_slug(slug: &str) -> Result<(), String> {
     if slug.is_empty() || slug.contains("..") || slug.contains('/') || slug.contains('\\') {
         return Err(format!("非法工作区标识: {}", slug));
@@ -92,6 +96,7 @@ pub(crate) fn validate_workspace_slug(slug: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 返回指定工作区 slug 对应的本地目录。
 pub(crate) fn workspace_dir(workspace_slug: &str) -> Result<PathBuf, String> {
     validate_workspace_slug(workspace_slug)?;
     let base = dirs_next().unwrap_or_else(|| PathBuf::from("."));
@@ -114,6 +119,7 @@ fn unique_attachment_relative_path(
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 系统文件/目录选择对话框的统一返回结构。
 pub struct FileDialogResult {
     pub canceled: bool,
     pub file_paths: Vec<String>,
@@ -124,6 +130,7 @@ pub struct FileDialogResult {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 文件选择对话框返回的单个文件内容。
 pub struct SelectedFile {
     pub filename: String,
     pub media_type: String,
@@ -133,6 +140,7 @@ pub struct SelectedFile {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 保存附件到本地前端存储时的请求体。
 pub struct SaveAttachmentArgs {
     pub conversation_id: String,
     pub filename: String,
@@ -142,6 +150,7 @@ pub struct SaveAttachmentArgs {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 已保存附件的元数据。
 pub struct SavedAttachment {
     pub id: String,
     pub filename: String,
@@ -152,12 +161,14 @@ pub struct SavedAttachment {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 保存附件命令的返回结构。
 pub struct SaveAttachmentResult {
     pub attachment: SavedAttachment,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 目录浏览时返回的单个条目。
 pub struct DirEntry {
     pub name: String,
     pub path: String,
@@ -166,6 +177,7 @@ pub struct DirEntry {
 }
 
 #[tauri::command]
+/// 打开系统文件选择对话框，并返回文件内容与元数据。
 pub fn open_file_dialog(app: tauri::AppHandle) -> Result<FileDialogResult, String> {
     match app.dialog().file().blocking_pick_files() {
         Some(files) if !files.is_empty() => {
@@ -207,6 +219,7 @@ pub fn open_file_dialog(app: tauri::AppHandle) -> Result<FileDialogResult, Strin
 }
 
 #[tauri::command]
+/// 打开系统文件夹选择对话框。
 pub fn open_folder_dialog(app: tauri::AppHandle) -> Result<FileDialogResult, String> {
     match app.dialog().file().blocking_pick_folder() {
         Some(folder) => {
@@ -231,6 +244,7 @@ pub fn open_folder_dialog(app: tauri::AppHandle) -> Result<FileDialogResult, Str
 }
 
 #[tauri::command]
+/// 将前端上传的附件内容保存到本地附件目录。
 pub fn save_attachment(input: SaveAttachmentArgs) -> Result<SaveAttachmentResult, String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(&input.data)
@@ -256,6 +270,7 @@ pub fn save_attachment(input: SaveAttachmentArgs) -> Result<SaveAttachmentResult
 }
 
 #[tauri::command]
+/// 读取本地附件并返回 base64 内容。
 pub fn read_attachment(local_path: String) -> Result<String, String> {
     let resolved = resolve_attachment_path(&local_path)?;
     let data = fs::read(&resolved).map_err(|e| format!("读取文件失败: {}", e))?;
@@ -263,6 +278,7 @@ pub fn read_attachment(local_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+/// 删除一个文件或目录。
 pub fn delete_file(file_path: String) -> Result<(), String> {
     let path = PathBuf::from(&file_path);
     if !path.exists() {
@@ -277,6 +293,7 @@ pub fn delete_file(file_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// 删除一条本地附件记录对应的文件。
 pub fn delete_attachment(local_path: String) -> Result<(), String> {
     let resolved = resolve_attachment_path(&local_path)?;
     if !resolved.exists() {
@@ -286,6 +303,7 @@ pub fn delete_attachment(local_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// 重命名一个文件或目录。
 pub fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
     let old = PathBuf::from(&old_path);
     let new = PathBuf::from(&new_path);
@@ -300,6 +318,7 @@ pub fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// 将文件移动到目标目录下。
 pub fn move_file(src: String, dest: String) -> Result<(), String> {
     let source = ensure_existing_path(&src)?;
     let destination_root = ensure_existing_path(&dest)?;
@@ -319,6 +338,7 @@ pub fn move_file(src: String, dest: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// 列出指定目录下的一层子项。
 pub fn list_directory(dir_path: String) -> Result<Vec<DirEntry>, String> {
     let entries = fs::read_dir(&dir_path).map_err(|e| format!("读取目录失败: {}", e))?;
 
@@ -337,6 +357,7 @@ pub fn list_directory(dir_path: String) -> Result<Vec<DirEntry>, String> {
 }
 
 #[tauri::command]
+/// 使用系统默认程序打开指定文件或目录。
 pub fn open_file(file_path: String) -> Result<(), String> {
     let path = ensure_existing_path(&file_path)?;
     let path_arg = path.to_string_lossy().to_string();
@@ -356,6 +377,7 @@ pub fn open_file(file_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// 在系统文件管理器中定位指定文件或目录。
 pub fn show_in_folder(file_path: String) -> Result<(), String> {
     let path = ensure_existing_path(&file_path)?;
 
@@ -385,6 +407,7 @@ pub fn show_in_folder(file_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// 返回指定 Agent 会话当前对应的工作目录路径。
 pub fn get_agent_session_path(session_id: String) -> Result<String, String> {
     let sessions = crate::agent_session::list_agent_sessions()?;
     let session = sessions
@@ -426,6 +449,7 @@ fn session_attached_directories_base_dir(session_id: &str) -> Result<PathBuf, St
 }
 
 #[tauri::command]
+/// 返回指定工作区用于存放“工作区文件”的目录路径。
 pub fn get_workspace_files_path(workspace_slug: String) -> Result<String, String> {
     let path = workspace_dir(&workspace_slug)?.join("files");
     fs::create_dir_all(&path).map_err(|e| format!("创建工作区文件目录失败: {}", e))?;
@@ -465,6 +489,7 @@ fn normalize_directory_path(directory_path: String) -> Result<String, String> {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 向会话级附加目录列表新增一个目录时的请求体。
 pub struct AttachDirectoryInput {
     pub session_id: String,
     pub directory_path: String,
@@ -472,12 +497,14 @@ pub struct AttachDirectoryInput {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 向工作区级附加目录列表新增一个目录时的请求体。
 pub struct AttachWorkspaceDirectoryInput {
     pub workspace_slug: String,
     pub directory_path: String,
 }
 
 #[tauri::command]
+/// 将目录附加到指定会话的外部目录列表中。
 pub fn attach_directory(input: AttachDirectoryInput) -> Result<Vec<String>, String> {
     crate::agent_session::get_agent_session(&input.session_id)?;
     let normalized = normalize_directory_path(input.directory_path)?;
@@ -491,6 +518,7 @@ pub fn attach_directory(input: AttachDirectoryInput) -> Result<Vec<String>, Stri
 }
 
 #[tauri::command]
+/// 从指定会话的附加目录列表中移除一个目录。
 pub fn detach_directory(session_id: String, dir_path: String) -> Result<(), String> {
     crate::agent_session::get_agent_session(&session_id)?;
     let session_dir = session_attached_directories_base_dir(&session_id)?;
@@ -501,6 +529,7 @@ pub fn detach_directory(session_id: String, dir_path: String) -> Result<(), Stri
 }
 
 #[tauri::command]
+/// 将目录附加到指定工作区的外部目录列表中。
 pub fn attach_workspace_directory(
     input: AttachWorkspaceDirectoryInput,
 ) -> Result<Vec<String>, String> {
@@ -515,6 +544,7 @@ pub fn attach_workspace_directory(
 }
 
 #[tauri::command]
+/// 从指定工作区的附加目录列表中移除一个目录。
 pub fn detach_workspace_directory(workspace_slug: String, dir_path: String) -> Result<(), String> {
     let workspace_base = workspace_dir(&workspace_slug)?;
     let normalized = normalize_directory_path(dir_path)?;
@@ -524,6 +554,7 @@ pub fn detach_workspace_directory(workspace_slug: String, dir_path: String) -> R
 }
 
 #[tauri::command]
+/// 读取指定工作区的附加目录列表。
 pub fn get_workspace_directories(workspace_slug: String) -> Result<Vec<String>, String> {
     let workspace_base = workspace_dir(&workspace_slug)?;
     load_attached_directories(&workspace_base)

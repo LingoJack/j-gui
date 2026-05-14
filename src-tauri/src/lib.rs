@@ -168,6 +168,7 @@ macro_rules! register_invoke_handler {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// 启动 Tauri 应用，注册命令、托盘、窗口事件与全局状态。
 pub fn run() {
     let tray_available = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let tray_available_for_setup = Arc::clone(&tray_available);

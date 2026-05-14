@@ -5,12 +5,12 @@
  *
  * 原理：
  * - scroll 事件持续保存 distanceFromBottom 到模块级 Map
- * - 切换对话时 ready=false → Conversation 的 resize 切为 "instant"（消除动画）
+ * - Conversation 固定使用 instant resize，避免外壳宽度动画触发滚动容器的平滑重排
  * - ready=true 时：有保存位置 → stopScroll() + 设置 scrollTop；无保存 → scrollToBottom("instant")
  * - stopScroll() 让 StickToBottom 内部 isAtBottom=false，ResizeObserver 不再争抢滚动
  *
- * 配合 Conversation 的 resize prop 动态切换：
- *   <Conversation resize={ready ? "smooth" : "instant"}>
+ * 配合 Conversation 的 resize prop：
+ *   <Conversation resize="instant">
  */
 
 import { useEffect, useLayoutEffect, useRef } from 'react'

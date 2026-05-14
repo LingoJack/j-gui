@@ -23,11 +23,7 @@ import {
   MessageResponse,
   StreamingIndicator,
 } from '@/components/ai-elements/message'
-import {
-  Reasoning,
-  ReasoningTrigger,
-  ReasoningContent,
-} from '@/components/ai-elements/reasoning'
+import { ChatReasoningBlock } from './ChatReasoningBlock'
 import { channelsAtom, streamingModelAtom } from '@/atoms/chat-atoms'
 import { resolveAssistantBranding } from '@/lib/model-logo'
 import type { ChatMessage } from '@jgui/shared'
@@ -226,10 +222,10 @@ function MessageColumn({
             />
             <MessageContent>
               {streamingReasoning && (
-                <Reasoning isStreaming={streaming && !streamingContent} defaultOpen={true}>
-                  <ReasoningTrigger />
-                  <ReasoningContent>{streamingReasoning}</ReasoningContent>
-                </Reasoning>
+                <ChatReasoningBlock
+                  reasoning={streamingReasoning}
+                  isStreaming={streaming && !streamingContent}
+                />
               )}
               {streamingContent ? (
                 <>

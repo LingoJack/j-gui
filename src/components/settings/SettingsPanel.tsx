@@ -7,7 +7,7 @@
 import * as React from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { cn } from "@/lib/utils";
-import { Settings, Radio, Palette, Info, Plug, BookOpen, Wrench, Link, Webhook, FileCode, Keyboard, X } from "lucide-react";
+import { Settings, Radio, Palette, Info, Plug, BookOpen, Wrench, Link, Webhook, FileCode, Keyboard, X, TerminalSquare } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { settingsTabAtom, channelFormDirtyAtom, settingsCloseRequestedAtom } from "@/atoms/settings-tab";
 import type { SettingsTab } from "@/atoms/settings-tab";
@@ -20,6 +20,7 @@ import {
 import { ChannelSettings } from "./ChannelSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { EnvironmentSettings } from "./EnvironmentSettings";
 import { AboutSettings } from "./AboutSettings";
 import { AgentSettings } from "./AgentSettings";
 import { PromptSettings } from "./PromptSettings";
@@ -34,6 +35,7 @@ interface TabItem { id: SettingsTab; label: string; icon: React.ReactNode }
 const BASE_TABS: TabItem[] = [
   { id: "general", label: "通用设置", icon: <Settings size={16} /> },
   { id: "channels", label: "模型配置", icon: <Radio size={16} /> },
+  { id: "environment", label: "环境配置", icon: <TerminalSquare size={16} /> },
   { id: "prompts", label: "提示词管理", icon: <BookOpen size={16} /> },
   { id: "alias", label: "别名管理", icon: <Link size={16} /> },
   { id: "hooks", label: "钩子管理", icon: <Webhook size={16} /> },
@@ -78,6 +80,7 @@ function renderTabContent(tab: SettingsTab): React.ReactElement {
     case "hooks": content = <HooksSettings />; break;
     case "shortcuts": content = <ShortcutSettings />; break;
     case "yaml": content = <YamlConfigSettings />; break;
+    case "environment": content = <EnvironmentSettings />; break;
     case "appearance": content = <AppearanceSettings />; break;
     case "about": content = <AboutSettings />; break;
     default: content = <GeneralSettings />;

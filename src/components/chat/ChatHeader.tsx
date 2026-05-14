@@ -5,13 +5,13 @@
  */
 
 import * as React from 'react'
-import { useAtomValue, useSetAtom } from 'jotai'
-import { Pencil, Check, X, Pin, Columns2 } from 'lucide-react'
+import { useSetAtom } from 'jotai'
+import { Pencil, Check, X, Pin } from 'lucide-react'
 import { conversationsAtom } from '@/atoms/chat-atoms'
-import { agentSidePanelOpenMapAtom, sessionSidePanelOpenAtom } from '@/atoms/agent-atoms'
 import type { ConversationMeta } from '@jgui/shared'
 import { SystemPromptSelector } from './SystemPromptSelector'
 import { MigrateToAgentButton } from './MigrateToAgentButton'
+import { RightSidePanelToggleButton } from '@/components/app-shell/RightSidePanelToggleButton'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -27,11 +27,9 @@ export function ChatHeader({
   canMigrateToAgent = false,
 }: ChatHeaderProps): React.ReactElement | null {
   const setConversations = useSetAtom(conversationsAtom)
-  const setSidePanelOpenMap = useSetAtom(agentSidePanelOpenMapAtom)
   const [editing, setEditing] = React.useState(false)
   const [editTitle, setEditTitle] = React.useState('')
   const inputRef = React.useRef<HTMLInputElement>(null)
-  const sidePanelOpen = useAtomValue(sessionSidePanelOpenAtom(conversation?.id ?? '__missing__'))
 
   if (!conversation) return null
 
@@ -122,7 +120,11 @@ export function ChatHeader({
       <div className="flex items-center gap-1 titlebar-no-drag ml-auto">
         <SystemPromptSelector />
         {canMigrateToAgent && (
-          <MigrateToAgentButton conversationId={conversation.id} />
+          <MigrateToAgentButton
+            conversationId={conversation.id}
+            variant="headerIcon"
+            className="h-8 w-8 rounded-xl text-foreground/70 hover:bg-accent hover:text-accent-foreground"
+          />
         )}
         <Tooltip>
           <TooltipTrigger asChild>
@@ -130,39 +132,23 @@ export function ChatHeader({
               type="button"
               variant="ghost"
               size="icon"
-              className={cn('h-7 w-7', conversation.pinned && 'bg-accent text-accent-foreground')}
+              aria-label={conversation.pinned ? '取消置顶' : '置顶对话'}
+              onMouseDown={(event) => event.preventDefault()}
+              className={cn(
+                'h-8 w-8 rounded-xl text-foreground/70 hover:bg-accent hover:text-accent-foreground',
+                conversation.pinned && 'bg-accent text-accent-foreground',
+              )}
               onClick={async () => {
                 const updated = await ipc.togglePinConversation(conversation.id)
                 setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
               }}
             >
-              <Pin className="size-3.5" />
+              <Pin className="size-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom"><p>{conversation.pinned ? '取消置顶' : '置顶对话'}</p></TooltipContent>
         </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="切换右侧工作区"
-              className={cn('h-7 w-7', sidePanelOpen && 'bg-accent text-accent-foreground')}
-              onClick={() => {
-                // Chat 没有并排正文模式了，这个按钮现在只负责切右侧文件工作区。
-                setSidePanelOpenMap((prev) => {
-                  const map = new Map(prev)
-                  map.set(conversation.id, !sidePanelOpen)
-                  return map
-                })
-              }}
-            >
-              <Columns2 className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom"><p>{sidePanelOpen ? '关闭右侧工作区' : '打开右侧工作区'}</p></TooltipContent>
-        </Tooltip>
+        <RightSidePanelToggleButton sessionId={conversation.id} />
       </div>
     </div>
   )

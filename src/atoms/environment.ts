@@ -71,8 +71,17 @@ export const hasEnvironmentIssuesAtom = atom((get) => {
 export const isShellEnvironmentOkAtom = atom((get) => {
   const runtime = get(runtimeStatusAtom)
   if (!runtime) return true
-  if (!runtime.shell) return true // 非 Windows
-  return !!(runtime.shell.gitBash?.available || runtime.shell.wsl?.available)
+  const shell = runtime.shell
+  if (shell.current?.available) return true
+  if (shell.platform === 'win32') {
+    return !!(
+      shell.windows?.gitBash?.available ||
+      shell.windows?.wsl?.available ||
+      shell.windows?.powershell?.available ||
+      shell.windows?.cmd?.available
+    )
+  }
+  return !!shell.posix?.candidates?.some(candidate => candidate.available)
 })
 
 /**

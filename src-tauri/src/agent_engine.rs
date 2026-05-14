@@ -22,11 +22,13 @@ use agent_engine_events::{json_stream_msg_to_agent_events, parse_sdk_line};
 #[path = "agent_engine_runtime.rs"]
 mod agent_engine_runtime;
 #[cfg(test)]
+/// 测试中复用的时间线投影辅助函数。
 pub(crate) use agent_engine_runtime::timeline_items_from_event;
 use agent_engine_runtime::{forward_cli_event, persist_sdk_session_id, which_claude};
 #[path = "agent_engine_cli.rs"]
 mod agent_engine_cli;
 #[cfg(test)]
+/// 测试中复用的 CLI 参数与启动期分析辅助函数。
 pub(crate) use agent_engine_cli::{
     build_claude_args, cli_events_show_visible_progress, cli_startup_error_from_events,
 };
@@ -39,6 +41,7 @@ const CLI_STARTUP_SUPERVISOR_TIMEOUT_MS: u64 = 3_000;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "event", content = "data", rename_all = "camelCase")]
+/// 前端可订阅的 Agent 事件流。
 pub enum AgentEvent {
     AssistantContent {
         text: String,
@@ -109,6 +112,7 @@ pub struct AgentEngine {
     transcript_path: PathBuf,
 }
 
+/// 启动 Claude CLI 后端所需的参数。
 pub(crate) struct AgentCliStartParams {
     pub on_event: Channel<AgentEvent>,
     pub permission_mode: String,
@@ -121,6 +125,7 @@ pub(crate) struct AgentCliStartParams {
     pub initial_user_message: Option<String>,
 }
 
+/// 启动进程内 j-agent 后端所需的参数。
 pub(crate) struct AgentJStartParams {
     pub kernel: Arc<dyn ChatKernel>,
     pub on_event: Channel<AgentEvent>,
@@ -346,6 +351,7 @@ impl AgentEngine {
     }
 
     #[cfg(test)]
+    /// 创建一个仅用于测试的空壳 AgentEngine。
     pub(crate) fn test_stub(session_id: &str, backend: AgentBackend) -> Self {
         Self {
             backend,

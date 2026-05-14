@@ -1,4 +1,5 @@
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// 启动期错误对应的恢复动作。
 pub enum RecoveryAction {
     RetrySameResume,
     RetryWithoutResume,
@@ -6,6 +7,7 @@ pub enum RecoveryAction {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// 启动期错误分类后的恢复决策。
 pub struct RecoveryDecision {
     pub action: RecoveryAction,
     pub reason: String,

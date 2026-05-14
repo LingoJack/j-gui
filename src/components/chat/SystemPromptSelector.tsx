@@ -45,7 +45,8 @@ export function SystemPromptSelector(): React.ReactElement {
         <button
           type="button"
           title={tooltipText}
-          className="inline-flex items-center justify-center h-7 w-7 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+          onMouseDown={(event) => event.preventDefault()}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-sm font-medium text-foreground/70 transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           <BookOpen className="size-4" />
         </button>

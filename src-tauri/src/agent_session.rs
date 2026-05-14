@@ -14,7 +14,9 @@ mod agent_session_storage;
 #[path = "agent_storage_guard.rs"]
 mod agent_storage_guard;
 use agent_session_meta::AgentSessionMetaRecord;
+/// 创建 Agent 会话时使用的元数据输入。
 pub(crate) use agent_session_meta::CreateSessionMetaInput;
+/// Agent 时间线与 SDK 消息之间的转换与搜索能力。
 pub use agent_session_replay::{search_agent_session_messages, timeline_to_sdk_messages};
 use agent_session_storage::{
     append_timeline_item_with_lock, delete_session_dir, infer_title_from_transcript, read_timeline,
@@ -37,6 +39,7 @@ fn agent_test_data_dir_override() -> &'static Mutex<Option<PathBuf>> {
 }
 
 #[cfg(test)]
+/// 测试期间临时重定向 Agent 数据目录的守卫。
 pub(crate) struct TestEnvGuard {
     _lock: std::sync::MutexGuard<'static, ()>,
     root: PathBuf,
@@ -44,6 +47,7 @@ pub(crate) struct TestEnvGuard {
 
 #[cfg(test)]
 impl TestEnvGuard {
+    /// 创建一套隔离的 Agent 测试数据目录，并在退出时自动清理。
     pub(crate) fn new(slug: &str) -> Self {
         let lock = agent_test_env_lock()
             .lock()
@@ -81,6 +85,7 @@ impl Drop for TestEnvGuard {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Agent 会话时间线中的一条记录。
 pub struct AgentTimelineItem {
     pub id: String,
     pub kind: String,
@@ -92,6 +97,7 @@ pub struct AgentTimelineItem {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 工具调用的快照信息。
 pub struct ToolCallSnapshot {
     pub tool_id: String,
     pub tool_name: String,
@@ -102,6 +108,7 @@ pub struct ToolCallSnapshot {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 中断请求的快照信息。
 pub struct InterruptSnapshot {
     pub interrupt_id: String,
     pub kind: String,
@@ -112,6 +119,7 @@ pub struct InterruptSnapshot {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Agent 会话列表项的前端返回结构。
 pub struct AgentSessionInfo {
     pub id: String,
     pub title: Option<String>,
@@ -145,6 +153,7 @@ pub struct AgentSessionInfo {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Agent 会话消息搜索结果。
 pub struct AgentMessageSearchResult {
     pub session_id: String,
     pub session_title: String,
@@ -156,6 +165,7 @@ pub struct AgentMessageSearchResult {
     pub archived: bool,
 }
 
+/// 校验 Agent 会话 ID 是否符合当前持久化格式。
 pub(crate) fn validate_session_id(id: &str) -> Result<(), String> {
     if id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') && !id.is_empty() {
         Ok(())

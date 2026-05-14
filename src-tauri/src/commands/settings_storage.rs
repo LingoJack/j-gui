@@ -128,6 +128,7 @@ fn collect_bucket(path: PathBuf) -> Result<StorageBucketStats, String> {
     })
 }
 
+/// 统计 GUI 自管目录（会话、附件、工作区、临时目录）的存储占用。
 pub(crate) fn get_storage_stats() -> Result<StorageStats, String> {
     Ok(StorageStats {
         agent_sessions: collect_bucket(crate::agent_session::agent_sessions_dir())?,

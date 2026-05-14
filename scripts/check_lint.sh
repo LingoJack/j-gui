@@ -416,15 +416,18 @@ while IFS= read -r f; do
             }
             if (opened && depth <= 0) {
                 len = NR - start + 1
-                if (len > max) printf "  WARN %s — %s (%d 行)\n", file, name, len
+                if (len > max) printf "%s — %s (%d 行)\n", file, name, len
                 next
             }
         } while (getline > 0)
     }
     ' "$f")
     if [[ -n "$result" ]]; then
-        echo "$result"
-        ((fn_warn++)) || true
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            warn "$line"
+            ((fn_warn++)) || true
+        done <<< "$result"
     fi
 done < <(all_rs)
 if (( fn_warn == 0 )); then
@@ -644,21 +647,28 @@ if (( super_warn == 0 )); then
     pass "未发现 super::super:: 过度层级引用"
 fi
 
-# D8. 公共 API 文档注释
-hdr "=== D8. 公共 API 文档注释 (pub fn/struct/enum/trait 需要 ///) ==="
+# D8. 导出 API 文档注释
+hdr "=== D8. 导出 API 文档注释 (导出 Rust item/re-export 需要 ///) ==="
 undoc_count=0
 while IFS= read -r f; do
     rel="${f#$PROJECT_ROOT/}"
     undoc=$(awk '
     /\/\/\// { prev_doc=1; next }
-    /^#\[/   { prev_attr=1; next }
-    /^[[:space:]]*(pub\s+)(async\s+)?(fn|struct|enum|trait)\s+/ {
-        if (!prev_doc && !prev_attr) {
+    /^[[:space:]]*#\[/ {
+        if (prev_doc) doc_before_attrs=1
+        next
+    }
+    /^[[:space:]]*pub(\([^)]*\))?[[:space:]]+((unsafe|async)[[:space:]]+)*(fn|struct|enum|trait|mod|const|static|type|use)\s+/ {
+        if (!prev_doc && !doc_before_attrs) {
             line = $0; sub(/^[[:space:]]+/, "", line)
             printf "      %d: %s\n", NR, line
         }
+        prev_doc=0
+        doc_before_attrs=0
+        next
     }
-    { prev_doc=0; prev_attr=0 }
+    /^[[:space:]]*$/ { prev_doc=0; doc_before_attrs=0; next }
+    { prev_doc=0; doc_before_attrs=0 }
     ' "$f")
     if [[ -n "$undoc" ]]; then
         warn "$rel — 缺少文档注释:"

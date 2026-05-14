@@ -24,11 +24,7 @@ import {
   StreamingIndicator,
   MessageAttachments,
 } from '@/components/ai-elements/message'
-import {
-  Reasoning,
-  ReasoningTrigger,
-  ReasoningContent,
-} from '@/components/ai-elements/reasoning'
+import { ChatReasoningBlock } from './ChatReasoningBlock'
 import { CopyButton } from './CopyButton'
 import { MigrateToAgentButton } from './MigrateToAgentButton'
 import { DeleteMessageDialog } from './DeleteMessageDialog'
@@ -182,13 +178,10 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
 
               {/* 推理折叠区域 */}
               {message.reasoning && (
-                <Reasoning
+                <ChatReasoningBlock
+                  reasoning={message.reasoning}
                   isStreaming={isStreaming && !message.content}
-                  defaultOpen={isStreaming && !message.content}
-                >
-                  <ReasoningTrigger />
-                  <ReasoningContent>{message.reasoning}</ReasoningContent>
-                </Reasoning>
+                />
               )}
 
               {/* 内容区域 */}

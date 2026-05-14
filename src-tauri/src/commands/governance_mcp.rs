@@ -6,6 +6,7 @@ use crate::kernel::JcliAdapter;
 use std::path::Path;
 use std::sync::Arc;
 
+/// 读取指定工作区的 MCP 配置。
 pub(crate) fn get_workspace_mcp_config(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     workspace_slug: String,
@@ -31,6 +32,7 @@ pub(crate) fn get_workspace_mcp_config(
     })
 }
 
+/// 保存指定工作区的 MCP 配置。
 pub(crate) fn save_workspace_mcp_config(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     workspace_slug: String,
@@ -57,6 +59,7 @@ pub(crate) fn save_workspace_mcp_config(
         .map_err(|e| e.to_string())
 }
 
+/// 组合指定工作区的 Skill 与 MCP 能力视图。
 pub(crate) fn get_workspace_capabilities(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     workspace_slug: String,
@@ -114,6 +117,7 @@ fn build_workspace_capabilities(
     }
 }
 
+/// 对一条 MCP 服务配置做基础可用性测试。
 pub(crate) fn test_mcp_server(
     name: String,
     entry: serde_json::Value,

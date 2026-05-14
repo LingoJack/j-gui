@@ -13,6 +13,7 @@ fn ensure_session_exists(session_id: &str) -> Result<(), String> {
     }
 }
 
+/// 更新会话 meta.json 的指定字段，并同步刷新更新时间。
 pub(crate) fn update_session_meta_fields(
     session_id: &str,
     updates: impl FnOnce(&mut serde_json::Value),
@@ -35,6 +36,7 @@ pub(crate) fn update_session_meta_fields(
     Ok(meta)
 }
 
+/// 将内核会话摘要与本地 meta 合并成前端会话结构。
 pub(crate) fn load_merged_session_info(
     chat_kernel: &dyn ChatKernel,
     session_id: &str,
@@ -49,6 +51,7 @@ pub(crate) fn load_merged_session_info(
     Ok(merge_session_info(summary, meta))
 }
 
+/// 读取会话 meta；缺失时使用默认值后合并摘要。
 pub(crate) fn merged_info_with_fallback(
     chat_kernel: &dyn ChatKernel,
     session_id: &str,

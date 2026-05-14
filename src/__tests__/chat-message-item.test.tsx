@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { ChatMessageItem } from '@/components/chat/ChatMessageItem'
-import { channelsAtom } from '@/atoms/chat-atoms'
+import { channelsAtom, thinkingExpandedAtom } from '@/atoms/chat-atoms'
 
 vi.mock('@/components/chat/CopyButton', () => ({
   CopyButton: () => <div data-testid="copy-button" />,
@@ -57,5 +57,51 @@ describe('ChatMessageItem branding fallback', () => {
     )
 
     expect(screen.getByText('DeepSeek')).toBeInTheDocument()
+  })
+
+  it('shows a textual reasoning expand toggle for assistant thinking content', () => {
+    const store = createStore()
+    store.set(channelsAtom, [])
+
+    render(
+      <Provider store={store}>
+        <ChatMessageItem
+          message={{
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '最终回答',
+            reasoning: '先分析问题',
+            createdAt: Date.now(),
+          }}
+        />
+      </Provider>,
+    )
+
+    expect(screen.getByRole('button', { name: /思考内容/ })).toBeInTheDocument()
+    expect(screen.getByText('展开思考')).toBeInTheDocument()
+  })
+
+  it('honors the global thinking expanded preference in Chat reasoning blocks', () => {
+    const store = createStore()
+    store.set(channelsAtom, [])
+    store.set(thinkingExpandedAtom, true)
+
+    render(
+      <Provider store={store}>
+        <ChatMessageItem
+          message={{
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '最终回答',
+            reasoning: '先分析问题',
+            createdAt: Date.now(),
+          }}
+        />
+      </Provider>,
+    )
+
+    expect(screen.getByRole('button', { name: /思考内容/ })).toBeInTheDocument()
+    expect(screen.getByText('收起')).toBeInTheDocument()
+    expect(screen.getByText('先分析问题')).toBeInTheDocument()
   })
 })

@@ -24,6 +24,7 @@ const getUserProfileMock = vi.fn(async () => ({
   userName: 'Tester',
   avatar: '',
 }))
+const sessionListRenderMock = vi.hoisted(() => vi.fn())
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
@@ -51,14 +52,17 @@ vi.mock('@/components/agent/MoveSessionDialog', () => ({
 
 vi.mock('@/components/app-shell/SessionListItems', () => ({
   groupByDate: (items: unknown[]) => [{ label: '今天', items }],
-  SessionListItems: ({ onToggleSessionSelection }: { onToggleSessionSelection: (id: string) => void }) => (
-    <div data-testid="session-list-items">
-      <div className="session-item-selected">当前选中项</div>
-      <button type="button" onClick={() => onToggleSessionSelection('chat-1')}>
-        选择第一项
-      </button>
-    </div>
-  ),
+  SessionListItems: ({ onToggleSessionSelection }: { onToggleSessionSelection: (id: string) => void }) => {
+    sessionListRenderMock()
+    return (
+      <div data-testid="session-list-items">
+        <div className="session-item-selected">当前选中项</div>
+        <button type="button" onClick={() => onToggleSessionSelection('chat-1')}>
+          选择第一项
+        </button>
+      </div>
+    )
+  },
 }))
 
 vi.mock('@/hooks/useOpenSession', () => ({
@@ -86,6 +90,7 @@ describe('LeftSidebar selection actions', () => {
     listConversationsMock.mockClear()
     listAgentSessionsMock.mockClear()
     getUserProfileMock.mockClear()
+    sessionListRenderMock.mockClear()
     Object.defineProperty(Element.prototype, 'scrollIntoView', {
       configurable: true,
       value: vi.fn(),
@@ -127,7 +132,7 @@ describe('LeftSidebar selection actions', () => {
     await waitFor(() => expect(deleteConversationMock).toHaveBeenCalledWith('chat-1'))
   })
 
-  it('unmounts SessionListItems when the sidebar is collapsed', async () => {
+  it('keeps SessionListItems mounted when the sidebar is collapsed', async () => {
     const store = createStore()
     store.set(appModeAtom, 'chat')
     store.set(sidebarCollapsedAtom, true)
@@ -140,7 +145,35 @@ describe('LeftSidebar selection actions', () => {
       </Provider>,
     )
 
-    await waitFor(() => expect(screen.queryByTestId('session-list-items')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('session-list-items')).toBeInTheDocument())
+  })
+
+  it('animates the sidebar slot width while clipping the expanded content', () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(sidebarCollapsedAtom, true)
+
+    const { container } = render(
+      <Provider store={store}>
+        <TooltipProvider>
+          <LeftSidebar />
+        </TooltipProvider>
+      </Provider>,
+    )
+
+    const sidebar = container.firstElementChild
+    expect(sidebar).toHaveStyle({ width: '48px', minWidth: '48px' })
+    const expandedContent = sidebar?.querySelector('[data-sidebar-expanded-content="true"]')
+    expect(expandedContent).toHaveClass('-translate-x-2')
+    expect(expandedContent).toHaveStyle({ width: '280px' })
+    expect(expandedContent).not.toHaveClass('transition-[clip-path,opacity,transform]')
+
+    act(() => {
+      store.set(sidebarCollapsedAtom, false)
+    })
+
+    expect(sidebar).toHaveStyle({ width: '280px', minWidth: '280px' })
+    expect(expandedContent).toHaveClass('translate-x-0')
   })
 
   it('scrolls the selected item back into view when the sidebar re-expands', async () => {
@@ -165,18 +198,17 @@ describe('LeftSidebar selection actions', () => {
     await act(async () => {
       store.set(sidebarCollapsedAtom, true)
     })
-    await waitFor(() => expect(screen.queryByTestId('session-list-items')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('session-list-items')).toBeInTheDocument())
 
     await act(async () => {
       store.set(sidebarCollapsedAtom, false)
     })
-    await sleep(230)
 
     await waitFor(() => expect(screen.getByTestId('session-list-items')).toBeInTheDocument())
     await waitFor(() => expect(scrollIntoViewMock).toHaveBeenCalled())
   })
 
-  it('defers mounting SessionListItems until the expand transition finishes', async () => {
+  it('keeps SessionListItems available while the sidebar re-expands', async () => {
     const store = createStore()
     store.set(appModeAtom, 'chat')
     store.set(sidebarCollapsedAtom, true)
@@ -189,22 +221,17 @@ describe('LeftSidebar selection actions', () => {
       </Provider>,
     )
 
-    expect(screen.queryByTestId('session-list-items')).not.toBeInTheDocument()
+    expect(screen.getByTestId('session-list-items')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '展开侧边栏' }))
 
-    expect(screen.queryByTestId('session-list-items')).not.toBeInTheDocument()
-    await sleep(120)
-    expect(screen.queryByTestId('session-list-items')).not.toBeInTheDocument()
-
-    await sleep(120)
     await waitFor(() => expect(screen.getByTestId('session-list-items')).toBeInTheDocument())
   })
 
-  it('cancels delayed mounting when the sidebar is collapsed again before the reveal finishes', async () => {
+  it('does not rerender the expanded session list when only collapsed state changes', async () => {
     const store = createStore()
     store.set(appModeAtom, 'chat')
-    store.set(sidebarCollapsedAtom, true)
+    store.set(sidebarCollapsedAtom, false)
 
     render(
       <Provider store={store}>
@@ -214,12 +241,68 @@ describe('LeftSidebar selection actions', () => {
       </Provider>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '展开侧边栏' }))
-    await sleep(40)
-    fireEvent.click(screen.getByRole('button', { name: '收起侧边栏' }))
+    await waitFor(() => expect(screen.getByTestId('session-list-items')).toBeInTheDocument())
+    sessionListRenderMock.mockClear()
 
-    await sleep(260)
-    expect(screen.queryByTestId('session-list-items')).not.toBeInTheDocument()
+    await act(async () => {
+      store.set(sidebarCollapsedAtom, true)
+    })
+
+    expect(screen.getByTestId('session-list-items')).toBeInTheDocument()
+    expect(sessionListRenderMock).not.toHaveBeenCalled()
+
+    await act(async () => {
+      store.set(sidebarCollapsedAtom, false)
+    })
+
+    expect(screen.getByTestId('session-list-items')).toBeInTheDocument()
+    expect(sessionListRenderMock).not.toHaveBeenCalled()
+  })
+
+  it('moves focus to the collapsed rail trigger when collapsing from the expanded header', async () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(sidebarCollapsedAtom, false)
+
+    render(
+      <Provider store={store}>
+        <TooltipProvider>
+          <LeftSidebar />
+        </TooltipProvider>
+      </Provider>,
+    )
+
+    const collapseButton = screen.getByRole('button', { name: '收起侧边栏' })
+    collapseButton.focus()
+    expect(document.activeElement).toBe(collapseButton)
+
+    fireEvent.click(collapseButton)
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: '展开侧边栏' })))
+  })
+
+  it('moves focus out of the expanded content when the sidebar is collapsed externally', async () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(sidebarCollapsedAtom, false)
+
+    render(
+      <Provider store={store}>
+        <TooltipProvider>
+          <LeftSidebar />
+        </TooltipProvider>
+      </Provider>,
+    )
+
+    const collapseButton = screen.getByRole('button', { name: '收起侧边栏' })
+    collapseButton.focus()
+    expect(document.activeElement).toBe(collapseButton)
+
+    await act(async () => {
+      store.set(sidebarCollapsedAtom, true)
+    })
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: '展开侧边栏' })))
   })
 
   it('initializes the agent top split height after expanding from collapsed mode', async () => {
@@ -260,8 +343,6 @@ describe('LeftSidebar selection actions', () => {
       )
 
       fireEvent.click(screen.getByRole('button', { name: '展开侧边栏' }))
-      await sleep(240)
-
       await waitFor(() => expect(store.get(agentSidebarTopHeightAtom)).toBe(160))
     } finally {
       Object.defineProperty(HTMLDivElement.prototype, 'getBoundingClientRect', {

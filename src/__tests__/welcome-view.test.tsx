@@ -36,8 +36,9 @@ describe('WelcomeView', () => {
     renderWelcome('chat')
 
     expect(screen.getByRole('button', { name: '新建 Chat 对话' })).toBeInTheDocument()
-    expect(screen.getByAltText('j-gui')).toBeInTheDocument()
     expect(screen.getByTestId('welcome-bottom-dock')).toHaveClass('pb-2')
+    expect(screen.queryByText('工作台已就绪')).not.toBeInTheDocument()
+    expect(screen.queryByText('从左上角切换 Chat 或 Agent，正文只保留当前可执行的入口，不再重复堆模式说明。')).not.toBeInTheDocument()
     expect(screen.queryByText('下一步')).not.toBeInTheDocument()
     expect(screen.queryByText('常用入口')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '新建 Chat 对话' }))

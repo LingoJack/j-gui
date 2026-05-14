@@ -4,6 +4,7 @@ use crate::agent_session::{self, AgentTimelineItem, ToolCallSnapshot};
 const LOG_LINE_TRUNCATE_SDK: usize = 200;
 const LOG_LINE_TRUNCATE_UNKNOWN: usize = 120;
 
+/// 解析一行 stream-json SDK 输出，并映射为前端 Agent 事件。
 pub(super) fn parse_sdk_line(line: &str) -> Vec<AgentEvent> {
     let value: serde_json::Value = match serde_json::from_str(line) {
         Ok(value) => value,

@@ -2,10 +2,12 @@ use crate::commands::settings::{
     load_workspaces, save_workspaces, AgentWorkspaceInfo, UpdateAgentWorkspaceInput,
 };
 
+/// 列出全部 Agent 工作区。
 pub(crate) fn list_agent_workspaces() -> Result<Vec<AgentWorkspaceInfo>, String> {
     Ok(load_workspaces())
 }
 
+/// 创建一个新的 Agent 工作区。
 pub(crate) fn create_agent_workspace(name: String) -> Result<AgentWorkspaceInfo, String> {
     let mut workspaces = load_workspaces();
     let slug = name.to_lowercase().replace(' ', "-");
@@ -16,6 +18,7 @@ pub(crate) fn create_agent_workspace(name: String) -> Result<AgentWorkspaceInfo,
     Ok(ws)
 }
 
+/// 更新一个已有 Agent 工作区。
 pub(crate) fn update_agent_workspace(
     id: String,
     updates: UpdateAgentWorkspaceInput,
@@ -37,12 +40,14 @@ pub(crate) fn update_agent_workspace(
     Ok(updated)
 }
 
+/// 删除一个 Agent 工作区。
 pub(crate) fn delete_agent_workspace(id: String) -> Result<(), String> {
     let mut workspaces = load_workspaces();
     workspaces.retain(|w| w.id != id);
     save_workspaces(&workspaces)
 }
 
+/// 按给定顺序重排 Agent 工作区。
 pub(crate) fn reorder_agent_workspaces(
     ordered_ids: Vec<String>,
 ) -> Result<Vec<AgentWorkspaceInfo>, String> {

@@ -8,26 +8,28 @@
 import * as React from 'react'
 import { useAtomValue } from 'jotai'
 import { appModeAtom } from '@/atoms/app-mode'
-import { currentAgentSessionIdAtom, agentSessionPathMapAtom } from '@/atoms/agent-atoms'
-import { currentConversationIdAtom } from '@/atoms/chat-atoms'
+import { agentSessionPathMapAtom } from '@/atoms/agent-atoms'
 import { SidePanel } from '@/components/agent/SidePanel'
 
-export function RightSidePanel(): React.ReactElement | null {
+interface RightSidePanelProps {
+  /** 当前激活 tab 的会话 ID，避免右侧内容和 AppShell 顶层按钮读到不同来源。 */
+  sessionId: string
+}
+
+export function RightSidePanel({ sessionId }: RightSidePanelProps): React.ReactElement | null {
   const appMode = useAtomValue(appModeAtom)
-  const currentSessionId = useAtomValue(currentAgentSessionIdAtom)
-  const currentConversationId = useAtomValue(currentConversationIdAtom)
   const sessionPathMap = useAtomValue(agentSessionPathMapAtom)
 
-  if (appMode === 'agent' && currentSessionId) {
-    const sessionPath = sessionPathMap.get(currentSessionId) ?? null
+  if (appMode === 'agent') {
+    const sessionPath = sessionPathMap.get(sessionId) ?? null
     return (
-      <SidePanel sessionId={currentSessionId} sessionPath={sessionPath} mode="agent" />
+      <SidePanel sessionId={sessionId} sessionPath={sessionPath} mode="agent" />
     )
   }
 
-  if (appMode === 'chat' && currentConversationId) {
+  if (appMode === 'chat') {
     return (
-      <SidePanel sessionId={currentConversationId} sessionPath={null} mode="chat" />
+      <SidePanel sessionId={sessionId} sessionPath={null} mode="chat" />
     )
   }
 

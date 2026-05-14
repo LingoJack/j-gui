@@ -72,7 +72,7 @@ export function GlobalShortcuts(): null {
   const channelFormDirty = useAtomValue(channelFormDirtyAtom);
   const setSettingsCloseRequested = useSetAtom(settingsCloseRequestedAtom);
   const [searchOpen, setSearchOpen] = useAtom(searchDialogOpenAtom);
-  const [, setSidebarCollapsed] = useAtom(sidebarCollapsedAtom);
+  const setSidebarCollapsed = useSetAtom(sidebarCollapsedAtom);
   const setShortcutOverrides = useSetAtom(shortcutOverridesAtom);
   const shortcutOverrides = useAtomValue(shortcutOverridesAtom);
   const setSendWithCmdEnter = useSetAtom(sendWithCmdEnterAtom);

@@ -1,6 +1,7 @@
 use crate::kernel::types::KernelFileAttachment;
 use serde::{Deserialize, Serialize};
 
+/// 解析可空布尔字段，兼容缺失与显式 null。
 pub(super) fn parse_optional_bool(
     value: Option<&serde_json::Value>,
 ) -> Result<Option<bool>, String> {
@@ -11,6 +12,7 @@ pub(super) fn parse_optional_bool(
     }
 }
 
+/// 解析上下文裁剪轮数配置。
 pub(super) fn parse_context_length(
     value: Option<&serde_json::Value>,
 ) -> Result<Option<usize>, String> {
@@ -35,6 +37,7 @@ pub(super) fn parse_context_length(
     }
 }
 
+/// 解析上下文分隔点列表。
 pub(super) fn parse_context_dividers(
     value: Option<&serde_json::Value>,
 ) -> Result<Vec<String>, String> {
@@ -53,6 +56,7 @@ pub(super) fn parse_context_dividers(
     }
 }
 
+/// 解析并校验当前支持的图片附件列表。
 pub(super) fn parse_image_attachments(
     value: Option<&serde_json::Value>,
 ) -> Result<Vec<KernelFileAttachment>, String> {
@@ -85,6 +89,7 @@ pub(super) fn parse_image_attachments(
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 前端发送聊天消息时提交的完整请求。
 pub struct SendMessageRequest {
     pub session_id: String,
     pub content: String,
@@ -101,6 +106,7 @@ pub struct SendMessageRequest {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
+/// Chat 流式通道中的事件类型。
 pub enum ChatEvent {
     Chunk { index: u32, delta: String },
     Reasoning { index: u32, delta: String },
@@ -110,6 +116,7 @@ pub enum ChatEvent {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 单条聊天消息的前端返回结构。
 pub struct MessageInfo {
     pub id: String,
     pub role: String,
@@ -124,6 +131,7 @@ pub struct MessageInfo {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 聊天会话列表项的前端返回结构。
 pub struct SessionInfo {
     pub id: String,
     pub title: Option<String>,
@@ -144,6 +152,7 @@ pub struct SessionInfo {
 
 #[derive(Clone, Serialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
+/// 聊天消息搜索结果。
 pub struct MessageSearchResult {
     pub conversation_id: String,
     pub conversation_title: String,
@@ -158,6 +167,7 @@ pub struct MessageSearchResult {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// “引用聊天上下文”功能返回的提示词上下文。
 pub struct ChatReferenceContext {
     pub conversation_id: String,
     pub conversation_title: String,

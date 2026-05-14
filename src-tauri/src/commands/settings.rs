@@ -18,6 +18,7 @@ mod settings_system_prompts;
 use settings_agent_workspaces as workspace_commands;
 use settings_environment as environment_commands;
 use settings_storage as storage_commands;
+/// 系统提示词配置相关的导出类型。
 pub use settings_system_prompts::{
     CreateSystemPromptInput, SystemPromptConfig, SystemPromptEntry, UpdateSystemPromptInput,
 };
@@ -38,6 +39,7 @@ fn user_profile_path() -> PathBuf {
     p
 }
 
+/// 返回 GUI 设置文件所在目录。
 pub(crate) fn dirs_next() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
@@ -59,6 +61,7 @@ pub(crate) fn dirs_next() -> Option<PathBuf> {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+/// GUI 自管设置结构。
 pub struct GuiSettings {
     #[serde(default = "default_theme_mode")]
     pub theme_mode: String,
@@ -150,6 +153,7 @@ impl Default for GuiSettings {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+/// GUI 侧用户资料结构。
 pub struct UserProfile {
     #[serde(default = "default_user_name")]
     pub user_name: String,
@@ -222,11 +226,13 @@ fn save_user_profile(profile: &UserProfile) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// 读取 GUI 自管设置。
 pub fn get_settings() -> Result<GuiSettings, String> {
     Ok(load_settings())
 }
 
 #[tauri::command]
+/// 按补丁方式更新 GUI 自管设置。
 pub fn update_settings(
     app: tauri::AppHandle,
     updates: serde_json::Value,
@@ -235,11 +241,13 @@ pub fn update_settings(
 }
 
 #[tauri::command]
+/// 读取 GUI 侧用户资料。
 pub fn get_user_profile() -> Result<UserProfile, String> {
     Ok(load_user_profile())
 }
 
 #[tauri::command]
+/// 更新 GUI 侧用户资料。
 pub fn update_user_profile(updates: serde_json::Value) -> Result<UserProfile, String> {
     settings_general::apply_user_profile_updates(load_user_profile(), updates)
 }
@@ -250,6 +258,7 @@ pub fn update_user_profile(updates: serde_json::Value) -> Result<UserProfile, St
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Agent 工作区列表项。
 pub struct AgentWorkspaceInfo {
     pub id: String,
     pub name: String,
@@ -266,6 +275,7 @@ fn default_workspace() -> AgentWorkspaceInfo {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 更新 Agent 工作区时的请求体。
 pub struct UpdateAgentWorkspaceInput {
     pub name: String,
 }
@@ -276,6 +286,7 @@ fn workspaces_path() -> PathBuf {
     p
 }
 
+/// 读取本地保存的 Agent 工作区列表；空时会自动初始化默认工作区。
 pub(crate) fn load_workspaces() -> Vec<AgentWorkspaceInfo> {
     let path = workspaces_path();
     let mut workspaces = if path.exists() {
@@ -295,6 +306,7 @@ pub(crate) fn load_workspaces() -> Vec<AgentWorkspaceInfo> {
     workspaces
 }
 
+/// 覆盖保存 Agent 工作区列表。
 pub(crate) fn save_workspaces(workspaces: &[AgentWorkspaceInfo]) -> Result<(), String> {
     let path = workspaces_path();
     if let Some(parent) = path.parent() {
@@ -305,16 +317,19 @@ pub(crate) fn save_workspaces(workspaces: &[AgentWorkspaceInfo]) -> Result<(), S
 }
 
 #[tauri::command]
+/// 列出全部 Agent 工作区。
 pub fn list_agent_workspaces() -> Result<Vec<AgentWorkspaceInfo>, String> {
     workspace_commands::list_agent_workspaces()
 }
 
 #[tauri::command]
+/// 创建一个新的 Agent 工作区。
 pub fn create_agent_workspace(name: String) -> Result<AgentWorkspaceInfo, String> {
     workspace_commands::create_agent_workspace(name)
 }
 
 #[tauri::command]
+/// 更新一个已有 Agent 工作区。
 pub fn update_agent_workspace(
     id: String,
     updates: UpdateAgentWorkspaceInput,
@@ -323,11 +338,13 @@ pub fn update_agent_workspace(
 }
 
 #[tauri::command]
+/// 删除一个 Agent 工作区。
 pub fn delete_agent_workspace(id: String) -> Result<(), String> {
     workspace_commands::delete_agent_workspace(id)
 }
 
 #[tauri::command]
+/// 按给定顺序重排 Agent 工作区。
 pub fn reorder_agent_workspaces(
     ordered_ids: Vec<String>,
 ) -> Result<Vec<AgentWorkspaceInfo>, String> {
@@ -336,6 +353,7 @@ pub fn reorder_agent_workspaces(
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 设置页基础环境检查结果。
 pub struct EnvCheckResult {
     pub nodejs: EnvToolStatus,
     pub git: EnvToolStatus,
@@ -385,16 +403,20 @@ pub struct BunRuntimeStatus {
     pub error: Option<String>,
 }
 
-/// Windows 下 Git Bash 的探测结果。
+/// 单个 shell 候选项状态。
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GitBashStatus {
-    /// Git Bash 是否可用。
+pub struct ShellCandidateStatus {
+    /// shell 家族。
+    pub family: String,
+    /// shell 是否可用。
     pub available: bool,
-    /// bash.exe 路径。
+    /// 可执行文件路径。
     pub path: Option<String>,
-    /// Git Bash 版本号。
+    /// 版本号。
     pub version: Option<String>,
+    /// 探测来源。
+    pub source: String,
     /// 错误信息。
     pub error: Option<String>,
 }
@@ -415,16 +437,50 @@ pub struct WslStatus {
     pub error: Option<String>,
 }
 
-/// Windows Shell 环境状态。
+/// POSIX shell 环境状态。
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ShellEnvironmentStatus {
+pub struct PosixShellStatus {
+    /// 当前默认 shell。
+    pub current: Option<ShellCandidateStatus>,
+    /// 候选 shell 列表。
+    pub candidates: Vec<ShellCandidateStatus>,
+    /// 推荐使用的 shell。
+    pub recommended: Option<String>,
+}
+
+/// Windows shell 环境状态。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowsShellStatus {
+    /// PowerShell 状态。
+    pub powershell: ShellCandidateStatus,
+    /// CMD 状态。
+    pub cmd: ShellCandidateStatus,
     /// Git Bash 状态。
-    pub git_bash: GitBashStatus,
+    pub git_bash: ShellCandidateStatus,
     /// WSL 状态。
     pub wsl: WslStatus,
     /// 推荐使用的 shell。
     pub recommended: Option<String>,
+}
+
+/// Shell 环境状态。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellEnvironmentStatus {
+    /// 当前平台。
+    pub platform: String,
+    /// 当前默认 shell。
+    pub current: Option<ShellCandidateStatus>,
+    /// 推荐使用的 shell。
+    pub recommended: Option<String>,
+    /// fallback 顺序。
+    pub fallback_order: Vec<String>,
+    /// Windows 平台明细。
+    pub windows: Option<WindowsShellStatus>,
+    /// POSIX 平台明细。
+    pub posix: Option<PosixShellStatus>,
 }
 
 /// 完整运行时状态。
@@ -437,9 +493,8 @@ pub struct RuntimeStatus {
     pub bun: BunRuntimeStatus,
     /// Git 状态。
     pub git: RuntimeBinaryStatus,
-    /// Windows shell 状态；非 Windows 为空。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub shell: Option<ShellEnvironmentStatus>,
+    /// Shell 状态。
+    pub shell: ShellEnvironmentStatus,
     /// 是否完成额外 shell 环境加载；Tauri 当前恒为 false。
     pub env_loaded: bool,
     /// 本次探测时间戳。
@@ -479,6 +534,7 @@ pub struct StorageStats {
 }
 
 #[cfg(test)]
+/// 测试中复用的版本解析辅助函数。
 pub(crate) use settings_environment::{parse_version, version_gte};
 
 /// 执行基础环境检查，用于设置页缓存最低环境结论。
@@ -500,6 +556,7 @@ pub fn get_storage_stats() -> Result<StorageStats, String> {
 }
 
 #[tauri::command]
+/// 读取系统提示词列表。
 pub fn get_system_prompts(
     state: tauri::State<'_, Arc<JcliAdapter>>,
 ) -> Result<Vec<SystemPromptEntry>, String> {
@@ -507,6 +564,7 @@ pub fn get_system_prompts(
 }
 
 #[tauri::command]
+/// 读取系统提示词配置与默认项。
 pub fn get_system_prompt_config(
     state: tauri::State<'_, Arc<JcliAdapter>>,
 ) -> Result<SystemPromptConfig, String> {
@@ -514,6 +572,7 @@ pub fn get_system_prompt_config(
 }
 
 #[tauri::command]
+/// 创建一个新的系统提示词。
 pub fn create_system_prompt(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     input: CreateSystemPromptInput,
@@ -522,6 +581,7 @@ pub fn create_system_prompt(
 }
 
 #[tauri::command]
+/// 更新一个已有系统提示词。
 pub fn update_system_prompt(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     id: String,
@@ -531,6 +591,7 @@ pub fn update_system_prompt(
 }
 
 #[tauri::command]
+/// 删除一个系统提示词。
 pub fn delete_system_prompt(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     id: String,
@@ -539,6 +600,7 @@ pub fn delete_system_prompt(
 }
 
 #[tauri::command]
+/// 设置默认系统提示词。
 pub fn set_default_prompt(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     prompt_id: String,
@@ -547,6 +609,7 @@ pub fn set_default_prompt(
 }
 
 #[tauri::command]
+/// 更新“附加日期时间与用户名”开关。
 pub fn update_append_setting(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     append_date_time_and_user_name: bool,

@@ -328,6 +328,7 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
               {/* 思考模式切换 */}
               <ThinkingModePopover
                 enabled={thinkingEnabled}
+                showExpandedToggle
                 onToggle={() => setThinkingEnabled(!thinkingEnabled)}
               />
 

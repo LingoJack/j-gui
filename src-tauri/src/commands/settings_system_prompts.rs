@@ -113,6 +113,7 @@ fn read_system_prompts_config<T>(
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+/// 系统提示词配置文件的完整结构。
 pub struct SystemPromptConfig {
     pub prompts: Vec<SystemPromptEntry>,
     pub default_prompt_id: String,
@@ -121,6 +122,7 @@ pub struct SystemPromptConfig {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+/// 单个系统提示词条目。
 pub struct SystemPromptEntry {
     pub id: String,
     pub name: String,
@@ -135,6 +137,7 @@ pub struct SystemPromptEntry {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 创建系统提示词时的请求体。
 pub struct CreateSystemPromptInput {
     pub name: String,
     pub content: String,
@@ -142,6 +145,7 @@ pub struct CreateSystemPromptInput {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 更新系统提示词时的请求体。
 pub struct UpdateSystemPromptInput {
     pub name: Option<String>,
     pub content: Option<String>,

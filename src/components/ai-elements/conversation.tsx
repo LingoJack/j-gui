@@ -12,6 +12,7 @@
  */
 
 import { Button } from '@/components/ui/button'
+import { CENTERED_MAIN_SURFACE_CLASS } from '@/lib/layout-shell'
 import { cn } from '@/lib/utils'
 import { ArrowDownIcon } from 'lucide-react'
 import type { ComponentProps } from 'react'
@@ -25,7 +26,7 @@ export type ConversationProps = ComponentProps<typeof StickToBottom>
 export function Conversation({ className, ...props }: ConversationProps): React.ReactElement {
   return (
     <StickToBottom
-      className={cn('relative flex min-h-0 flex-1 flex-col overflow-y-hidden scrollbar-none', className)}
+      className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden', className)}
       initial="instant"
       resize="smooth"
       role="log"
@@ -41,7 +42,8 @@ export type ConversationContentProps = ComponentProps<typeof StickToBottom.Conte
 export function ConversationContent({ className, ...props }: ConversationContentProps): React.ReactElement {
   return (
     <StickToBottom.Content
-      className={cn('flex flex-col flex-1 gap-1 py-4 px-8 min-h-full', className)}
+      className={cn(CENTERED_MAIN_SURFACE_CLASS, 'flex flex-col flex-1 gap-1 py-4 px-8 min-h-full', className)}
+      scrollClassName="overflow-y-auto scrollbar-thin overscroll-contain"
       {...props}
     />
   )

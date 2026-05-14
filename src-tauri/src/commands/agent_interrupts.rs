@@ -1,6 +1,7 @@
 use super::AgentInterruptAskUserAnswer;
 use crate::kernel::types::{KernelAgentInterruptResponse, KernelPlanDecision};
 
+/// 按中断类型把前端 JSON 响应解析为内核可消费的结构。
 pub(super) fn parse_interrupt_response(
     kind: &str,
     response: &serde_json::Value,

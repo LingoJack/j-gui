@@ -1,10 +1,12 @@
 use super::*;
 
+/// 发送前尚未持久化的用户消息。
 pub(crate) struct PendingUserMessage {
     pub(super) content: String,
     pub(super) attachments: Vec<KernelFileAttachment>,
 }
 
+/// 发送消息前预解析出的 provider、消息列表与系统提示词。
 pub(super) struct PreparedSendMessage {
     provider: KernelProvider,
     options: KernelChatRequestOptions,
@@ -19,6 +21,7 @@ struct StreamUiForwarder<'a> {
     cancelled: &'a Cell<bool>,
 }
 
+/// 构造聊天消息列表时需要的上下文。
 pub(crate) struct MessageBuildContext<'a> {
     pub(super) session_id: &'a str,
     pub(super) system_message: Option<&'a str>,
@@ -26,6 +29,7 @@ pub(crate) struct MessageBuildContext<'a> {
     pub(super) context_dividers: &'a [String],
 }
 
+/// 生成“引用聊天上下文”提示词时使用的原始数据。
 pub(crate) struct ChatReferencePrompt<'a> {
     pub(super) session_id: &'a str,
     pub(super) conversation_title: &'a str,
@@ -37,6 +41,7 @@ pub(crate) struct ChatReferencePrompt<'a> {
 const TOKEN_COUNT_UNSUPPORTED: u32 = 0;
 
 impl ChatEngine {
+    /// 组装发送到内核的消息列表，并解析最终系统提示词。
     pub(super) fn build_messages(
         &self,
         user_message: PendingUserMessage,
@@ -132,6 +137,7 @@ impl ChatEngine {
         fields
     }
 
+    /// 校验发送消息请求中的字段组合是否合法。
     pub(super) fn validate_send_message_request(
         request: &SendMessageRequest,
     ) -> Result<(), String> {
@@ -151,6 +157,7 @@ impl ChatEngine {
         }
     }
 
+    /// 解析本次请求实际使用的 provider。
     pub(super) fn resolve_provider_for_request(
         &self,
         request: &SendMessageRequest,
@@ -214,6 +221,7 @@ impl ChatEngine {
         }
     }
 
+    /// 基于 provider 与请求提示推导底层传输路由。
     pub(super) fn resolve_transport_route_for_request(
         provider: &KernelProvider,
         request: &SendMessageRequest,
@@ -229,6 +237,7 @@ impl ChatEngine {
         )
     }
 
+    /// 将助手响应持久化为本地 transcript 记录。
     pub(super) fn persist_response(
         &self,
         session_id: &str,
@@ -249,6 +258,7 @@ impl ChatEngine {
             .map_err(|e| e.to_string())
     }
 
+    /// 对发送请求做完整预处理，生成后续流式调用所需上下文。
     pub(super) fn prepare_send_message(
         &self,
         request: &SendMessageRequest,
@@ -285,6 +295,7 @@ impl ChatEngine {
         })
     }
 
+    /// 先把用户消息写入本地 transcript。
     pub(super) fn persist_user_message(
         &self,
         session_id: &str,
@@ -305,6 +316,7 @@ impl ChatEngine {
             .map_err(|e| e.to_string())
     }
 
+    /// 调用底层 chat kernel，并把流式增量桥接给前端。
     pub(super) async fn stream_model_response(
         &self,
         request: &SendMessageRequest,
@@ -346,10 +358,12 @@ impl ChatEngine {
     }
 }
 
+/// 生成用于搜索命中的前端 message id。
 pub(super) fn build_message_search_id(index: usize) -> String {
     format!("chat-index-{}", index)
 }
 
+/// 把前端 message id 还原为 transcript 中的消息下标。
 pub(super) fn parse_message_render_index(message_id: &str) -> Result<usize, String> {
     message_id
         .strip_prefix("chat-index-")
@@ -358,6 +372,7 @@ pub(super) fn parse_message_render_index(message_id: &str) -> Result<usize, Stri
         .map_err(|_| format!("无效的消息锚点 ID: {}", message_id))
 }
 
+/// 从完整消息文本中裁剪适合作为搜索结果展示的摘要片段。
 pub(super) fn build_search_snippet(
     content: &str,
     normalized_query: &str,
@@ -376,6 +391,7 @@ pub(super) fn build_search_snippet(
     ))
 }
 
+/// 基于会话摘要与消息列表生成聊天引用提示词。
 pub(super) fn build_chat_reference_prompt(prompt: ChatReferencePrompt<'_>) -> String {
     let mut lines = vec![
         "[引用 Chat 对话上下文]".to_string(),
@@ -509,6 +525,7 @@ impl StreamUiForwarder<'_> {
     }
 }
 
+/// 统一收尾发送结果，补发 Done/Error 并处理停止态。
 pub(super) async fn finalize_send_message_result(
     engine: &ChatEngine,
     session_id: &str,

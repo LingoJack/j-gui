@@ -45,7 +45,7 @@ import {
   agentPendingFilesAtom,
 } from '@/atoms/agent-atoms'
 import { pendingAttachmentsAtom, type PendingAttachment } from '@/atoms/chat-atoms'
-import { currentConversationIdAtom, currentChatWorkspaceIdAtom } from '@/atoms/chat-atoms'
+import { currentChatWorkspaceIdAtom } from '@/atoms/chat-atoms'
 import { detectIsMac, detectIsWindows } from '@/lib/platform'
 import type { FileEntry, AgentPendingFile } from '@jgui/shared'
 import * as ipc from '@/lib/ipc'
@@ -247,7 +247,6 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
   // 添加文件到聊天
   const pendingFiles = useAtomValue(agentPendingFilesAtom)
   const setPendingFiles = useSetAtom(agentPendingFilesAtom)
-  const currentConversationId = useAtomValue(currentConversationIdAtom)
   const setPendingAttachments = useSetAtom(pendingAttachmentsAtom)
   const handleChatWorkspaceChange = React.useCallback((workspaceId: string) => {
     setCurrentChatWorkspaceId(workspaceId)
@@ -255,7 +254,6 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
   }, [setCurrentChatWorkspaceId])
   const handleAddToChat = React.useCallback(async (entry: FileEntry) => {
     if (mode === 'chat') {
-      if (!currentConversationId) return
       const ext = entry.name.split('.').pop()?.toLowerCase() ?? ''
       const imageExts = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'])
       const mimeExt = ext === 'jpg' ? 'jpeg' : ext === 'svg' ? 'svg+xml' : ext
@@ -307,7 +305,7 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
       if (previewUrl) URL.revokeObjectURL(previewUrl)
       console.error('[SidePanel] 添加文件到聊天失败:', error)
     }
-  }, [pendingFiles, setPendingFiles, mode, currentConversationId, setPendingAttachments])
+  }, [pendingFiles, setPendingFiles, mode, setPendingAttachments])
 
   // 面包屑：显示根路径最后两段
   const breadcrumb = React.useMemo(() => {
@@ -317,13 +315,40 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
 
   // 工作区文件目录路径
   const [workspaceFilesPath, setWorkspaceFilesPath] = React.useState<string | null>(null)
-  const hasWorkspaceMountedSources = wsAttachedDirs.length > 0 || !!workspaceFilesPath
+  const [resolvedWorkspaceSlug, setResolvedWorkspaceSlug] = React.useState<string | null>(null)
+  const [isWorkspaceFilesPathLoading, setIsWorkspaceFilesPathLoading] = React.useState(false)
+  const visibleWorkspaceFilesPath = resolvedWorkspaceSlug === workspaceSlug ? workspaceFilesPath : null
+  const hasWorkspaceMountedSources =
+    wsAttachedDirs.length > 0
+    || !!visibleWorkspaceFilesPath
+    || (isWorkspaceFilesPathLoading && !!workspaceSlug)
   React.useEffect(() => {
     if (!workspaceSlug) {
       setWorkspaceFilesPath(null)
+      setResolvedWorkspaceSlug(null)
+      setIsWorkspaceFilesPathLoading(false)
       return
     }
-    ipc.getWorkspaceFilesPath(workspaceSlug).then(setWorkspaceFilesPath).catch(() => setWorkspaceFilesPath(null))
+    let cancelled = false
+    setIsWorkspaceFilesPathLoading(true)
+    ipc.getWorkspaceFilesPath(workspaceSlug)
+      .then((path) => {
+        if (cancelled) return
+        setWorkspaceFilesPath(path)
+        setResolvedWorkspaceSlug(workspaceSlug)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setWorkspaceFilesPath(null)
+        setResolvedWorkspaceSlug(workspaceSlug)
+      })
+      .finally(() => {
+        if (cancelled) return
+        setIsWorkspaceFilesPathLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [workspaceSlug])
 
   // 自动打开：仅响应当前会话自己的文件写入脉冲，避免其他会话的文件变化串扰到这里。
@@ -340,20 +365,23 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
   return (
     <div
       className={cn(
-        'relative h-full flex-shrink-0 overflow-hidden titlebar-drag-region bg-content-area rounded-2xl shadow-xl',
-        shouldAnimate && 'transition-[width] duration-300 ease-in-out',
-        isOpen ? 'w-[320px]' : 'w-0',
+        'relative h-full w-[320px] flex-shrink-0 overflow-hidden bg-content-area rounded-2xl shadow-xl transition-transform ease-in-out transform-gpu',
+        isOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none',
       )}
+      style={{
+        contain: 'layout paint style',
+        transitionDuration: shouldAnimate ? '300ms' : '0ms',
+      }}
     >
       {/* 面板内容 */}
       <div
         className={cn(
           'w-[320px] h-full flex flex-col titlebar-no-drag',
           'pt-0',
-          shouldAnimate && 'transition-opacity duration-300',
-          isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none',
         )}
-        >
+        aria-hidden={!isOpen}
+        inert={isOpen ? undefined : true}
+      >
           {/* 文件浏览内容 */}
           {workspaceSlug ? (
             <div className="flex-1 min-h-0 flex flex-col">
@@ -417,22 +445,6 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                             <p>刷新文件列表</p>
                           </TooltipContent>
                         </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-5 w-5 flex-shrink-0"
-                              onClick={() => setIsOpen((prev) => !prev)}
-                            >
-                              <X className="size-2.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            <p>关闭侧面板</p>
-                          </TooltipContent>
-                        </Tooltip>
                       </div>
                       {/* 会话文件内容区（独立滚动） */}
                       <div className="flex-1 min-h-0 overflow-y-auto">
@@ -469,7 +481,7 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                 )}
 
                   {mode === 'chat' && workspaces.length > 0 && (
-                    <div className="px-3 pb-2">
+                    <div className="px-3 pb-2 pt-2">
                       <Select value={effectiveWorkspaceId ?? undefined} onValueChange={handleChatWorkspaceChange}>
                         <SelectTrigger className="h-8 rounded-xl text-xs">
                           <SelectValue placeholder="选择聊天工作区" />
@@ -499,7 +511,7 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                         </TooltipContent>
                       </Tooltip>
                       <div className="flex-1" />
-                      {workspaceFilesPath && (
+                      {visibleWorkspaceFilesPath && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -507,31 +519,13 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                               variant="ghost"
                               size="icon"
                               className="h-5 w-5 flex-shrink-0"
-                              onClick={() => ipc.openFile(workspaceFilesPath).catch(console.error)}
+                              onClick={() => ipc.openFile(visibleWorkspaceFilesPath).catch(console.error)}
                             >
                               <ExternalLink className="size-2.5" />
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
                             <p>{openWorkspaceLocationLabel}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                      {!sessionPath && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 flex-shrink-0 rounded-full"
-                              onClick={() => setIsOpen((prev) => !prev)}
-                            >
-                              <X className="size-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            <p>关闭侧面板</p>
                           </TooltipContent>
                         </Tooltip>
                       )}
@@ -587,12 +581,12 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                         </div>
                       )}
                       {/* 工作区文件浏览器 */}
-                      {workspaceFilesPath && (
+                      {visibleWorkspaceFilesPath && (
                         <>
                           {wsAttachedDirs.length > 0 && (
                             <div className="text-[11px] font-medium text-muted-foreground mb-1 px-3 pt-2">工作文件（存储于该工作区目录）</div>
                           )}
-                          <FileBrowser sessionId={sessionId} rootPath={workspaceFilesPath} hideToolbar embedded hideEmpty={wsAttachedDirs.length > 0} onAddToChat={handleAddToChat} />
+                          <FileBrowser sessionId={sessionId} rootPath={visibleWorkspaceFilesPath} hideToolbar embedded hideEmpty={wsAttachedDirs.length > 0} onAddToChat={handleAddToChat} />
                         </>
                       )}
                       {/* 工作区文件拖拽上传区域 */}
@@ -611,29 +605,13 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                   {/* 顶部关闭按钮 */}
                   <div className="flex items-center justify-between px-3 h-[36px] flex-shrink-0">
                     <span className="text-[11px] font-medium text-muted-foreground">{panelTitle}</span>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 flex-shrink-0 rounded-full"
-                          onClick={() => setIsOpen((prev) => !prev)}
-                        >
-                          <X className="size-3.5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        <p>关闭侧面板</p>
-                      </TooltipContent>
-                    </Tooltip>
                   </div>
                   <div className="flex-1 flex items-center justify-center px-6 text-center text-xs leading-5 text-muted-foreground">
                     工作区仍在初始化。正常情况下会自动进入默认工作区，无需先手动新建。
                   </div>
                 </div>
               )}
-        </div>
+      </div>
     </div>
   )
 }

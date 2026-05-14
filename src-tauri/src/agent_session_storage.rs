@@ -12,6 +12,7 @@ fn transcript_path(session_id: &str) -> PathBuf {
     session_dir(session_id).join("transcript.jsonl")
 }
 
+/// 在持有 transcript 写锁的前提下追加一条时间线记录。
 pub(crate) fn append_timeline_item_with_lock(
     transcript_lock: &Mutex<()>,
     session_id: &str,
@@ -36,6 +37,7 @@ pub(crate) fn append_timeline_item_with_lock(
     Ok(())
 }
 
+/// 读取指定 Agent 会话的完整时间线。
 pub(crate) fn read_timeline(session_id: &str) -> Result<Vec<AgentTimelineItem>, String> {
     let path = transcript_path(session_id);
     if !path.exists() {
@@ -49,6 +51,7 @@ pub(crate) fn read_timeline(session_id: &str) -> Result<Vec<AgentTimelineItem>, 
         .collect())
 }
 
+/// 以覆盖写方式重写指定 Agent 会话的时间线。
 pub(crate) fn write_timeline(session_id: &str, items: &[AgentTimelineItem]) -> Result<(), String> {
     let path = transcript_path(session_id);
     if let Some(parent) = path.parent() {
@@ -63,6 +66,7 @@ pub(crate) fn write_timeline(session_id: &str, items: &[AgentTimelineItem]) -> R
     std::fs::write(path, content).map_err(|e| e.to_string())
 }
 
+/// 返回 transcript 中的原始记录条数。
 pub(crate) fn transcript_message_count(session_id: &str) -> usize {
     let path = transcript_path(session_id);
     if !path.exists() {
@@ -74,6 +78,7 @@ pub(crate) fn transcript_message_count(session_id: &str) -> usize {
         .unwrap_or(0)
 }
 
+/// 根据首条用户消息推断会话标题。
 pub(crate) fn infer_title_from_transcript(session_id: &str) -> Option<String> {
     let path = transcript_path(session_id);
     if !path.exists() {
@@ -91,6 +96,7 @@ pub(crate) fn infer_title_from_transcript(session_id: &str) -> Option<String> {
     None
 }
 
+/// 返回 transcript 文件的最后修改时间，失败时回退到给定时间戳。
 pub(crate) fn transcript_updated_at(session_id: &str, fallback: u64) -> u64 {
     transcript_path(session_id)
         .metadata()
@@ -101,6 +107,7 @@ pub(crate) fn transcript_updated_at(session_id: &str, fallback: u64) -> u64 {
         .unwrap_or(fallback)
 }
 
+/// 删除指定 Agent 会话的整个落盘目录。
 pub(crate) fn delete_session_dir(session_id: &str) -> Result<(), String> {
     let dir = session_dir(session_id);
     if dir.exists() {

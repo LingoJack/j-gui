@@ -1,5 +1,6 @@
 use super::AgentTimelineItem;
 
+/// 单条 transcript 记录允许写入磁盘的最大序列化长度。
 pub(crate) const MAX_TRANSCRIPT_ITEM_LENGTH: usize = 256 * 1024;
 const TRUNCATED_PREVIEW_LENGTH: usize = 2_000;
 

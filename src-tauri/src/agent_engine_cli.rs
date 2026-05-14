@@ -26,6 +26,7 @@ struct SpawnedCliProcess {
     stderr: std::process::ChildStderr,
 }
 
+/// 构造 Claude CLI 的命令行参数列表。
 pub(crate) fn build_claude_args(
     model: &str,
     permission_mode: &str,
@@ -59,6 +60,7 @@ pub(crate) fn build_claude_args(
     args
 }
 
+/// 启动 Claude CLI，并按恢复策略处理启动期失败。
 pub(super) fn start_cli_with_recovery(
     config: AgentCliStartParams,
 ) -> Result<(Child, ChildStdin, JoinHandle<()>, JoinHandle<()>), String> {
@@ -370,6 +372,7 @@ fn finalize_cli_startup(
     }
 }
 
+/// 判断一批 CLI 事件是否已经进入对用户可见的进度阶段。
 pub(crate) fn cli_events_show_visible_progress(events: &[AgentEvent]) -> bool {
     events.iter().any(|event| {
         matches!(
@@ -383,6 +386,7 @@ pub(crate) fn cli_events_show_visible_progress(events: &[AgentEvent]) -> bool {
     })
 }
 
+/// 从启动阶段事件中提取首个可视为致命错误的消息。
 pub(crate) fn cli_startup_error_from_events(events: &[AgentEvent]) -> Option<String> {
     events.iter().find_map(|event| match event {
         AgentEvent::Error { message } => Some(message.clone()),
@@ -390,6 +394,7 @@ pub(crate) fn cli_startup_error_from_events(events: &[AgentEvent]) -> Option<Str
     })
 }
 
+/// 把中断响应编码为 Claude CLI 可接受的字符串结果。
 pub(super) fn serialize_interrupt_response(response: &KernelAgentInterruptResponse) -> String {
     match response {
         KernelAgentInterruptResponse::Permission {
@@ -415,6 +420,7 @@ pub(super) fn serialize_interrupt_response(response: &KernelAgentInterruptRespon
     }
 }
 
+/// 把中断响应转换成 j-agent 侧使用的工具结果结构。
 pub(super) fn kernel_tool_result_from_response(
     interrupt_id: &str,
     response: &KernelAgentInterruptResponse,

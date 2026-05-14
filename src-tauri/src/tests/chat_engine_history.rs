@@ -2,7 +2,9 @@ use super::*;
 use crate::kernel::types::{KernelSessionEvent, KernelSessionSummary};
 use async_trait::async_trait;
 
+/// 仅用于测试的历史聊天内核桩实现。
 pub(super) struct HistoryChatKernel {
+    /// 测试中预置返回的聊天历史。
     pub(super) history: Vec<KernelSessionEvent>,
 }
 

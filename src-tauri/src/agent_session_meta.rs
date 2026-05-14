@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Agent 会话 meta.json 的落盘结构。
 pub(crate) struct AgentSessionMetaRecord {
     #[serde(default)]
     pub created_at: u64,
@@ -34,6 +35,7 @@ pub(crate) struct AgentSessionMetaRecord {
 }
 
 #[derive(Clone, Debug, Default)]
+/// 创建 Agent 会话时可选的元数据输入。
 pub(crate) struct CreateSessionMetaInput {
     pub title: Option<String>,
     pub channel_id: Option<String>,

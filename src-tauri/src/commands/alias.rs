@@ -5,6 +5,7 @@ use crate::kernel::{ConfigKernel, JcliAdapter};
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// 别名配置列表项。
 pub struct AliasEntry {
     pub section: String,
     pub name: String,
@@ -12,6 +13,7 @@ pub struct AliasEntry {
 }
 
 #[tauri::command]
+/// 列出全部别名配置。
 pub fn list_aliases(state: tauri::State<'_, Arc<JcliAdapter>>) -> Result<Vec<AliasEntry>, String> {
     list_aliases_impl(state.config())
 }
@@ -32,6 +34,7 @@ fn list_aliases_impl(config: &dyn ConfigKernel) -> Result<Vec<AliasEntry>, Strin
 }
 
 #[tauri::command]
+/// 新增或更新一条别名配置。
 pub fn set_alias(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     section: String,
@@ -53,6 +56,7 @@ fn set_alias_impl(
 }
 
 #[tauri::command]
+/// 删除一条别名配置。
 pub fn remove_alias(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     section: String,

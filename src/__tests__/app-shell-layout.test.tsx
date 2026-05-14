@@ -1,12 +1,15 @@
 import * as React from 'react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { AppShell } from '@/components/app-shell/AppShell'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { appModeAtom } from '@/atoms/app-mode'
 import { agentSidePanelOpenMapAtom, currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
 import { currentConversationIdAtom } from '@/atoms/chat-atoms'
-import { activeTabIdAtom, tabsAtom } from '@/atoms/tab-atoms'
+import { activeTabIdAtom, sidebarCollapsedAtom, tabsAtom } from '@/atoms/tab-atoms'
 
 const platformState = {
   isWindows: true,
@@ -30,6 +33,7 @@ const tauriWindowMock = vi.hoisted(() => ({
   show: vi.fn(async () => {}),
   setFocus: vi.fn(async () => {}),
 }))
+const mainAreaRenderMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/platform', () => ({
   detectIsWindows: () => platformState.isWindows,
@@ -53,21 +57,29 @@ vi.mock('@tauri-apps/api/window', () => ({
 }))
 
 vi.mock('@/components/app-shell/LeftSidebar', () => ({
+  COLLAPSED_SIDEBAR_WIDTH: 48,
+  DEFAULT_EXPANDED_SIDEBAR_WIDTH: 280,
   LeftSidebar: () => <div data-testid="left-sidebar" />,
+  SIDEBAR_VISUAL_TRANSITION_MS: 200,
 }))
 
 vi.mock('@/components/app-shell/RightSidePanel', () => ({
-  RightSidePanel: () => <div data-testid="right-side-panel" />,
+  RightSidePanel: ({ sessionId }: { sessionId: string }) => <div data-testid="right-side-panel">{sessionId}</div>,
 }))
 
 vi.mock('@/components/tabs/MainArea', () => ({
-  MainArea: () => <div data-testid="main-area" />,
+  MainArea: () => {
+    mainAreaRenderMock()
+    return <div data-testid="main-area" />
+  },
 }))
 
 function renderShell(store: ReturnType<typeof createStore>) {
   return render(
     <Provider store={store}>
-      <AppShell contextValue={{}} />
+      <TooltipProvider>
+        <AppShell contextValue={{}} />
+      </TooltipProvider>
     </Provider>,
   )
 }
@@ -90,6 +102,7 @@ describe('AppShell layout guards', () => {
     tauriWindowMock.unminimize.mockClear()
     tauriWindowMock.show.mockClear()
     tauriWindowMock.setFocus.mockClear()
+    mainAreaRenderMock.mockClear()
     tauriWindowMock.isMaximized.mockResolvedValue(false)
     tauriWindowMock.onResized.mockResolvedValue(() => {})
     tauriWindowMock.onCloseRequested.mockResolvedValue(() => {})
@@ -123,7 +136,7 @@ describe('AppShell layout guards', () => {
     expect(screen.getByTestId('right-side-panel')).toBeInTheDocument()
   })
 
-  it('falls back to the main-area window controls when the right panel is collapsed', () => {
+  it('keeps the window controls floating at the app shell top-right when the right panel is collapsed', () => {
     const store = createStore()
     store.set(appModeAtom, 'chat')
     store.set(currentConversationIdAtom, 'chat-1')
@@ -136,9 +149,177 @@ describe('AppShell layout guards', () => {
 
     renderShell(store)
 
-    expect(screen.getByTestId('right-side-panel')).toBeInTheDocument()
+    const rightPanel = screen.getByTestId('right-side-panel')
+    expect(rightPanel).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '最小化窗口' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '最小化窗口' }).closest('.tabbar-bg')).not.toBeNull()
+    const controlsHost = document.querySelector('[data-window-controls-host="true"]')
+    expect(controlsHost?.closest('[data-app-shell-layout="true"]')).not.toBeNull()
+    expect(controlsHost?.closest('[data-main-content-slot="true"]')).toBeNull()
+    expect(controlsHost?.closest('[data-right-panel-slot="true"]')).toBeNull()
+  })
+
+  it('keeps the window controls floating at the app shell top-right when the right panel is open', () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(currentConversationIdAtom, 'chat-1')
+    store.set(currentAgentSessionIdAtom, null)
+    store.set(tabsAtom, [
+      { id: 'tab-chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
+    ])
+    store.set(activeTabIdAtom, 'tab-chat-1')
+    store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', true]]))
+
+    renderShell(store)
+
+    expect(screen.getByTestId('right-side-panel')).toBeInTheDocument()
+    const controlsHost = document.querySelector('[data-window-controls-host="true"]')
+    expect(controlsHost?.closest('[data-app-shell-layout="true"]')).not.toBeNull()
+    expect(controlsHost?.closest('[data-main-content-slot="true"]')).toBeNull()
+    expect(controlsHost?.closest('[data-right-panel-slot="true"]')).toBeNull()
+  })
+
+  it('keeps the same right panel subtree mounted when toggling the panel open state', async () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(currentConversationIdAtom, 'chat-1')
+    store.set(currentAgentSessionIdAtom, null)
+    store.set(tabsAtom, [
+      { id: 'tab-chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
+    ])
+    store.set(activeTabIdAtom, 'tab-chat-1')
+    store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', false]]))
+
+    renderShell(store)
+
+    const initialPanel = screen.getByTestId('right-side-panel')
+
+    await act(async () => {
+      store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', true]]))
+    })
+
+    expect(screen.getByTestId('right-side-panel')).toBe(initialPanel)
+  })
+
+  it('keeps the right panel slot at full column height without inserting an extra top strip', () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(currentConversationIdAtom, 'chat-1')
+    store.set(currentAgentSessionIdAtom, null)
+    store.set(tabsAtom, [
+      { id: 'tab-chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
+    ])
+    store.set(activeTabIdAtom, 'tab-chat-1')
+    store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', true]]))
+
+    renderShell(store)
+
+    const slot = screen.getByTestId('right-side-panel').closest('[data-right-panel-slot="true"]')
+    expect(slot?.querySelector('.titlebar-drag-region')).toBeNull()
+  })
+
+  it('drives left, main, and right column movement from the app shell grid', () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(currentConversationIdAtom, 'chat-1')
+    store.set(currentAgentSessionIdAtom, null)
+    store.set(tabsAtom, [
+      { id: 'tab-chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
+    ])
+    store.set(activeTabIdAtom, 'tab-chat-1')
+    store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', true]]))
+
+    renderShell(store)
+
+    const shell = screen.getByTestId('main-area').closest('[data-app-shell-layout="true"]')
+    expect(shell).toHaveClass('grid')
+    expect(shell).toHaveClass('transition-[grid-template-columns]')
+    expect(shell).toHaveAttribute('style', expect.stringContaining('grid-template-columns: 288px minmax(0, 1fr) 328px'))
+
+    const mainArea = screen.getByTestId('main-area')
+    const mainSlot = mainArea.parentElement
+    expect(mainSlot).toHaveClass('overflow-hidden')
+    expect(mainSlot).not.toHaveClass('flex-1')
+    expect(mainSlot).not.toHaveClass('h-full')
+
+    act(() => {
+      store.set(sidebarCollapsedAtom, true)
+    })
+
+    expect(shell).toHaveAttribute('style', expect.stringContaining('grid-template-columns: 56px minmax(0, 1fr) 328px'))
+  })
+
+  it('keeps the left sidebar on a width transition instead of FLIP translation for shell movement', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/app-shell/LeftSidebar.tsx'), 'utf8')
+    expect(source).toContain('transition-[width,min-width]')
+    expect(source).not.toContain('useLayoutFlipTransition')
+  })
+
+  it('does not rerender the main conversation tree when only the left sidebar collapses', () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(currentConversationIdAtom, 'chat-1')
+    store.set(currentAgentSessionIdAtom, null)
+    store.set(sidebarCollapsedAtom, false)
+    store.set(tabsAtom, [
+      { id: 'tab-chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
+    ])
+    store.set(activeTabIdAtom, 'tab-chat-1')
+    store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', true]]))
+
+    renderShell(store)
+    expect(mainAreaRenderMock).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      store.set(sidebarCollapsedAtom, true)
+    })
+
+    expect(mainAreaRenderMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('reserves enough tabbar space for the top-right window controls', () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(currentConversationIdAtom, 'chat-1')
+    store.set(currentAgentSessionIdAtom, null)
+    store.set(tabsAtom, [
+      { id: 'tab-chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
+    ])
+    store.set(activeTabIdAtom, 'tab-chat-1')
+
+    renderShell(store)
+
+    const source = readFileSync(resolve(process.cwd(), 'src/components/tabs/TabBar.tsx'), 'utf8')
+    expect(source).toContain('pr-[192px]')
+  })
+
+  it('does not keep the right panel slot open when switching to a tab whose panel is closed', async () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(currentConversationIdAtom, 'chat-1')
+    store.set(currentAgentSessionIdAtom, null)
+    store.set(sidebarCollapsedAtom, false)
+    store.set(tabsAtom, [
+      { id: 'chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
+      { id: 'chat-2', type: 'chat', sessionId: 'chat-2', title: 'Chat 2' },
+    ])
+    store.set(activeTabIdAtom, 'chat-1')
+    store.set(agentSidePanelOpenMapAtom, new Map([
+      ['chat-1', true],
+      ['chat-2', false],
+    ]))
+
+    renderShell(store)
+
+    const shell = screen.getByTestId('right-side-panel').closest('[data-app-shell-layout="true"]')
+    expect(shell).toHaveAttribute('style', expect.stringContaining('grid-template-columns: 288px minmax(0, 1fr) 328px'))
+
+    await act(async () => {
+      store.set(currentConversationIdAtom, 'chat-2')
+      store.set(activeTabIdAtom, 'chat-2')
+    })
+
+    await waitFor(() => expect(shell).toHaveAttribute('style', expect.stringContaining('grid-template-columns: 288px minmax(0, 1fr) 0px')))
   })
 
   it('renders desktop window controls on Windows and wires the window actions', async () => {

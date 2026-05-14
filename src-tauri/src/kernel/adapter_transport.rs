@@ -4,12 +4,14 @@ use super::{
 };
 use serde_json::{json, Value};
 
+/// 发往 HTTP 流式接口的一次完整请求。
 pub(super) struct HttpStreamRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: Value,
 }
 
+/// 基于 provider 与请求选项构造附加的协议字段。
 pub(super) fn build_chat_request_extra(
     provider: &KernelProvider,
     options: KernelChatRequestOptions,
@@ -44,6 +46,7 @@ pub(super) fn build_chat_request_extra(
     extra
 }
 
+/// 构造 Anthropic Messages 流式请求。
 pub(super) fn build_anthropic_stream_request(
     provider: &KernelProvider,
     messages: &[KernelChatMessage],
@@ -95,6 +98,7 @@ pub(super) fn build_anthropic_stream_request(
     })
 }
 
+/// 构造 OpenAI Responses 流式请求。
 pub(super) fn build_openai_responses_request(
     provider: &KernelProvider,
     messages: &[KernelChatMessage],
@@ -147,6 +151,7 @@ pub(super) fn build_openai_responses_request(
     })
 }
 
+/// 通过 Anthropic Messages API 拉取流式响应。
 pub(super) async fn stream_anthropic_messages(
     request: KernelChatStreamRequest<'_>,
     callbacks: KernelChatStreamCallbacks<'_>,
@@ -186,6 +191,7 @@ pub(super) async fn stream_anthropic_messages(
     Ok(full_content)
 }
 
+/// 通过 OpenAI Responses API 拉取流式响应。
 pub(super) async fn stream_openai_responses(
     request: KernelChatStreamRequest<'_>,
     callbacks: KernelChatStreamCallbacks<'_>,

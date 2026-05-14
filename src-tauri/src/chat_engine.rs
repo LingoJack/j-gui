@@ -26,6 +26,7 @@ use chat_engine_helpers::{
     finalize_send_message_result, parse_message_render_index,
 };
 #[cfg(test)]
+/// 测试中复用的消息构建辅助结构。
 pub(crate) use chat_engine_helpers::{MessageBuildContext, PendingUserMessage};
 use chat_engine_meta::{
     current_timestamp_millis, default_session_meta, load_session_meta, merge_session_info,
@@ -33,6 +34,7 @@ use chat_engine_meta::{
 use chat_engine_payloads::{
     parse_context_dividers, parse_context_length, parse_image_attachments, parse_optional_bool,
 };
+/// Chat 命令层对外暴露的流式事件与数据结构。
 pub use chat_engine_payloads::{
     ChatEvent, ChatReferenceContext, MessageInfo, MessageSearchResult, SendMessageRequest,
     SessionInfo,

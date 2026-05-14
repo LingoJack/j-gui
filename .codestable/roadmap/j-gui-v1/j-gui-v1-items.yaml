@@ -393,12 +393,12 @@ items:
     notes: 当前 AboutSettings 仍偏薄；需要显式暴露“当前 Claude Code Agent 模式实际调用的本机 Claude Code CLI 版本”，并把“已是最新”从成功绿改为更中性的状态色，不照搬 Proma 的版本历史/更新中心。
 
   - slug: environment-configuration-surface
-    description: 环境配置页——提供 Shell 显式选择、fallback 规则、推荐 shell，以及 Node/Git/Bun/Git Bash/WSL/PowerShell 的状态与失败原因
+    description: 环境配置页——提供真实 shell 真相展示、fallback 规则、推荐 shell，以及 Node/Git/Bun/Git Bash/WSL/PowerShell 的状态与失败原因
     depends_on: [product-friction-audit]
-    status: planned
-    feature: null
+    status: in-progress
+    feature: 2026-05-14-environment-configuration-surface
     minimal_loop: false
-    notes: 需要明确区分 j-gui 本体、Claude Code CLI、npm 安装链路与 Shell tool 能力；Node 仅按安装方式/扩展工具链相关信息展示，不再作为统一硬前提。
+    notes: 当前阶段先落真实 `环境配置` 页面与跨平台 shell 契约，展示 current/recommended/fallback/失败原因与重检入口；不在本轮实现 shell 选择持久化、profile 写入或执行链路切换。需要明确区分 j-gui 本体、Claude Code CLI、npm 安装链路与 Shell tool 能力；Node 仅按安装方式/扩展工具链相关信息展示，不再作为统一硬前提。
 
   - slug: appearance-theme-customization
     description: 外观主题自定义——在保留预设主题基础上开放受控的颜色、字体、对比度与界面密度项，并提供预览、复制/导入与重置

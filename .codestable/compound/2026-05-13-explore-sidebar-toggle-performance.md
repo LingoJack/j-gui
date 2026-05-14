@@ -3,9 +3,11 @@ name: sidebar-toggle-performance
 description: 左右侧边栏开关节奏卡顿的性能瓶颈分析
 doc_type: explore
 type: question
-status: active
+status: outdated
+superseded-by: 2026-05-14-explore-sidebar-performance-v2
 confidence: high
 created: 2026-05-13
+updated: 2026-05-14
 ---
 
 # 速答

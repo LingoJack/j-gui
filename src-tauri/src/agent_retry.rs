@@ -1,4 +1,5 @@
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Agent CLI 启动失败后的重试策略。
 pub struct RetryPolicy {
     pub max_attempts: u32,
 }

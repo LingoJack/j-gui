@@ -128,6 +128,10 @@ const ITEM_TO_VIEW: Record<SidebarItemId, ActiveView> = {
   'all-chats': 'conversations',
 }
 
+export const COLLAPSED_SIDEBAR_WIDTH = 48
+export const DEFAULT_EXPANDED_SIDEBAR_WIDTH = 280
+export const SIDEBAR_VISUAL_TRANSITION_MS = 200
+
 function groupByDate<T extends { updatedAt: number }>(items: T[]): Array<{ label: '今天' | '昨天' | '更早'; items: T[] }> {
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
@@ -154,11 +158,223 @@ function groupByDate<T extends { updatedAt: number }>(items: T[]): Array<{ label
   return groups
 }
 
-const SIDEBAR_WIDTH_TRANSITION_MS = 200
-
 export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
-  const sidebarExpandDelayTimerRef = React.useRef<number | null>(null)
-  const sidebarContainerRef = React.useRef<HTMLDivElement>(null)
+  const [sidebarCollapsed, setSidebarCollapsed] = useAtom(sidebarCollapsedAtom)
+  const expandedContentRef = React.useRef<HTMLDivElement>(null)
+  const expandedSidebarWidth = width ?? DEFAULT_EXPANDED_SIDEBAR_WIDTH
+  const shellWidth = sidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : expandedSidebarWidth
+
+  const collapseSidebar = React.useCallback(() => {
+    setSidebarCollapsed(true)
+  }, [setSidebarCollapsed])
+
+  React.useEffect(() => {
+    if (sidebarCollapsed) {
+      if (expandedContentRef.current?.contains(document.activeElement)) {
+        const blur = (document.activeElement as HTMLElement | null)?.blur
+        blur?.call(document.activeElement)
+        requestAnimationFrame(() => {
+          document.querySelector<HTMLButtonElement>('[data-left-sidebar-expand-trigger="true"]')?.focus()
+        })
+      }
+      return
+    }
+    requestAnimationFrame(() => {
+      const el = document.querySelector('.session-item-selected')
+      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    })
+  }, [sidebarCollapsed])
+
+  return (
+    <div
+      className="relative h-full overflow-hidden rounded-2xl bg-background shadow-xl transition-[width,min-width] ease-in-out"
+      style={{
+        width: shellWidth,
+        minWidth: shellWidth,
+        flexShrink: sidebarCollapsed ? 0 : 1,
+        contain: 'layout paint style',
+        transitionDuration: `${SIDEBAR_VISUAL_TRANSITION_MS}ms`,
+      }}
+    >
+      <CollapsedSidebarRail
+        visible={sidebarCollapsed}
+        onExpand={() => setSidebarCollapsed(false)}
+      />
+      <div
+        ref={expandedContentRef}
+        data-sidebar-expanded-content="true"
+        aria-hidden={sidebarCollapsed}
+        inert={sidebarCollapsed ? true : undefined}
+        className={cn(
+          'absolute inset-y-0 left-0 flex flex-col transition-[opacity,transform] ease-in-out',
+          sidebarCollapsed
+            ? 'opacity-0 pointer-events-none -translate-x-2'
+            : 'opacity-100 pointer-events-auto translate-x-0',
+        )}
+        style={{
+          width: expandedSidebarWidth,
+          transitionDuration: `${SIDEBAR_VISUAL_TRANSITION_MS}ms`,
+        }}
+      >
+        <MemoizedLeftSidebarExpandedContent onCollapse={collapseSidebar} />
+      </div>
+    </div>
+  )
+}
+
+interface CollapsedSidebarRailProps {
+  visible: boolean
+  onExpand: () => void
+}
+
+function CollapsedSidebarRail({ visible, onExpand }: CollapsedSidebarRailProps): React.ReactElement {
+  const setSettingsOpen = useSetAtom(settingsOpenAtom)
+  const [userProfile] = useAtom(userProfileAtom)
+  const selectedModel = useAtomValue(selectedModelAtom)
+  const mode = useAtomValue(appModeAtom)
+  const isMac = React.useMemo(() => detectIsMac(), [])
+  const hasEnvironmentIssues = useAtomValue(hasEnvironmentIssuesAtom)
+  const promptConfig = useAtomValue(promptConfigAtom)
+  const setSelectedPromptId = useSetAtom(selectedPromptIdAtom)
+  const setActiveView = useSetAtom(activeViewAtom)
+  const [, setConversations] = useAtom(conversationsAtom)
+  const [, setAgentSessions] = useAtom(agentSessionsAtom)
+  const agentChannelId = useAtomValue(agentChannelIdAtom)
+  const agentModelId = useAtomValue(agentModelIdAtom)
+  const setSessionChannelMap = useSetAtom(agentSessionChannelMapAtom)
+  const setSessionModelMap = useSetAtom(agentSessionModelMapAtom)
+  const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
+  const workspaces = useAtomValue(agentWorkspacesAtom)
+  const openSession = useOpenSession()
+  const effectiveWorkspaceId = React.useMemo(
+    () => currentWorkspaceId ?? workspaces[0]?.id ?? null,
+    [currentWorkspaceId, workspaces],
+  )
+
+  const handleNewConversation = async (): Promise<void> => {
+    try {
+      const meta = await ipc.createConversation(
+        undefined,
+        selectedModel?.modelId,
+        selectedModel?.channelId,
+      )
+      setConversations((prev) => [meta, ...prev])
+      openSession('chat', meta.id, meta.title)
+      setActiveView('conversations')
+      if (promptConfig.defaultPromptId) {
+        setSelectedPromptId(promptConfig.defaultPromptId)
+      }
+    } catch (error) {
+      console.error('[侧边栏] 创建对话失败:', error)
+      toast.error('创建对话失败')
+    }
+  }
+
+  const handleNewAgentSession = async (): Promise<void> => {
+    try {
+      const meta = await ipc.createAgentSession(
+        undefined,
+        agentChannelId || undefined,
+        effectiveWorkspaceId || undefined,
+      )
+      setAgentSessions((prev) => [meta, ...prev])
+      if (agentChannelId) {
+        setSessionChannelMap((prev) => {
+          const map = new Map(prev)
+          map.set(meta.id, agentChannelId)
+          return map
+        })
+      }
+      if (agentModelId) {
+        setSessionModelMap((prev) => {
+          const map = new Map(prev)
+          map.set(meta.id, agentModelId)
+          return map
+        })
+      }
+      openSession('agent', meta.id, meta.title)
+      setActiveView('conversations')
+    } catch (error) {
+      console.error('[侧边栏] 创建 Agent 会话失败:', error)
+    }
+  }
+
+  return (
+    <div
+      aria-hidden={!visible}
+      inert={visible ? undefined : true}
+      className={cn(
+        'absolute inset-y-0 left-0 z-10 flex w-[48px] flex-col items-center transition-opacity duration-150',
+        visible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+      )}
+    >
+      {/* macOS 需要避开左上角红绿灯，其他平台保留紧凑呼吸感。 */}
+      <div className={cn(isMac ? 'pt-[50px]' : 'pt-2')} />
+
+      {/* 展开按钮 */}
+      <div className="pt-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              aria-label="展开侧边栏"
+              data-left-sidebar-expand-trigger="true"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={onExpand}
+              className="size-[36px] flex items-center justify-center rounded-[10px] text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground transition-colors titlebar-no-drag"
+            >
+              <PanelLeftOpen size={18} strokeWidth={2.2} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">展开侧边栏</TooltipContent>
+        </Tooltip>
+      </div>
+
+      {/* 新对话/会话按钮 */}
+      <div className="pt-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={mode === 'agent' ? handleNewAgentSession : handleNewConversation}
+              className="p-2 rounded-[10px] text-foreground/70 bg-primary/5 hover:bg-primary/10 transition-colors titlebar-no-drag border border-dashed border-[hsl(var(--dashed-border))] hover:border-[hsl(var(--dashed-border-hover))]"
+            >
+              <Plus size={16} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {mode === 'agent' ? '新会话' : '新对话'}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+
+      {/* 弹性空间 */}
+      <div className="flex-1" />
+
+      {/* 用户头像（点击打开设置） */}
+      <div className="pb-3">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="relative p-1 rounded-[10px] transition-colors titlebar-no-drag hover:bg-foreground/5"
+            >
+              <UserAvatar avatar={userProfile.avatar} size={28} />
+              {hasEnvironmentIssues && (
+                <span className="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500" />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">设置</TooltipContent>
+        </Tooltip>
+      </div>
+    </div>
+  )
+}
+
+interface LeftSidebarExpandedContentProps {
+  onCollapse: () => void
+}
+
+function LeftSidebarExpandedContent({ onCollapse }: LeftSidebarExpandedContentProps): React.ReactElement {
   const [activeView, setActiveView] = useAtom(activeViewAtom)
   const setSettingsTab = useSetAtom(settingsTabAtom)
   const setSettingsOpen = useSetAtom(settingsOpenAtom)
@@ -228,12 +444,8 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   // 标签页状态
   const [tabs, setTabs] = useAtom(tabsAtom)
   const [activeTabId, setActiveTabId] = useAtom(activeTabIdAtom)
-  const [sidebarCollapsed, setSidebarCollapsed] = useAtom(sidebarCollapsedAtom)
-  const [sessionListMounted, setSessionListMounted] = React.useState(() => !sidebarCollapsed)
   const openSession = useOpenSession()
   const syncActiveTabSideEffects = useSyncActiveTabSideEffects()
-  const expandedSidebarWidth = width ?? 280
-  const collapsedSidebarWidth = 48
 
   // 归档 & 搜索状态
   const [viewMode, setViewMode] = useAtom(sidebarViewModeAtom)
@@ -252,14 +464,14 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
 
   React.useEffect(() => {
     if (agentTopHeight > 0) return
-    if (mode !== 'agent' || viewMode !== 'active' || !sessionListMounted) return
+    if (mode !== 'agent' || viewMode !== 'active') return
     const el = agentSplitContainerRef.current
     if (!el) return
     const h = el.getBoundingClientRect().height
     if (h > 0) {
       setAgentTopHeight(Math.round(h * 0.4))
     }
-  }, [agentTopHeight, setAgentTopHeight, mode, sessionListMounted, viewMode])
+  }, [agentTopHeight, setAgentTopHeight, mode, viewMode])
 
   const handleAgentTopResizeStart = React.useCallback(
     (e: React.MouseEvent) => {
@@ -298,48 +510,12 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
 
   // 当 activeTabId 变化时，自动滚动侧边栏使选中项可见
   React.useEffect(() => {
-    if (sidebarCollapsed || !sessionListMounted) return
     if (!activeTabId) return
     requestAnimationFrame(() => {
       const el = document.querySelector('.session-item-selected')
       el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     })
-  }, [activeTabId, sessionListMounted, sidebarCollapsed])
-
-  React.useEffect(() => {
-    if (sidebarExpandDelayTimerRef.current !== null) {
-      window.clearTimeout(sidebarExpandDelayTimerRef.current)
-      sidebarExpandDelayTimerRef.current = null
-    }
-
-    if (sidebarCollapsed) {
-      setSessionListMounted(false)
-      return
-    }
-
-    // 优先跟随真实 width transition 结束，再兜底定时，避免动画和重子树挂载抢同一帧。
-    sidebarExpandDelayTimerRef.current = window.setTimeout(() => {
-      setSessionListMounted(true)
-      sidebarExpandDelayTimerRef.current = null
-    }, SIDEBAR_WIDTH_TRANSITION_MS)
-
-    return () => {
-      if (sidebarExpandDelayTimerRef.current !== null) {
-        window.clearTimeout(sidebarExpandDelayTimerRef.current)
-        sidebarExpandDelayTimerRef.current = null
-      }
-    }
-  }, [sidebarCollapsed])
-
-  const handleSidebarWidthTransitionEnd = React.useCallback((event: React.TransitionEvent<HTMLDivElement>) => {
-    if (event.target !== sidebarContainerRef.current || event.propertyName !== 'width') return
-    if (sidebarCollapsed) return
-    if (sidebarExpandDelayTimerRef.current !== null) {
-      window.clearTimeout(sidebarExpandDelayTimerRef.current)
-      sidebarExpandDelayTimerRef.current = null
-    }
-    setSessionListMounted(true)
-  }, [sidebarCollapsed])
+  }, [activeTabId])
 
   // 按对话/会话隔离的映射 atom（删除时清理）
   const setConvModels = useSetAtom(conversationModelsAtom)
@@ -847,9 +1023,8 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
       setAgentSessions((prev) =>
         prev.map((s) => (s.id === updated.id ? updated : s))
       )
-      // 归档时自动关闭该会话的标签页，并同步新激活标签的副作用，
-      // 否则 RightSidePanel（依赖 currentAgentSessionIdAtom）会因为
-      // 指针被错误置 null 而消失。
+      // 归档时自动关闭该会话的标签页，并同步新激活标签的副作用；
+      // 右侧工作区跟随 active tab，标签副作用仍需要保持一致。
       if (updated.archived) {
         const wasActive = activeTabId === id
         const tabResult = closeTab(tabs, activeTabId, id)
@@ -1225,89 +1400,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     onSetViewMode: setViewMode,
   }
   return (
-    <div
-      ref={sidebarContainerRef}
-      onTransitionEnd={handleSidebarWidthTransitionEnd}
-      className="relative h-full overflow-hidden rounded-2xl bg-background shadow-xl transition-[width]"
-      style={{
-        width: sidebarCollapsed ? collapsedSidebarWidth : expandedSidebarWidth,
-        minWidth: sidebarCollapsed ? collapsedSidebarWidth : 180,
-        flexShrink: sidebarCollapsed ? 0 : 1,
-        transitionDuration: `${SIDEBAR_WIDTH_TRANSITION_MS}ms`,
-      }}
-    >
-      <div className="pointer-events-none absolute inset-0">
-        <div className="h-full w-full titlebar-drag-region" />
-      </div>
-      {sidebarCollapsed && (
-      <div
-        aria-hidden={false}
-        className="absolute inset-0 flex flex-col items-center"
-      >
-        {/* macOS 需要避开左上角红绿灯，其他平台保留紧凑呼吸感。 */}
-        <div className={cn(isMac ? 'pt-[50px]' : 'pt-2')} />
-
-        {/* 展开按钮 */}
-        <div className="pt-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                aria-label="展开侧边栏"
-                onClick={() => setSidebarCollapsed(false)}
-                className="size-[36px] flex items-center justify-center rounded-[10px] text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground transition-colors titlebar-no-drag"
-              >
-                <PanelLeftOpen size={18} strokeWidth={2.2} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">展开侧边栏</TooltipContent>
-          </Tooltip>
-        </div>
-
-        {/* 新对话/会话按钮 */}
-        <div className="pt-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={mode === 'agent' ? handleNewAgentSession : handleNewConversation}
-                className="p-2 rounded-[10px] text-foreground/70 bg-primary/5 hover:bg-primary/10 transition-colors titlebar-no-drag border border-dashed border-[hsl(var(--dashed-border))] hover:border-[hsl(var(--dashed-border-hover))]"
-              >
-                <Plus size={16} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              {mode === 'agent' ? '新会话' : '新对话'}
-            </TooltipContent>
-          </Tooltip>
-        </div>
-
-        {/* 弹性空间 */}
-        <div className="flex-1" />
-
-        {/* 用户头像（点击打开设置） */}
-        <div className="pb-3">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => setSettingsOpen(true)}
-                className="relative p-1 rounded-[10px] transition-colors titlebar-no-drag hover:bg-foreground/5"
-              >
-                <UserAvatar avatar={userProfile.avatar} size={28} />
-                {hasEnvironmentIssues && (
-                  <span className="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500" />
-                )}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">设置</TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
-      )}
-
-      {!sidebarCollapsed && (
-      <div
-        aria-hidden={false}
-        className="absolute inset-0 flex flex-col"
-      >
+    <>
         {/* macOS 需要避开左上角红绿灯，其他平台不占用这块空间。 */}
         <div className={cn(isMac ? 'pt-[30px]' : 'pt-1')}>
           {/* 模式切换器 + 折叠按钮 */}
@@ -1319,7 +1412,8 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
               <TooltipTrigger asChild>
                 <button
                   aria-label="收起侧边栏"
-                  onClick={() => setSidebarCollapsed(true)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={onCollapse}
                   className="h-[44px] w-[44px] flex-shrink-0 flex items-center justify-center rounded-xl bg-muted text-foreground/40 hover:bg-foreground/[0.08] hover:text-foreground/60 transition-colors titlebar-no-drag"
                 >
                   <PanelLeftClose size={17} />
@@ -1433,16 +1527,14 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
           </div>
         )}
 
-        {sessionListMounted && mode === 'agent' && viewMode === 'active' ? (
+        {mode === 'agent' && viewMode === 'active' ? (
           <div ref={agentSplitContainerRef} className="flex-1 flex flex-col min-h-0">
             <SessionListItems {...sessionListProps} />
           </div>
-        ) : sessionListMounted ? (
+        ) : (
           <div className="flex-1 flex flex-col min-h-0">
             <SessionListItems {...sessionListProps} />
           </div>
-        ) : (
-          <div className="flex-1" />
         )}
 
         {/* Agent 模式：工作区能力指示器 */}
@@ -1507,13 +1599,12 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
             </div>
           </button>
         </div>
-      </div>
-      )}
 
       {deleteDialog}
       {moveDialog}
       <SearchDialog />
-    </div>
+    </>
   )
 }
 
+const MemoizedLeftSidebarExpandedContent = React.memo(LeftSidebarExpandedContent)

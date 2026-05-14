@@ -7,6 +7,7 @@ use crate::kernel::{ConfigKernel, JcliAdapter};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// 设置页展示的单个 Provider 信息。
 pub struct ProviderInfo {
     pub name: String,
     pub api_base: String,
@@ -17,6 +18,7 @@ pub struct ProviderInfo {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Agent 配置页返回的聚合配置结构。
 pub struct AgentConfigInfo {
     pub providers: Vec<ProviderInfo>,
     pub active_index: usize,
@@ -25,6 +27,7 @@ pub struct AgentConfigInfo {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// YAML 配置文件按 section 聚合后的只读视图。
 pub struct YamlConfigInfo {
     pub sections: BTreeMap<String, BTreeMap<String, String>>,
 }
@@ -34,6 +37,7 @@ pub struct YamlConfigInfo {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
+/// 读取 Agent 配置页所需的 provider 与主题信息。
 pub fn get_agent_config(
     state: tauri::State<'_, Arc<JcliAdapter>>,
 ) -> Result<AgentConfigInfo, String> {
@@ -41,6 +45,7 @@ pub fn get_agent_config(
 }
 
 #[tauri::command]
+/// 保存 Agent 配置页提交的 provider 与主题信息。
 pub fn set_agent_config(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     input: AgentConfigInfo,
@@ -49,6 +54,7 @@ pub fn set_agent_config(
 }
 
 #[tauri::command]
+/// 切换当前激活的 provider 下标。
 pub fn set_active_provider(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     index: usize,
@@ -57,11 +63,13 @@ pub fn set_active_provider(
 }
 
 #[tauri::command]
+/// 读取原始 YAML 配置的 section/key 视图。
 pub fn get_config(state: tauri::State<'_, Arc<JcliAdapter>>) -> Result<YamlConfigInfo, String> {
     get_config_impl(state.config())
 }
 
 #[tauri::command]
+/// 设置一项原始 YAML 配置值。
 pub fn set_config(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     section: String,
@@ -72,6 +80,7 @@ pub fn set_config(
 }
 
 #[tauri::command]
+/// 读取当前系统提示词文本。
 pub fn get_system_prompt(
     state: tauri::State<'_, Arc<JcliAdapter>>,
 ) -> Result<Option<String>, String> {
@@ -79,6 +88,7 @@ pub fn get_system_prompt(
 }
 
 #[tauri::command]
+/// 覆盖保存当前系统提示词文本。
 pub fn set_system_prompt(
     state: tauri::State<'_, Arc<JcliAdapter>>,
     prompt: String,

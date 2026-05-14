@@ -76,6 +76,7 @@ macro_rules! set_arr_str {
     };
 }
 
+/// 将一组 JSON 补丁应用到 GUI 设置结构，并在主题变化时广播事件。
 pub(crate) fn apply_settings_updates(
     app: tauri::AppHandle,
     mut settings: GuiSettings,
@@ -141,6 +142,7 @@ pub(crate) fn apply_settings_updates(
     Ok(settings)
 }
 
+/// 将一组 JSON 补丁应用到用户资料结构。
 pub(crate) fn apply_user_profile_updates(
     mut profile: UserProfile,
     updates: serde_json::Value,

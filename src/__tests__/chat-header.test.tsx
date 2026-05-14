@@ -23,7 +23,7 @@ vi.mock('@/lib/ipc', () => ({
 }))
 
 describe('ChatHeader', () => {
-  it('uses the columns button to toggle the right workspace panel instead of conversation layout mode', () => {
+  it('keeps the right workspace toggle after the chat header actions', () => {
     const store = createStore()
     const conversation = {
       id: 'chat-1',
@@ -35,7 +35,7 @@ describe('ChatHeader', () => {
     }
 
     store.set(conversationsAtom, [conversation])
-    store.set(agentSidePanelOpenMapAtom, new Map())
+    store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', false]]))
 
     render(
       <Provider store={store}>
@@ -45,13 +45,13 @@ describe('ChatHeader', () => {
       </Provider>,
     )
 
-    const toggleButton = screen.getByRole('button', { name: '切换右侧工作区' })
+    const toggle = screen.getByRole('button', { name: '打开右侧工作区' })
+    expect(toggle.querySelector('.lucide-columns-2')).not.toBeNull()
 
-    fireEvent.click(toggleButton)
-    expect(store.get(agentSidePanelOpenMapAtom).get('chat-1')).toBe(false)
+    fireEvent.click(toggle)
 
-    fireEvent.click(toggleButton)
     expect(store.get(agentSidePanelOpenMapAtom).get('chat-1')).toBe(true)
+    expect(screen.getByRole('button', { name: '关闭右侧工作区' })).toBeInTheDocument()
   })
 
   it('shows the migrate entry in the header action area when the conversation can migrate', () => {
@@ -66,7 +66,6 @@ describe('ChatHeader', () => {
     }
 
     store.set(conversationsAtom, [conversation])
-    store.set(agentSidePanelOpenMapAtom, new Map())
 
     render(
       <Provider store={store}>

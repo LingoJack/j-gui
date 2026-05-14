@@ -7,15 +7,15 @@
 
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { Pencil, Check, X, PanelRight } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { BookOpen, Bot, Check, Pencil, Pin, X } from 'lucide-react'
 import {
   agentSessionsAtom,
-  agentSidePanelOpenMapAtom,
-  sessionSidePanelOpenAtom,
-  recentlyModifiedPathsAtom,
 } from '@/atoms/agent-atoms'
+import { promptSidebarOpenAtom } from '@/atoms/system-prompt-atoms'
+import { RightSidePanelToggleButton } from '@/components/app-shell/RightSidePanelToggleButton'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 import * as ipc from '@/lib/ipc'
 
 /** AgentHeader 属性接口 */
@@ -27,23 +27,10 @@ export function AgentHeader({ sessionId }: AgentHeaderProps): React.ReactElement
   const sessions = useAtomValue(agentSessionsAtom)
   const session = sessions.find((s) => s.id === sessionId) ?? null
   const setAgentSessions = useSetAtom(agentSessionsAtom)
+  const setPromptSidebarOpen = useSetAtom(promptSidebarOpenAtom)
   const [editing, setEditing] = React.useState(false)
   const [editTitle, setEditTitle] = React.useState('')
   const inputRef = React.useRef<HTMLInputElement>(null)
-
-  // 文件面板切换状态
-  const setSidePanelOpenMap = useSetAtom(agentSidePanelOpenMapAtom)
-  const recentlyModifiedMap = useAtomValue(recentlyModifiedPathsAtom)
-  const isPanelOpen = useAtomValue(sessionSidePanelOpenAtom(sessionId))
-  const hasFileChanges = (recentlyModifiedMap.get(sessionId)?.size ?? 0) > 0
-
-  const togglePanel = React.useCallback(() => {
-    setSidePanelOpenMap((prev) => {
-      const map = new Map(prev)
-      map.set(sessionId, !(map.get(sessionId) ?? true))
-      return map
-    })
-  }, [sessionId, setSidePanelOpenMap])
 
   if (!session) return null
 
@@ -82,6 +69,17 @@ export function AgentHeader({ sessionId }: AgentHeaderProps): React.ReactElement
       setEditing(false)
     }
   }
+
+  const togglePin = async (): Promise<void> => {
+    try {
+      const updated = await ipc.togglePinAgentSession(session.id)
+      setAgentSessions((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
+    } catch (error) {
+      console.error('[AgentHeader] 置顶状态更新失败:', error)
+    }
+  }
+
+  const headerButtonClass = 'h-8 w-8 rounded-xl text-foreground/70 hover:bg-accent hover:text-accent-foreground'
 
   return (
     <div className="relative z-[51] flex items-center gap-2 px-4 h-[48px] titlebar-drag-region">
@@ -129,28 +127,61 @@ export function AgentHeader({ sessionId }: AgentHeaderProps): React.ReactElement
               <Pencil className="size-3.5" />
             </button>
           </div>
-          {/* 文件面板打开按钮（仅面板关闭时显示） */}
-          {!isPanelOpen && (
+          <div className="ml-auto flex items-center gap-1 titlebar-no-drag">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="relative titlebar-no-drag h-7 w-7 flex-shrink-0"
-                  onClick={togglePanel}
+                  aria-label="提示词"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => setPromptSidebarOpen(true)}
+                  className={headerButtonClass}
                 >
-                  <PanelRight className="size-3.5" />
-                  {hasFileChanges && (
-                    <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary animate-pulse" />
-                  )}
+                  <BookOpen className="size-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <p>打开文件面板</p>
-              </TooltipContent>
+              <TooltipContent side="bottom"><p>提示词</p></TooltipContent>
             </Tooltip>
-          )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="在 Chat 中引用"
+                    disabled
+                    className={cn(headerButtonClass, 'opacity-60')}
+                  >
+                    <Bot className="size-4" />
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom"><p>Agent 到 Chat 引用暂未接入</p></TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={session.pinned ? '取消置顶' : '置顶会话'}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => { void togglePin() }}
+                  className={cn(headerButtonClass, session.pinned && 'bg-accent text-accent-foreground')}
+                >
+                  <Pin className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom"><p>{session.pinned ? '取消置顶' : '置顶会话'}</p></TooltipContent>
+            </Tooltip>
+            <RightSidePanelToggleButton
+              sessionId={sessionId}
+              className={headerButtonClass}
+            />
+          </div>
         </>
       )}
     </div>

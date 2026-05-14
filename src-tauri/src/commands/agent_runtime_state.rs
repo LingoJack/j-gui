@@ -4,11 +4,13 @@ use crate::kernel::types::KernelProvider;
 use std::collections::HashMap;
 
 #[derive(Debug, Default, PartialEq, Eq)]
+/// Claude CLI 恢复启动时需要的 resume/fork 信息。
 pub(super) struct CliResumeState {
     pub(super) resume_session_id: Option<String>,
     pub(super) fork_session: bool,
 }
 
+/// 如果指定会话的 Agent 已结束，则从运行时表中移除。
 pub(super) fn prune_finished_runtime(
     runtimes: &mut HashMap<String, AgentEngine>,
     session_id: &str,
@@ -22,6 +24,7 @@ pub(super) fn prune_finished_runtime(
     }
 }
 
+/// 向运行时表注册一个新的 AgentEngine，若会话已在运行则返回错误。
 pub(super) fn insert_runtime(
     runtimes: &mut HashMap<String, AgentEngine>,
     session_id: &str,
@@ -35,6 +38,7 @@ pub(super) fn insert_runtime(
     Ok(())
 }
 
+/// 确保指定会话当前没有正在运行的 AgentEngine。
 pub(super) fn ensure_runtime_idle(
     runtimes: &mut HashMap<String, AgentEngine>,
     session_id: &str,
@@ -49,6 +53,7 @@ pub(super) fn ensure_runtime_idle(
     Ok(())
 }
 
+/// 结合会话历史推导 Claude CLI 的恢复启动参数。
 pub(super) fn resolve_cli_resume_state(session_id: &str) -> Result<CliResumeState, String> {
     let session = agent_session::list_agent_sessions()?
         .into_iter()
@@ -78,11 +83,13 @@ pub(super) fn resolve_cli_resume_state(session_id: &str) -> Result<CliResumeStat
     Ok(CliResumeState::default())
 }
 
+/// 控制初始用户消息是否需要写入时间线的行为参数。
 pub(super) struct InitialMessageBehavior<'a> {
     pub(super) user_message: Option<&'a str>,
     pub(super) persist_to_timeline: bool,
 }
 
+/// 将启动时的首条用户消息补写到 Agent 时间线。
 pub(super) fn append_initial_user_message(
     session_id: &str,
     user_message: Option<&str>,
@@ -106,6 +113,7 @@ pub(super) fn append_initial_user_message(
     )
 }
 
+/// 注册运行时，并按需补写启动时的首条用户消息。
 pub(super) fn insert_runtime_and_maybe_append_initial_message(
     runtimes: &mut HashMap<String, AgentEngine>,
     session_id: &str,
@@ -125,6 +133,7 @@ pub(super) fn insert_runtime_and_maybe_append_initial_message(
     Ok(())
 }
 
+/// 启动 Agent 所需的归一化上下文。
 pub(super) struct AgentStartContext {
     pub(super) sid: String,
     pub(super) model_id: String,
@@ -132,6 +141,7 @@ pub(super) struct AgentStartContext {
     pub(super) cli_resume: CliResumeState,
 }
 
+/// 解析一次 Agent 启动请求对应的模型、权限模式和恢复上下文。
 pub(super) fn resolve_start_context(
     input: &AgentStartRequest,
     provider: &KernelProvider,

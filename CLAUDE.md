@@ -147,16 +147,10 @@ src-tauri/              Rust 后端（commands/ + kernel/ + agent_engine.rs）
     - 用来掩盖看不懂代码的注释；这类情况应先简化代码，再决定是否需要注释
     - 没有时间条件或清理条件的临时注释，例如“先这样”“后面再说”
     - 英文正文注释；除非引用协议字段、日志关键字、错误字面量或标准术语
-- **Rust 编码规约**（强制，详见 `.codestable/compound/2026-05-08-decision-rust-coding-conventions.md`）：
-  - `cargo fmt` + `cargo clippy -- -D warnings` 零告警
-  - 命名：`PascalCase`（类型/Trait）、`snake_case`（函数/变量/模块）、`SCREAMING_SNAKE_CASE`（常量）
-  - 禁止 `.clone()` 滥用，优先借用/所有权转移；接口参数优先 `&str`/`&[T]` 而非 `String`/`Vec`
-  - 禁止 `unwrap()`/`expect()` 在库代码中使用；用 `?` 传播错误，应用层用 `anyhow`，库层用 `thiserror`
-  - 类型与 `impl` 块物理相邻；派生 `Debug, Default, PartialEq`；构造用 `new() -> Self`
-  - 显式处理枚举分支，禁止 `_ => ...` 通配；用 `.map()`/`.and_then()`/`.ok_or()` 链式处理
-  - 禁止长路径引用（`a::b::c::Type`），用 `use` 导入；弃用 `mod.rs`，去 `utils` 化按功能归类
-  - 函数单一职责，参数 >4 个封 `Config` 结构体；魔法值提取为 `const`
-  - `pub` 成员须有 `///` 文档；`unsafe` 块须有 `// SAFETY:` 注释
+- **Rust 编码规约**（详见 `.codestable/compound/2026-05-08-decision-rust-coding-conventions.md`）：
+  - 脚本硬门禁：`cargo fmt`、`cargo clippy -- -D warnings`、`mod.rs` 禁用、IPC 对账、测试与其他 `FAIL` 级检查
+  - 脚本告警：单文件行数、函数行数、函数参数数量、非 test `unwrap/expect`、深层 `super::super::`、导出 API `///`、`unsafe` 的 `// SAFETY:`
+  - 审查建议：命名、`clone` 收敛、参数封装、`?` / `anyhow` / `thiserror` 使用、枚举分支显式化、常量提取等，默认按 review 口径执行
 - **流式 IPC**：Chat 流式必须用 `Channel<T>`（非 Tauri Events — Events 不适合低延迟高频场景）
 - **Agent 模式**：Claude Agent SDK CLI 子进程 + j-agent crate 并行，预留 `AgentBackend` trait
 - **Channel send 错误**：取消请求通过 Channel drop 实现

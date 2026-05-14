@@ -302,10 +302,12 @@ fn chat_attachment_sidecar_path(session_id: &str) -> PathBuf {
         .join("chat_attachments.json")
 }
 
+/// 返回聊天会话 meta.json 的路径。
 pub(crate) fn chat_session_meta_path(session_id: &str) -> PathBuf {
     SessionPaths::new(session_id).meta_file()
 }
 
+/// 返回聊天会话 transcript.jsonl 的路径。
 pub(crate) fn chat_session_transcript_path(session_id: &str) -> PathBuf {
     SessionPaths::new(session_id).transcript()
 }
