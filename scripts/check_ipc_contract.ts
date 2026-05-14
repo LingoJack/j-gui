@@ -1,9 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
-const projectRoot = resolve(import.meta.dirname, '..')
-const ipcTs = resolve(projectRoot, 'src/lib/ipc.ts')
-const tauriLib = resolve(projectRoot, 'src-tauri/src/lib.rs')
+const ipcTs = new URL('../src/lib/ipc.ts', import.meta.url)
+const tauriLib = new URL('../src-tauri/src/lib.rs', import.meta.url)
 
 const commandPattern = /(?:tryInvoke|invoke)\(\s*['"]([^'"]+)['"]/g
 const registerPattern = /commands::[a-z_]+::([a-zA-Z0-9_]+)/g
@@ -39,8 +35,8 @@ function collectRegisteredCommands(source: string): Set<string> {
   return collectMatches(handlerMatch[1], registerPattern)
 }
 
-const frontendCommands = collectMatches(readFileSync(ipcTs, 'utf8'), commandPattern)
-const registeredCommands = collectRegisteredCommands(readFileSync(tauriLib, 'utf8'))
+const frontendCommands = collectMatches(await Bun.file(ipcTs).text(), commandPattern)
+const registeredCommands = collectRegisteredCommands(await Bun.file(tauriLib).text())
 
 const missing = [...frontendCommands]
   .filter((command) => !registeredCommands.has(command) && !allowedFrontendOnlyCommands.has(command))
@@ -50,11 +46,10 @@ if (missing.length === 0) {
   console.log(
     `IPC contract 校验通过：前端命令已完成注册，允许保留的前端占位命令 ${allowedFrontendOnlyCommands.size} 个。`,
   )
-  process.exit(0)
+} else {
+  console.error('IPC contract 校验失败：以下前端命令未在 Rust generate_handler 注册：')
+  for (const command of missing) {
+    console.error(`  - ${command}`)
+  }
+  throw new Error('IPC contract 校验失败')
 }
-
-console.error('IPC contract 校验失败：以下前端命令未在 Rust generate_handler 注册：')
-for (const command of missing) {
-  console.error(`  - ${command}`)
-}
-process.exit(1)
