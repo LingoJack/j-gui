@@ -3,7 +3,7 @@ doc_type: roadmap
 slug: j-gui-v1
 status: active
 created: 2026-05-10
-last_reviewed: 2026-05-13
+last_reviewed: 2026-05-14
 tags: [tauri, desktop, j-cli, chat, agent, proma, closure]
 related_requirements:
   - j-gui-ai-interaction
@@ -664,4 +664,4 @@ Phase C 当前判断：
 - `2026-05-13`：完成 `sidebar-performance-hardening` 的当前最小闭环：LeftSidebar 重新展开时改为跟随 width transition 结束后再挂载 SessionListItems，并保留超时兜底；同时补上快速展开后再收起的迟到挂载取消、Agent 折叠启动后首次展开的分栏高度初始化防回退，以及对应回归测试。下一步顺序更新为先做 `desktop-shell-platform-polish`。
 - `2026-05-13`：完成 `desktop-shell-platform-polish`：Tauri bundle 图标已切到 J logo 生成产物；Windows 主窗口在 Rust setup 阶段直接关闭原生 decorations，并接入自定义最小化/最大化/关闭按钮；macOS 保持 `decorations=true + titleBarStyle=Overlay + trafficLightPosition` 的代码级配置。同时吸收双子代理审查里的两个真实 P1：补上非 Tauri 环境保护，避免浏览器/测试壳误调 `getCurrentWindow()`；补上迟到 `onResized` 监听清理与最大化状态同步防回写竞争。图标“不是 J logo”的 finding 经源图核对为误报，未吸收。
 - `2026-05-13`：按本轮新需求继续细化 Phase E：新增 `agent-hooks-config-integration`，明确 Hooks 需要并入 Agent 配置、按 backend mode 区分支持矩阵、按工作区切换并在 runtime 支持时按类型添加；新增 `appearance-theme-customization`，明确外观自定义应走受控 token、实时预览、复制/导入/重置路线，而不是任意换肤。同时把相关观察项、推荐顺序与总体进度数字同步到当前真相。
-- `2026-05-14`：补齐仓库级 GitHub Actions 默认 CI：新增 `.github/workflows/desktop-ci.yml`，Ubuntu 负责执行 `bash scripts/check_lint.sh`，Linux / macOS Intel / macOS Apple Silicon / Windows 负责 Tauri bundle 构建与 artifact 上传；同时让 D11 在 PR 场景校验 `refs/pull/<num>/head` 的真实提交文案而不是 GitHub 合成 merge commit。该能力为 `dogfooding-self-development-loop` 提供基础自动化，但不单独代表该 roadmap 主线已完成。
+- `2026-05-14`：补齐仓库级 GitHub Actions 默认 CI，并扩到 Release 资产分发：`.github/workflows/desktop-ci.yml` 现在由 Ubuntu 执行 `bash scripts/check_lint.sh`，Linux / macOS Intel / macOS Apple Silicon / Windows 负责 Tauri bundle 构建；Linux 工件显式拆成 `deb / rpm / AppImage / snapshot tar.gz`，Windows 额外补一条 `portable zip`，tag 推送会自动把跨平台工件挂到 GitHub Release。同时让 D11 在 PR 场景校验 `refs/pull/<num>/head` 的真实提交文案而不是 GitHub 合成 merge commit。该能力为 `dogfooding-self-development-loop` 提供基础自动化，但不单独代表该 roadmap 主线已完成。
