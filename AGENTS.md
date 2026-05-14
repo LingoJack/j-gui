@@ -15,6 +15,38 @@ j-gui 是一个基于 Tauri v2 的 AI 桌面应用，集成 Chat（多 Provider 
 
 CodeStable 工作流技能：`/cs-feat`（新功能）`/cs-issue`（修 bug）`/cs-arch`（架构文档）`/cs-req`（需求文档）`/cs-roadmap`（大需求拆解）`/cs-decide`（技术决策）`/cs-learn` / `/cs-trick`（沉淀）。
 
+### 默认实施流程（强制）
+
+- 中大改动默认顺序：`design / issue-analyze → implement → audit → git 提交 → 回写 roadmap / acceptance / fix-note → 明确下一步`
+- 用户明确要求 fastforward、小修小补、纯文案改动时，才允许跳过 design；否则不要先写代码后补设计
+- “审查完成”只在子代理返回 `completed` 最终报告后才能成立；运行中、超时、被中断都不算完成审查
+- 对外汇报默认分两段：
+  - 工程闭环：改了哪些链路、测试、门禁、文档
+  - 用户体验：用户能直接感知到什么变化
+
+### 审查触发条件（强制）
+
+- 命中以下任一条件，完成实现后必须派发子代理做 `/cs-audit`：
+  - 改 IPC 契约、`src/lib/ipc.ts`、`src-tauri/src/lib.rs`、`generate_handler!` 注册面
+  - 改 Rust 运行时状态机、会话恢复、快捷键、窗口生命周期、托盘、持久化
+  - 改 Chat / Agent 跨前后端联动状态，或可能破坏状态隔离
+  - 改 roadmap 中已标注的高风险域或默认门禁关键锚点
+- 未命中上述条件的小任务，可不审查，但仍要跑 `bash scripts/check_lint.sh`
+
+### Roadmap 闭环检查（强制）
+
+- 条目进入实现前必须先确认：
+  - 是否已有对应的 design / explore / issue / decision 证据
+  - 实现目标、验收口径、风险边界是否已经写清
+- 条目完成后必须同 patch 回写：
+  - items 状态
+  - roadmap 进度数字
+  - 当前解锁关系
+  - 推荐执行顺序
+  - acceptance / fix-note / 变更日志
+- 不允许只改代码不回写 roadmap，也不允许只改 roadmap 不核代码真相
+- 前端若必须保留未接后端的占位接口，必须在门禁 allowlist 中显式登记，不能静默漂移
+
 ## 技术栈
 
 | 层      | 技术                                                                 |
@@ -61,6 +93,7 @@ src-tauri/              Rust 后端（commands/ + kernel/ + agent_engine.rs）
 
 - **启动开发环境**：`bun run tauri dev`（非 `cargo tauri dev` — CLI 未安装，用 bun 自带的 `@tauri-apps/cli`）
 - **默认验收入口**：`bash scripts/check_lint.sh`。它是本仓库默认的合规检查入口，统一执行 `cargo fmt --check`、`cargo clippy -- -D warnings`、workspace 全量 TypeScript 检查、`bun run test`、`cargo test`，并补充 Rust 结构性约束扫描
+- **推送前门禁**：默认通过仓库内 `.githooks/pre-push` 自动执行 `bash scripts/check_lint.sh`；首次进入仓库先跑一次 `bun run setup:git-hooks`
 - **测试（TDD 强制）**：实现前先写测试；任何新功能/修复必须有对应测试覆盖。前端测试必须走 `bun run test`（`bun test` 不走 vitest 配置，组件测试因缺 jsdom 会失败）
 - **j-cli 依赖**：当前以 crates.io 版本依赖为准（见 `src-tauri/Cargo.toml`），不再默认使用本地源码路径依赖
 - **j-cli 数据目录**：`~/.jdata/`（由 `j_cli::constants` 定义）
@@ -145,14 +178,16 @@ src-tauri/              Rust 后端（commands/ + kernel/ + agent_engine.rs）
   - `description` 控制在单行短句内，不写句号，不写“更新代码”“修复问题”“调整一下”这类空泛文案
   - 本地提交前执行一次 `bun run setup:git-hooks`，启用仓库内 `commit-msg` 校验
   - 文档或 CodeStable 产物优先用 `docs(...)`；涉及 `.codestable/` 的提交可用 `docs(codestable): ...`
-  - 多主题改动在条件允许时优先拆分 commit；必须合并提交时，文案应覆盖这次提交的主闭环，不要罗列零碎细节
+  - 多主题改动在条件允许时必须按主题拆分 commit；不要把 `fix`、`build/ci`、`docs(codestable)`、纯样式整理混在同一个提交里
+  - 推荐粒度：功能/修复用 `feat` / `fix`，门禁和 hooks 用 `build` / `ci`，Roadmap/CodeStable 回写用 `docs(codestable)`，纯结构重组用 `refactor`
+  - 必须合并提交时，文案只覆盖这次提交的主闭环，不要罗列零碎细节
   - 涉及不兼容变更时，使用 `!` 或 `BREAKING CHANGE:` 明确标注
 - **固定收尾工作流**（强制）：
   - 对 roadmap 条目做实现落地时，条目闭环后的固定顺序是：`git 提交 → 回写 roadmap → 明确下一步`
   - 回写 roadmap 至少包括：items 状态、roadmap 进度数字、当前解锁关系、推荐执行顺序、变更日志
   - “明确下一步”必须落到一个具体 roadmap item，默认直接承接当前推荐执行顺序的第一项，而不是给泛泛建议
   - 若该条目属于核心逻辑，还需先完成条目级审查与门禁验证，再进入上述固定收尾顺序
-- **Git 排除**：`.claude/` 不提交；`.codestable/` 是否提交以当前任务指令为准，不要沿用旧结论擅自排除
+- **Git 排除**：`.claude/` 不提交；`.codestable/` 默认提交，除非当前任务明确要求不提交
 
 ### 任务完成验证（强制）
 
@@ -164,11 +199,11 @@ src-tauri/              Rust 后端（commands/ + kernel/ + agent_engine.rs）
 | `WARN`（由本次改动引入） | 必须处理，不能把新告警留给后续 |
 | `WARN`（已确认是存量且与本次无关） | 可保留，但必须在汇报中点明 |
 
-**脚本当前覆盖的硬门禁**：`cargo fmt --check`、`cargo clippy -- -D warnings`、root + `packages/core` + `packages/shared` + `packages/ui` 的 TypeScript 检查、`j_cli::` 单入口约束、`bun run test`、`cargo test`、`mod.rs` 禁用。
+**脚本当前覆盖的硬门禁**：`cargo fmt --check`、`cargo clippy -- -D warnings`、root + `packages/core` + `packages/shared` + `packages/ui` 的 TypeScript 检查、`j_cli::` 单入口约束、前后端 IPC 命令注册面对账、`bun run test`、`cargo test`、`mod.rs` 禁用、最新提交文案检查。
 
 **脚本当前覆盖的告警约束**：Rust 单文件行数、函数行数、函数参数过多、非 test `unwrap/expect`、`super::super::` 过深引用、公共 API 缺 `///`、`unsafe` 缺 `// SAFETY:`。
 
-**脚本外仍需单独遵守的约束**：`.codestable/` `.claude/` 不提交、注释不可擅删且新增注释默认中文、Chat/Agent 状态隔离、流式协议改动必须同时补前后端测试、以及需求本身要求的针对性测试/验证。
+**脚本外仍需单独遵守的约束**：`.claude/` 不提交、`.codestable/` 默认提交、注释不可擅删且新增注释默认中文、Chat/Agent 状态隔离、流式协议改动必须同时补前后端测试、以及需求本身要求的针对性测试/验证。
 
 **这些检查在子代理实现报告中必须按“脚本结果 + 额外人工验证”汇报，主控 agent 在标记任务完成前必须独立验证。**
 
