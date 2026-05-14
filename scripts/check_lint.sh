@@ -137,6 +137,7 @@ BUN_BIN="$(resolve_bin bun)"
 CARGO_MANIFEST_NATIVE="$(to_host_path "$CARGO_MANIFEST")"
 CARGO_LOCK_NATIVE="$(to_host_path "$CARGO_LOCK")"
 IPC_CONTRACT_SCRIPT_NATIVE="$(to_host_path "$PROJECT_ROOT/scripts/check_ipc_contract.ts")"
+CHECK_COMMIT_REF="${CHECK_COMMIT_REF:-HEAD}"
 
 # ── 超时包装（Linux/Mac 可用 timeout，Windows 用 fallback）──────────────────
 run_with_timeout() {
@@ -771,11 +772,11 @@ fi
 # D11. 最新提交文案检查
 hdr "=== D11. 最新提交文案检查 (中文 Conventional Commits) ==="
 commit_msg_log="$(make_temp)"
-if bash "$PROJECT_ROOT/scripts/check_commit_message.sh" --ref HEAD >"$commit_msg_log" 2>&1; then
-    pass "最新提交文案符合中文 Conventional Commits 约束"
+if bash "$PROJECT_ROOT/scripts/check_commit_message.sh" --ref "$CHECK_COMMIT_REF" >"$commit_msg_log" 2>&1; then
+    pass "提交文案符合中文 Conventional Commits 约束（ref: $CHECK_COMMIT_REF）"
 else
     show_log_tail "$commit_msg_log" 20
-    fail "最新提交文案不符合中文 Conventional Commits 约束"
+    fail "提交文案不符合中文 Conventional Commits 约束（ref: $CHECK_COMMIT_REF）"
 fi
 
 # D12. 前后端 IPC 命令面对账

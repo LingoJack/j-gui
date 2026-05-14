@@ -1,0 +1,165 @@
+name: Desktop CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_VERSION: 1.3.14
+
+jobs:
+  gate:
+    name: Gate (Ubuntu)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Fetch PR head ref for D11 commit check
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          git fetch --no-tags --depth=1 origin \
+            +refs/pull/${{ github.event.pull_request.number }}/head:refs/remotes/origin/pr-head
+
+      - name: Run default gate
+        env:
+          CHECK_COMMIT_REF: ${{ github.event_name == 'pull_request' && 'refs/remotes/origin/pr-head' || 'HEAD' }}
+        run: bash scripts/check_lint.sh
+
+  build-desktop:
+    name: Build (${{ matrix.label }})
+    needs: gate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            label: Linux
+            use_target: false
+            rust_targets: ""
+            tauri_args: ""
+            bundle_root: src-tauri/target/release/bundle
+          - os: macos-15-intel
+            label: macOS-Intel
+            use_target: true
+            tauri_args: "--target x86_64-apple-darwin"
+            rust_targets: x86_64-apple-darwin
+            bundle_root: src-tauri/target/x86_64-apple-darwin/release/bundle
+          - os: macos-15
+            label: macOS-AppleSilicon
+            use_target: true
+            tauri_args: "--target aarch64-apple-darwin"
+            rust_targets: aarch64-apple-darwin
+            bundle_root: src-tauri/target/aarch64-apple-darwin/release/bundle
+          - os: windows-latest
+            label: Windows
+            use_target: false
+            rust_targets: ""
+            tauri_args: ""
+            bundle_root: src-tauri/target/release/bundle
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Setup Rust
+        if: ${{ !matrix.use_target }}
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Rust target
+        if: ${{ matrix.use_target }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Restore Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Tauri desktop bundle
+        if: ${{ !matrix.use_target }}
+        run: bun run tauri build
+
+      - name: Build Tauri desktop bundle (custom target)
+        if: ${{ matrix.use_target }}
+        run: bun run tauri build ${{ matrix.tauri_args }}
+
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: j-gui-${{ matrix.label }}
+          path: ${{ matrix.bundle_root }}/**/*
+          if-no-files-found: error
+          retention-days: 14
