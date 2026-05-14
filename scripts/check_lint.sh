@@ -136,7 +136,7 @@ CARGO_BIN="$(resolve_bin cargo)"
 BUN_BIN="$(resolve_bin bun)"
 CARGO_MANIFEST_NATIVE="$(to_host_path "$CARGO_MANIFEST")"
 CARGO_LOCK_NATIVE="$(to_host_path "$CARGO_LOCK")"
-IPC_CONTRACT_SCRIPT_NATIVE="$(to_host_path "$PROJECT_ROOT/scripts/check_ipc_contract.mjs")"
+IPC_CONTRACT_SCRIPT_NATIVE="$(to_host_path "$PROJECT_ROOT/scripts/check_ipc_contract.ts")"
 
 # ── 超时包装（Linux/Mac 可用 timeout，Windows 用 fallback）──────────────────
 run_with_timeout() {

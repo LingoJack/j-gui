@@ -20,8 +20,8 @@ const allowedFrontendOnlyCommands = new Set([
   'migrate_chat_to_agent',
 ])
 
-function collectMatches(source, pattern) {
-  const results = new Set()
+function collectMatches(source: string, pattern: RegExp): Set<string> {
+  const results = new Set<string>()
   for (const match of source.matchAll(pattern)) {
     const value = match[1]
     if (value && !value.startsWith('plugin:')) {
@@ -31,7 +31,7 @@ function collectMatches(source, pattern) {
   return results
 }
 
-function collectRegisteredCommands(source) {
+function collectRegisteredCommands(source: string): Set<string> {
   const handlerMatch = source.match(generateHandlerPattern)
   if (!handlerMatch) {
     throw new Error('未找到 tauri::generate_handler! 注册块')
