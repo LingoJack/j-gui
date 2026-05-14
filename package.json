@@ -19,7 +19,8 @@
     "test:watch": "vitest",
     "lint": "bash scripts/check_lint.sh",
     "lint:fix": "bash scripts/check_lint.sh --fix",
-    "lint:eslint": "eslint src/ packages/ --max-warnings 0"
+    "lint:eslint": "eslint src/ packages/ --max-warnings 0",
+    "setup:git-hooks": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

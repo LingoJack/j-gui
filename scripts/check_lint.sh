@@ -48,7 +48,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── 计数器 ────────────────────────────────────────────────────────────────────
-FIXED_CHECK_GROUPS=19
+FIXED_CHECK_GROUPS=20
 N_PASS=0; N_WARN=0; N_FAIL=0
 
 # ── 临时文件统一管理 ──────────────────────────────────────────────────────────
@@ -765,6 +765,16 @@ done < <(
 )
 if (( placeholder_fail == 0 )); then
     pass "未发现 TODO/FIXME 等占位符或假实现标记"
+fi
+
+# D11. 最新提交文案检查
+hdr "=== D11. 最新提交文案检查 (中文 Conventional Commits) ==="
+commit_msg_log="$(make_temp)"
+if bash "$PROJECT_ROOT/scripts/check_commit_message.sh" --ref HEAD >"$commit_msg_log" 2>&1; then
+    pass "最新提交文案符合中文 Conventional Commits 约束"
+else
+    show_log_tail "$commit_msg_log" 20
+    fail "最新提交文案不符合中文 Conventional Commits 约束"
 fi
 
 # =============================================================================

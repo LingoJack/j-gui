@@ -66,12 +66,16 @@ fi
 SCOPE="${BASH_REMATCH[2]}"
 DESCRIPTION="${BASH_REMATCH[3]}"
 
-if [[ ! "$SCOPE" =~ [一-龥] ]]; then
+contains_non_ascii() {
+    LC_ALL=C grep -q '[^ -~]' <<<"$1"
+}
+
+if ! contains_non_ascii "$SCOPE"; then
     echo "提交 scope 需要包含中文，当前为: $SCOPE" >&2
     exit 1
 fi
 
-if [[ ! "$DESCRIPTION" =~ [一-龥] ]]; then
+if ! contains_non_ascii "$DESCRIPTION"; then
     echo "提交 description 需要包含中文，当前为: $DESCRIPTION" >&2
     exit 1
 fi

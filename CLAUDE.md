@@ -143,6 +143,7 @@ src-tauri/              Rust 后端（commands/ + kernel/ + agent_engine.rs）
   - `scope` 和 `description` 默认使用中文；`scope` 写受影响模块，`description` 写明确动宾短语
   - 除约定保留的 `type` 外，subject 其余部分默认全部中文，不写英文短句式标题
   - `description` 控制在单行短句内，不写句号，不写“更新代码”“修复问题”“调整一下”这类空泛文案
+  - 本地提交前执行一次 `bun run setup:git-hooks`，启用仓库内 `commit-msg` 校验
   - 文档或 CodeStable 产物优先用 `docs(...)`；涉及 `.codestable/` 的提交可用 `docs(codestable): ...`
   - 多主题改动在条件允许时优先拆分 commit；必须合并提交时，文案应覆盖这次提交的主闭环，不要罗列零碎细节
   - 涉及不兼容变更时，使用 `!` 或 `BREAKING CHANGE:` 明确标注
