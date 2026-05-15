@@ -75,16 +75,6 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
   const isOpen = useAtomValue(sessionSidePanelOpenAtom(sessionId))
   const panelTitle = mode === 'chat' ? '聊天工作区' : '工作区文件'
 
-  // 动画标志：渲染阶段直接计算，同一会话内 isOpen 变化时启用过渡动画，切换会话时即时显示
-  const prevIsOpenRef = React.useRef(isOpen)
-  const prevSessionIdRef = React.useRef(sessionId)
-  const shouldAnimate = prevSessionIdRef.current === sessionId && prevIsOpenRef.current !== isOpen
-  // 在渲染后更新 prev 值，以便下次渲染比较
-  React.useEffect(() => {
-    prevIsOpenRef.current = isOpen
-    prevSessionIdRef.current = sessionId
-  }, [isOpen, sessionId])
-
   const setIsOpen = React.useCallback((value: boolean | ((prev: boolean) => boolean)) => {
     setSidePanelOpenMap((prev) => {
       const map = new Map(prev)
@@ -365,23 +355,20 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
   return (
     <div
       className={cn(
-        'relative h-full w-[320px] flex-shrink-0 overflow-hidden bg-content-area rounded-2xl shadow-xl transition-transform ease-in-out transform-gpu',
-        isOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none',
+        'relative h-full w-[320px] flex-shrink-0 overflow-hidden bg-content-area rounded-2xl shadow-xl',
       )}
       style={{
         contain: 'layout paint style',
-        transitionDuration: shouldAnimate ? '300ms' : '0ms',
       }}
     >
       {/* 面板内容 */}
-      <div
-        className={cn(
-          'w-[320px] h-full flex flex-col titlebar-no-drag',
-          'pt-0',
-        )}
-        aria-hidden={!isOpen}
-        inert={isOpen ? undefined : true}
-      >
+      {isOpen && (
+        <div
+          className={cn(
+            'w-[320px] h-full flex flex-col titlebar-no-drag',
+            'pt-0',
+          )}
+        >
           {/* 文件浏览内容 */}
           {workspaceSlug ? (
             <div className="flex-1 min-h-0 flex flex-col">
@@ -611,7 +598,8 @@ export function SidePanel({ sessionId, sessionPath, mode = 'agent' }: SidePanelP
                   </div>
                 </div>
               )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

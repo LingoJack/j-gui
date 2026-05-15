@@ -7,7 +7,7 @@
  */
 
 import * as React from 'react'
-import { atom, useAtomValue } from 'jotai'
+import { atom, useAtomValue, useSetAtom } from 'jotai'
 import {
   COLLAPSED_SIDEBAR_WIDTH,
   DEFAULT_EXPANDED_SIDEBAR_WIDTH,
@@ -20,6 +20,7 @@ import { AppShellProvider, type AppShellContextType } from '@/contexts/AppShellC
 import { appModeAtom } from '@/atoms/app-mode'
 import { sessionSidePanelOpenAtom } from '@/atoms/agent-atoms'
 import { activeTabIdAtom, sidebarCollapsedAtom, tabsAtom } from '@/atoms/tab-atoms'
+import { sidebarWidthAtom } from '@/atoms/sidebar-atoms'
 import { cn } from '@/lib/utils'
 
 export interface AppShellProps {
@@ -29,12 +30,18 @@ export interface AppShellProps {
 
 const LEFT_SIDEBAR_SLOT_PADDING = 8
 const RIGHT_PANEL_SLOT_WIDTH = 328
+const SIDEBAR_MIN_WIDTH = 220
+const SIDEBAR_MAX_WIDTH = 520
 
 export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
   const appMode = useAtomValue(appModeAtom)
   const tabs = useAtomValue(tabsAtom)
   const activeTabId = useAtomValue(activeTabIdAtom)
   const sidebarCollapsed = useAtomValue(sidebarCollapsedAtom)
+  const sidebarWidth = useAtomValue(sidebarWidthAtom)
+  const setSidebarWidth = useSetAtom(sidebarWidthAtom)
+  const resizingRef = React.useRef(false)
+  const resizeCleanupRef = React.useRef<(() => void) | null>(null)
 
   const activeTab = React.useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) ?? null,
@@ -59,8 +66,51 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
     [activePanelSessionId],
   )
   const isRightPanelOpen = useAtomValue(activePanelAtom ?? FALLBACK_CLOSED_PANEL_ATOM)
-  const leftColumnWidth = (sidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : DEFAULT_EXPANDED_SIDEBAR_WIDTH) + LEFT_SIDEBAR_SLOT_PADDING
+  const expandedSidebarWidth = Math.min(
+    SIDEBAR_MAX_WIDTH,
+    Math.max(SIDEBAR_MIN_WIDTH, sidebarWidth || DEFAULT_EXPANDED_SIDEBAR_WIDTH),
+  )
+  const leftColumnWidth = (sidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : expandedSidebarWidth) + LEFT_SIDEBAR_SLOT_PADDING
   const rightColumnWidth = showRightPanel && isRightPanelOpen ? RIGHT_PANEL_SLOT_WIDTH : 0
+
+  React.useEffect(() => {
+    return () => {
+      resizeCleanupRef.current?.()
+    }
+  }, [])
+
+  const handleSidebarResizeStart = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (sidebarCollapsed) return
+    event.preventDefault()
+    resizingRef.current = true
+    const startX = event.clientX
+    const startWidth = expandedSidebarWidth
+
+    const onMove = (moveEvent: MouseEvent): void => {
+      if (!resizingRef.current) return
+      const nextWidth = Math.min(
+        SIDEBAR_MAX_WIDTH,
+        Math.max(SIDEBAR_MIN_WIDTH, startWidth + (moveEvent.clientX - startX)),
+      )
+      setSidebarWidth(nextWidth)
+    }
+
+    const onUp = (): void => {
+      resizingRef.current = false
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      resizeCleanupRef.current = null
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    resizeCleanupRef.current = onUp
+  }, [expandedSidebarWidth, setSidebarWidth, sidebarCollapsed])
+
   return (
     <AppShellProvider value={contextValue}>
       <div
@@ -73,8 +123,20 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
         <MemoizedTopRightWindowControls />
 
         {/* 左侧边栏：可折叠，带圆角和内边距 */}
-        <div className="min-w-0 overflow-hidden p-2 pr-0 relative z-[60]">
-          <LeftSidebar />
+        <div className="min-w-0 overflow-hidden p-2 pr-0 relative z-[60] flex">
+          <LeftSidebar width={expandedSidebarWidth} />
+          {!sidebarCollapsed && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整左侧栏宽度"
+              data-sidebar-resize-handle="true"
+              onMouseDown={handleSidebarResizeStart}
+              className="relative z-[80] ml-1 w-3 shrink-0 cursor-col-resize titlebar-no-drag group flex items-center justify-center"
+            >
+              <div className="h-full w-px rounded-full bg-border/70 transition-colors group-hover:bg-foreground/25" />
+            </div>
+          )}
         </div>
 
         {/* 三列宽度由 AppShell 统一过渡，避免左右栏各自动画造成主内容跳闪或露出异常空隙。 */}
@@ -120,7 +182,7 @@ function RightPanelSlot({
         contain: 'layout paint style',
       }}
     >
-      <RightSidePanel sessionId={sessionId} />
+      {isPanelOpen ? <RightSidePanel sessionId={sessionId} /> : null}
     </div>
   )
 }

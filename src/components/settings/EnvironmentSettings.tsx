@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, TerminalSquare } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { SettingsCard, SettingsRow, SettingsSection } from './primitives'
 import * as ipc from '@/lib/ipc'
@@ -98,12 +99,19 @@ export function EnvironmentSettings(): React.ReactElement {
   }, [loadRuntime])
 
   const handleRefresh = async (): Promise<void> => {
+    setRefreshing(true)
+    setLoadError(null)
     try {
-      await ipc.reinitRuntime()
-    } catch {
-      // 重检失败时仍回退到重新拉取状态，避免设置页卡死在旧快照
+      // reinitRuntime 触发后端重新检测并返回最新 RuntimeStatus
+      const freshStatus = await ipc.reinitRuntime()
+      setRuntime(freshStatus)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setLoadError(message)
+      toast.error('环境重新检测失败', { description: message })
+    } finally {
+      setRefreshing(false)
     }
-    await loadRuntime(true)
   }
 
   if (loading) {

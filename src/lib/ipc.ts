@@ -221,7 +221,12 @@ function onEvt(name: string, cb: Handler): () => void {
 // ============================================================
 
 export const getRuntimeStatus = () => tryInvoke<RuntimeStatus | null>('get_runtime_status', undefined, null)
-export const reinitRuntime = () => tryInvoke('reinit_runtime', undefined, null)
+
+/**
+ * 重新执行运行时环境检测并返回最新的 RuntimeStatus。
+ * 后端失败时直接抛出异常，不使用静默 fallback。
+ */
+export const reinitRuntime = () => tryInvoke<RuntimeStatus>('reinit_runtime')
 
 export interface KernelInfo {
   crateVersion: string
@@ -242,6 +247,18 @@ export interface AppUpdateInfo {
   downloadUrl: string | null
   updateAvailable: boolean
 }
+
+export interface ClaudeCliInfo {
+  installed: boolean
+  version: string | null
+  path: string | null
+}
+
+export const getClaudeCliStatus = () => tryInvoke<ClaudeCliInfo>('get_claude_cli_status', undefined, {
+  installed: false,
+  version: null,
+  path: null,
+})
 
 export interface ConnectionTestResult {
   success: boolean
@@ -754,6 +771,43 @@ type AgentRunState = {
   runId: number
   startedAt?: number
   stoppedByUser: boolean
+  completed: boolean
+  completeFallbackTimer: ReturnType<typeof setTimeout> | null
+  stopPromise: Promise<void> | null
+}
+
+function emitAgentStreamCompleteOnce(
+  sessionId: string,
+  channel: AgentRuntimeChannel,
+  resultSubtype?: string,
+): void {
+  const activeRun = channel.__agentRunState
+  if (!activeRun || activeRun.completed) {
+    return
+  }
+  if (activeRun.completeFallbackTimer != null) {
+    window.clearTimeout(activeRun.completeFallbackTimer)
+    activeRun.completeFallbackTimer = null
+  }
+  activeRun.completed = true
+  emit('agent:stream-complete', {
+    sessionId,
+    startedAt: activeRun.startedAt,
+    stoppedByUser: activeRun.stoppedByUser,
+    resultSubtype,
+  } satisfies AgentStreamCompletePayload)
+}
+
+function markAgentRunTerminal(channel: AgentRuntimeChannel): void {
+  const activeRun = channel.__agentRunState
+  if (!activeRun || activeRun.completed) {
+    return
+  }
+  if (activeRun.completeFallbackTimer != null) {
+    window.clearTimeout(activeRun.completeFallbackTimer)
+    activeRun.completeFallbackTimer = null
+  }
+  activeRun.completed = true
 }
 
 function buildAgentStartRequest(input: AgentSendInput): {
@@ -795,6 +849,9 @@ export async function sendAgentMessage(input: AgentSendInput): Promise<void> {
     runId: nextAgentRunId++,
     startedAt: input.startedAt,
     stoppedByUser: false,
+    completed: false,
+    completeFallbackTimer: null,
+    stopPromise: null,
   }
 
   // 如果当前会话没有活跃通道，则先启动 agent
@@ -808,19 +865,13 @@ export async function sendAgentMessage(input: AgentSendInput): Promise<void> {
       if (decoded?.kind === 'payload') {
         emit('agent:stream-event', { sessionId, payload: decoded.payload })
       } else if (decoded?.kind === 'complete') {
-        const activeRun = channel.__agentRunState
-        const payload: AgentStreamCompletePayload = {
-          sessionId,
-          startedAt: activeRun?.startedAt,
-          stoppedByUser: activeRun?.stoppedByUser,
-          resultSubtype: decoded.resultSubtype,
-        }
-        emit('agent:stream-complete', payload)
+        emitAgentStreamCompleteOnce(sessionId, channel, decoded.resultSubtype)
         const currentChannel = agentChannels.get(sessionId)
         if (currentChannel === channel) {
           agentChannels.delete(sessionId)
         }
       } else if (decoded?.kind === 'error') {
+        markAgentRunTerminal(channel)
         emit('agent:stream-error', { sessionId, error: decoded.error })
         const currentChannel = agentChannels.get(sessionId)
         if (currentChannel === channel) {
@@ -874,11 +925,32 @@ export async function sendAgentMessage(input: AgentSendInput): Promise<void> {
 
 export async function stopAgent(sessionId: string): Promise<void> {
   const channel = agentChannels.get(sessionId)
-  if (channel?.__agentRunState) {
-    channel.__agentRunState.stoppedByUser = true
+  const runState = channel?.__agentRunState
+  if (!channel || !runState) {
+    await invoke('stop_agent', { sessionId })
+    return
   }
-  await invoke('stop_agent', { sessionId })
-  agentChannels.delete(sessionId)
+  runState.stoppedByUser = true
+  if (runState.stopPromise) {
+    await runState.stopPromise
+    return
+  }
+  runState.stopPromise = invoke('stop_agent', { sessionId })
+    .then(() => {
+      if (!runState.completed && runState.completeFallbackTimer == null) {
+        runState.completeFallbackTimer = setTimeout(() => {
+          emitAgentStreamCompleteOnce(sessionId, channel, 'cancelled')
+          const currentChannel = agentChannels.get(sessionId)
+          if (currentChannel === channel) {
+            agentChannels.delete(sessionId)
+          }
+        }, 0)
+      }
+    })
+    .finally(() => {
+      runState.stopPromise = null
+    })
+  await runState.stopPromise
 }
 
 // ============================================================

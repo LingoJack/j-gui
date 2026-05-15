@@ -309,7 +309,10 @@ function CollapsedSidebarRail({ visible, onExpand }: CollapsedSidebarRailProps):
       )}
     >
       {/* macOS 需要避开左上角红绿灯，其他平台保留紧凑呼吸感。 */}
-      <div className={cn(isMac ? 'pt-[50px]' : 'pt-2')} />
+      <div
+        data-sidebar-drag-surface="true"
+        className={cn('w-full titlebar-drag-region', isMac ? 'pt-[50px]' : 'pt-2')}
+      />
 
       {/* 展开按钮 */}
       <div className="pt-2">
@@ -347,7 +350,7 @@ function CollapsedSidebarRail({ visible, onExpand }: CollapsedSidebarRailProps):
       </div>
 
       {/* 弹性空间 */}
-      <div className="flex-1" />
+      <div data-sidebar-drag-surface="true" className="flex-1 w-full titlebar-drag-region" />
 
       {/* 用户头像（点击打开设置） */}
       <div className="pb-3">
@@ -1402,7 +1405,10 @@ function LeftSidebarExpandedContent({ onCollapse }: LeftSidebarExpandedContentPr
   return (
     <>
         {/* macOS 需要避开左上角红绿灯，其他平台不占用这块空间。 */}
-        <div className={cn(isMac ? 'pt-[30px]' : 'pt-1')}>
+        <div
+          data-sidebar-drag-surface="true"
+          className={cn('titlebar-drag-region', isMac ? 'pt-[30px]' : 'pt-1')}
+        >
           {/* 模式切换器 + 折叠按钮 */}
           <div className="flex items-stretch gap-1.5 px-3">
             <div className="flex-1 min-w-0">
@@ -1528,11 +1534,18 @@ function LeftSidebarExpandedContent({ onCollapse }: LeftSidebarExpandedContentPr
         )}
 
         {mode === 'agent' && viewMode === 'active' ? (
-          <div ref={agentSplitContainerRef} className="flex-1 flex flex-col min-h-0">
+          <div
+            ref={agentSplitContainerRef}
+            data-sidebar-drag-surface="true"
+            className="flex-1 flex flex-col min-h-0 titlebar-drag-region"
+          >
             <SessionListItems {...sessionListProps} />
           </div>
         ) : (
-          <div className="flex-1 flex flex-col min-h-0">
+          <div
+            data-sidebar-drag-surface="true"
+            className="flex-1 flex flex-col min-h-0 titlebar-drag-region"
+          >
             <SessionListItems {...sessionListProps} />
           </div>
         )}

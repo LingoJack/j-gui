@@ -1254,6 +1254,163 @@ describe('IPC module — agent', () => {
     await vi.resetModules()
   })
 
+  it('stopAgent emits a cancelled completion when backend stop succeeds without a done event', async () => {
+    await vi.resetModules()
+
+    const invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'start_agent') return undefined
+      if (cmd === 'stop_agent') return undefined
+      return undefined
+    })
+
+    vi.doMock('@tauri-apps/api/core', () => {
+      class ChannelMock {
+        onmessage?: (event: unknown) => void
+      }
+
+      return {
+        invoke: invokeMock,
+        Channel: ChannelMock,
+      }
+    })
+
+    const freshIpc = await import('@/lib/ipc')
+    const completeCb = vi.fn()
+    const cleanup = freshIpc.onAgentStreamComplete(completeCb)
+
+    await freshIpc.sendAgentMessage({
+      sessionId: 'agent-stop-success',
+      userMessage: 'first',
+      channelId: 'channel-a',
+      startedAt: 321,
+    })
+
+    await freshIpc.stopAgent('agent-stop-success')
+
+    await vi.waitFor(() => {
+      expect(completeCb).toHaveBeenCalledWith({
+        sessionId: 'agent-stop-success',
+        startedAt: 321,
+        stoppedByUser: true,
+        resultSubtype: 'cancelled',
+      })
+    })
+
+    cleanup()
+    vi.doUnmock('@tauri-apps/api/core')
+    await vi.resetModules()
+  })
+
+  it('stopAgent does not emit a synthetic cancelled completion after a backend error arrives', async () => {
+    vi.useFakeTimers()
+    try {
+      await vi.resetModules()
+
+      const channelInstances: Array<{ onmessage?: (event: unknown) => void }> = []
+      vi.doMock('@tauri-apps/api/core', () => {
+        class ChannelMock {
+          onmessage?: (event: unknown) => void
+          constructor() {
+            channelInstances.push(this)
+          }
+        }
+
+        return {
+          invoke: vi.fn(async (cmd: string) => {
+            if (cmd === 'start_agent') return undefined
+            if (cmd === 'stop_agent') return undefined
+            return undefined
+          }),
+          Channel: ChannelMock,
+        }
+      })
+
+      const freshIpc = await import('@/lib/ipc')
+      const completeCb = vi.fn()
+      const errorCb = vi.fn()
+      const cleanupComplete = freshIpc.onAgentStreamComplete(completeCb)
+      const cleanupError = freshIpc.onAgentStreamError(errorCb)
+
+      await freshIpc.sendAgentMessage({
+        sessionId: 'agent-stop-error',
+        userMessage: 'first',
+        channelId: 'channel-a',
+        startedAt: 654,
+      })
+
+      await freshIpc.stopAgent('agent-stop-error')
+      channelInstances[0]?.onmessage?.({
+        event: 'error',
+        Error: { message: 'stop failed in backend stream' },
+      })
+      await vi.runAllTimersAsync()
+
+      expect(errorCb).toHaveBeenCalledWith({
+        sessionId: 'agent-stop-error',
+        error: 'stop failed in backend stream',
+      })
+      expect(completeCb).not.toHaveBeenCalled()
+
+      cleanupComplete()
+      cleanupError()
+      vi.doUnmock('@tauri-apps/api/core')
+      await vi.resetModules()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stopAgent reuses the in-flight backend stop request for repeated calls', async () => {
+    vi.useFakeTimers()
+    try {
+      await vi.resetModules()
+
+      let resolveStop: (() => void) | null = null
+      const invokeMock = vi.fn((cmd: string) => {
+        if (cmd === 'start_agent') return Promise.resolve(undefined)
+        if (cmd === 'stop_agent') {
+          return new Promise<void>((resolve) => {
+            resolveStop = resolve
+          })
+        }
+        return Promise.resolve(undefined)
+      })
+
+      vi.doMock('@tauri-apps/api/core', () => {
+        class ChannelMock {
+          onmessage?: (event: unknown) => void
+        }
+
+        return {
+          invoke: invokeMock,
+          Channel: ChannelMock,
+        }
+      })
+
+      const freshIpc = await import('@/lib/ipc')
+      await freshIpc.sendAgentMessage({
+        sessionId: 'agent-stop-repeat',
+        userMessage: 'first',
+        channelId: 'channel-a',
+      })
+
+      const stopOnce = freshIpc.stopAgent('agent-stop-repeat')
+      const stopTwice = freshIpc.stopAgent('agent-stop-repeat')
+      resolveStop?.()
+      await Promise.all([stopOnce, stopTwice])
+      await vi.runAllTimersAsync()
+
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === 'stop_agent'),
+      ).toHaveLength(1)
+
+      vi.doUnmock('@tauri-apps/api/core')
+      await vi.resetModules()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('stopAgent keeps the runtime channel when backend stop fails', async () => {
     await vi.resetModules()
 

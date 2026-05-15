@@ -97,3 +97,21 @@ export const isNodeJsOkAtom = atom((get) => {
  * 全局环境检测 Dialog 开关（错误卡片的「打开环境检测」按钮会置 true）
  */
 export const environmentCheckDialogOpenAtom = atom(false)
+
+/**
+ * Claude Code CLI 可用性状态（全局缓存，避免多处重复 shell 探测）
+ *
+ * 默认不触发探测（loading: false），由消费组件按需在用户可见时触发。
+ * 避免应用启动时 Windows 上 spawn 可见 CMD 窗口。
+ */
+export const claudeCliStatusAtom = atom<{
+  installed: boolean
+  version: string | null
+  path: string | null
+  loading: boolean
+}>({
+  installed: false,
+  version: null,
+  path: null,
+  loading: false,
+})

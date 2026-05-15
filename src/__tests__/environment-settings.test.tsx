@@ -69,7 +69,7 @@ const runtimeStatus: RuntimeStatus = {
 
 vi.mock('@/lib/ipc', () => ({
   getRuntimeStatus: vi.fn(async () => runtimeStatus),
-  reinitRuntime: vi.fn(async () => undefined),
+  reinitRuntime: vi.fn(async () => runtimeStatus),
   updateSettings: vi.fn(async (updates: Record<string, unknown>) => updates),
   listChannels: vi.fn(async () => []),
 }))
@@ -78,7 +78,7 @@ describe('Environment settings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(ipc.getRuntimeStatus).mockResolvedValue(runtimeStatus)
-    vi.mocked(ipc.reinitRuntime).mockResolvedValue(undefined)
+    vi.mocked(ipc.reinitRuntime).mockResolvedValue(runtimeStatus)
   })
 
   it('shows the environment tab in settings navigation', () => {
@@ -112,8 +112,10 @@ describe('Environment settings', () => {
     fireEvent.click(screen.getByRole('button', { name: '重新检测' }))
 
     await waitFor(() => {
+      // reinitRuntime 内部触发后端重新检测并直接返回最新 RuntimeStatus
+      // 不再额外调用 getRuntimeStatus
       expect(ipc.reinitRuntime).toHaveBeenCalledTimes(1)
-      expect(ipc.getRuntimeStatus).toHaveBeenCalledTimes(2)
+      expect(ipc.getRuntimeStatus).toHaveBeenCalledTimes(1)
     })
   })
 

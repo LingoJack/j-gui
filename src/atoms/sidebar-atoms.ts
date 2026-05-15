@@ -1,7 +1,7 @@
 /**
  * 侧边栏状态 Atoms
  *
- * 管理侧边栏视图模式（活跃 / 已归档）。
+ * 管理侧边栏视图模式（活跃 / 已归档）和用户可调尺寸。
  */
 
 import { atom } from 'jotai'
@@ -12,6 +12,12 @@ export type SidebarViewMode = 'active' | 'archived'
 
 /** 侧边栏视图模式（active = 显示活跃对话，archived = 显示已归档对话） */
 export const sidebarViewModeAtom = atom<SidebarViewMode>('active')
+
+/** 左侧栏展开态宽度（px），用户可拖拽调整，持久化到 localStorage */
+export const sidebarWidthAtom = atomWithStorage<number>(
+  'jgui-sidebar-width',
+  280,
+)
 
 /** 工作区列表高度（px），用户可拖拽调整，持久化到 localStorage */
 export const workspaceListHeightAtom = atomWithStorage<number>(

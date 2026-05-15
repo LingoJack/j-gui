@@ -10,6 +10,7 @@ import { appModeAtom } from '@/atoms/app-mode'
 import { agentSidePanelOpenMapAtom, currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
 import { currentConversationIdAtom } from '@/atoms/chat-atoms'
 import { activeTabIdAtom, sidebarCollapsedAtom, tabsAtom } from '@/atoms/tab-atoms'
+import { sidebarWidthAtom } from '@/atoms/sidebar-atoms'
 
 const platformState = {
   isWindows: true,
@@ -86,6 +87,7 @@ function renderShell(store: ReturnType<typeof createStore>) {
 
 describe('AppShell layout guards', () => {
   beforeEach(() => {
+    window.localStorage.clear()
     platformState.isWindows = true
     platformState.isMac = false
     tauriInternalsState.enabled = true
@@ -149,8 +151,7 @@ describe('AppShell layout guards', () => {
 
     renderShell(store)
 
-    const rightPanel = screen.getByTestId('right-side-panel')
-    expect(rightPanel).toBeInTheDocument()
+    expect(screen.queryByTestId('right-side-panel')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '最小化窗口' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '最小化窗口' }).closest('.tabbar-bg')).not.toBeNull()
     const controlsHost = document.querySelector('[data-window-controls-host="true"]')
@@ -179,7 +180,7 @@ describe('AppShell layout guards', () => {
     expect(controlsHost?.closest('[data-right-panel-slot="true"]')).toBeNull()
   })
 
-  it('keeps the same right panel subtree mounted when toggling the panel open state', async () => {
+  it('unmounts the right panel content when toggling the panel closed and remounts it when reopened', async () => {
     const store = createStore()
     store.set(appModeAtom, 'chat')
     store.set(currentConversationIdAtom, 'chat-1')
@@ -188,17 +189,23 @@ describe('AppShell layout guards', () => {
       { id: 'tab-chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
     ])
     store.set(activeTabIdAtom, 'tab-chat-1')
-    store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', false]]))
+    store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', true]]))
 
     renderShell(store)
 
-    const initialPanel = screen.getByTestId('right-side-panel')
+    expect(screen.getByTestId('right-side-panel')).toBeInTheDocument()
+
+    await act(async () => {
+      store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', false]]))
+    })
+
+    expect(screen.queryByTestId('right-side-panel')).not.toBeInTheDocument()
 
     await act(async () => {
       store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', true]]))
     })
 
-    expect(screen.getByTestId('right-side-panel')).toBe(initialPanel)
+    expect(screen.getByTestId('right-side-panel')).toBeInTheDocument()
   })
 
   it('keeps the right panel slot at full column height without inserting an extra top strip', () => {
@@ -223,6 +230,7 @@ describe('AppShell layout guards', () => {
     store.set(appModeAtom, 'chat')
     store.set(currentConversationIdAtom, 'chat-1')
     store.set(currentAgentSessionIdAtom, null)
+    store.set(sidebarWidthAtom, 280)
     store.set(tabsAtom, [
       { id: 'tab-chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
     ])
@@ -247,6 +255,80 @@ describe('AppShell layout guards', () => {
     })
 
     expect(shell).toHaveAttribute('style', expect.stringContaining('grid-template-columns: 56px minmax(0, 1fr) 328px'))
+  })
+
+  it('uses the persisted expanded sidebar width when computing the left shell column', () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(currentConversationIdAtom, 'chat-1')
+    store.set(currentAgentSessionIdAtom, null)
+    store.set(sidebarCollapsedAtom, false)
+    store.set(sidebarWidthAtom, 360)
+    store.set(tabsAtom, [
+      { id: 'tab-chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
+    ])
+    store.set(activeTabIdAtom, 'tab-chat-1')
+
+    renderShell(store)
+
+    const shell = screen.getByTestId('main-area').closest('[data-app-shell-layout="true"]')
+    expect(shell).toHaveAttribute('style', expect.stringContaining('grid-template-columns: 368px minmax(0, 1fr) 328px'))
+  })
+
+  it('keeps the left sidebar resize handle available and updates the persisted width while dragging', () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(currentConversationIdAtom, 'chat-1')
+    store.set(currentAgentSessionIdAtom, null)
+    store.set(sidebarCollapsedAtom, false)
+    store.set(sidebarWidthAtom, 280)
+    store.set(tabsAtom, [
+      { id: 'tab-chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
+    ])
+    store.set(activeTabIdAtom, 'tab-chat-1')
+
+    renderShell(store)
+
+    const separator = screen.getByRole('separator', { name: '调整左侧栏宽度' })
+    fireEvent.mouseDown(separator, { clientX: 280 })
+    fireEvent.mouseMove(document, { clientX: 360 })
+    fireEvent.mouseUp(document)
+
+    expect(store.get(sidebarWidthAtom)).toBe(360)
+  })
+
+  it('cleans up sidebar resize listeners and body styles when the shell unmounts mid-drag', () => {
+    const store = createStore()
+    store.set(appModeAtom, 'chat')
+    store.set(currentConversationIdAtom, 'chat-1')
+    store.set(currentAgentSessionIdAtom, null)
+    store.set(sidebarCollapsedAtom, false)
+    store.set(sidebarWidthAtom, 280)
+    store.set(tabsAtom, [
+      { id: 'tab-chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
+    ])
+    store.set(activeTabIdAtom, 'tab-chat-1')
+
+    const addEventListenerSpy = vi.spyOn(document, 'addEventListener')
+    const removeEventListenerSpy = vi.spyOn(document, 'removeEventListener')
+    const view = renderShell(store)
+
+    fireEvent.mouseDown(screen.getByRole('separator', { name: '调整左侧栏宽度' }), { clientX: 280 })
+    view.unmount()
+
+    expect(removeEventListenerSpy).toHaveBeenCalledWith(
+      'mousemove',
+      expect.any(Function),
+    )
+    expect(removeEventListenerSpy).toHaveBeenCalledWith(
+      'mouseup',
+      expect.any(Function),
+    )
+    expect(document.body.style.cursor).toBe('')
+    expect(document.body.style.userSelect).toBe('')
+
+    addEventListenerSpy.mockRestore()
+    removeEventListenerSpy.mockRestore()
   })
 
   it('keeps the left sidebar on a width transition instead of FLIP translation for shell movement', () => {
@@ -299,6 +381,7 @@ describe('AppShell layout guards', () => {
     store.set(currentConversationIdAtom, 'chat-1')
     store.set(currentAgentSessionIdAtom, null)
     store.set(sidebarCollapsedAtom, false)
+    store.set(sidebarWidthAtom, 280)
     store.set(tabsAtom, [
       { id: 'chat-1', type: 'chat', sessionId: 'chat-1', title: 'Chat 1' },
       { id: 'chat-2', type: 'chat', sessionId: 'chat-2', title: 'Chat 2' },

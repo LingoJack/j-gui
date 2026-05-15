@@ -1,6 +1,6 @@
 roadmap: j-gui-v1
 created: 2026-05-10
-last_reviewed: 2026-05-13
+last_reviewed: 2026-05-15
 
 items:
   # ===== Phase A: 基础底座与已证实闭环 =====
@@ -310,7 +310,7 @@ items:
     status: planned
     feature: null
     minimal_loop: false
-    notes: 目标不是新增更多设置项，而是把已有设置区从“能落盘”推进到“用户知道发生了什么”。
+    notes: 2026-05-15 代码验证：多 tab 已有保存/失败 toast（ChannelForm、SkillDetailPanel、ShortcutSettings）和凭证遮罩。仍缺：统一保存成功指示器、unsupported 功能标记、工具来源提示、通用凭证有效性可视化，以及“模型配置/Agent 提供商”类重复标题合并、环境页命名与平台文案可理解性。
 
   - slug: agent-workbench-polish
     description: Agent 工作台打磨——收口 timeline、权限请求、工具调用、文件上下文、停止/继续工作和历史恢复的可读性与可操作性
@@ -326,7 +326,15 @@ items:
     status: planned
     feature: null
     minimal_loop: false
-    notes: 以审计截图和复现步骤驱动，不做全局换肤或营销式重设计。
+    notes: 以审计截图和复现步骤驱动，不做全局换肤或营销式重设计。额外吸收 `.trae/todo` 中的明确视觉约束：三栏与左右侧栏展开/收起位移动画、新会话问候头部在 Chat/Agent 间的一致性、标题区多功能按钮、窗口拖动命中区、空态/tips 文案与整体信息密度。
+
+  - slug: thinking-mode-hardening
+    description: 思考模式表面硬化——收口 reasoning/thinking 内容的显隐、展开折叠、强调色、间距与跨 Chat/Agent 一致性
+    depends_on: [core-workflow-ux-hardening, agent-workbench-polish, visual-layout-polish]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 承接 `.trae/todo` 中“思考模式”相关问题：持久化记忆强调色应回到主题色体系，展开/折叠要真实生效，流式阶段与完成后的 thinking 可见性规则要一致，分割线与块级间距需要按可读性重新校准。
 
   - slug: shortcut-system-hardening
     description: 快捷键系统硬化——修全局快捷键与缩放快捷键真 bug，消除浏览器默认行为回退，统一文案、渲染进程注册与主进程能力真相
@@ -339,10 +347,10 @@ items:
   - slug: sidebar-performance-hardening
     description: 侧边栏性能硬化——继续按 explore 证据拆 LeftSidebar / SessionListItems / main 壳层订阅，解决展开收起不够丝滑的结构性卡顿
     depends_on: [product-friction-audit, core-workflow-ux-hardening]
-    status: done
+    status: in-progress
     feature: null
     minimal_loop: false
-    notes: 2026-05-13 完成——LeftSidebar 在重新展开时改为跟随 width transition 结束后再挂载 SessionListItems，并保留超时兜底与快速反向切换取消；同时补上 Agent 折叠启动后首次展开的分栏高度初始化防回退，以及展开/回滚/延迟挂载回归测试。LeftSidebar 的长期结构拆分仍留给 frontend-domain-reorganization。
+    notes: 2026-05-13 初版声称已完成，但 2026-05-15 代码验证发现核心实现（transition 结束后延迟挂载、超时兜底、快速反向取消）不在当前代码中。经用户确认：实际尝试过多种方案但难以在不丢失动画细节的前提下优化，需要更深入的调研。当前搁置，先完成其他 Phase E 条目再回来。仅 agentTopHeight 初始化逻辑仍存在。
 
   - slug: desktop-shell-platform-polish
     description: 桌面壳层平台打磨——图标切到 J logo，并按平台收口窗口控制、titlebar 与桌面壳交互真相
@@ -358,15 +366,15 @@ items:
     status: planned
     feature: null
     minimal_loop: false
-    notes: 当前 Agent 输入区里的 Claude SDK/JAgent 已对应 agentBackendMode，但用户侧仍容易误读成模型提供商设置；需补状态反馈、失败回滚、当前模式说明与禁用态真相。
+    notes: 2026-05-15 代码验证：Settings 中已有 backend mode 开关（Claude SDK / j-cli Agent）+ 保存回滚 + 会话恢复/fork 追踪 backend_mode。仍缺：Agent 视图内切换入口、禁用态（无 Claude CLI 时按钮仍可点）、运行时当前模式徽章。
 
   - slug: agent-governance-surface-hardening
-    description: Agent 外部工具治理面硬化——增强 Skills / MCP / Hooks 的全局与工作区来源可见性、导入反馈、跨来源识别与管理体验
+    description: Agent 外部工具治理面硬化——增强 Skills / MCP / Hooks / workspace-project 入口的全局与工作区来源可见性、导入反馈、跨来源识别与管理体验
     depends_on: [product-friction-audit, governance-bidirectional-sync]
     status: planned
     feature: null
     minimal_loop: false
-    notes: 当前虽已有 workspace/j-cli/global 多来源入口，但 discoverability、来源提示、切换反馈和 Hooks 生命周期表达仍偏弱；参考 Proma/Codex 的体验做增强，但不回退到自管平台。
+    notes: 2026-05-15 代码验证：Skills/MCP 已有来源徽章（workspace/j-cli/global）和导入反馈。仍缺：Hooks 全局与工作区来源区分、MCP 连接状态、Proma/Codex 风格发现体验，以及工作区/项目文件夹入口的 discoverability、当前来源说明与切换反馈。
 
   - slug: agent-hooks-config-integration
     description: Agent Hooks 配置集成——把独立 Hooks 治理并入 Agent 配置，按后端支持矩阵与工作区边界提供类型化添加、启停与来源管理
@@ -382,7 +390,7 @@ items:
     status: planned
     feature: null
     minimal_loop: false
-    notes: 当前 builtin prompt 仍只读，appendDateTimeAndUserName 只有开关和静态文案；需把“默认是否可改、怎么恢复、后端到底有没有消费”做成真实能力。
+    notes: 2026-05-15 代码验证：appendDateTimeAndUserName 已在前端和后端真实消费（resolvedSystemMessageAtom 拼接）。仍缺：恢复默认按钮、builtin 覆写/复制为自定义工作流、中文默认值、增强选项激活的视觉确认。
 
   - slug: about-update-surface-refresh
     description: 关于/更新页刷新——补齐 j-gui、内嵌 j-cli、本地 j CLI、本机 Claude Code CLI 版本、运行时、项目信息与更中性的更新状态表达
@@ -390,7 +398,7 @@ items:
     status: planned
     feature: null
     minimal_loop: false
-    notes: 当前 AboutSettings 仍偏薄；需要显式暴露“当前 Claude Code Agent 模式实际调用的本机 Claude Code CLI 版本”，并把“已是最新”从成功绿改为更中性的状态色，不照搬 Proma 的版本历史/更新中心。
+    notes: 2026-05-15 代码验证：AboutSettings 已有 j-gui 版本、j-cli crate 版本、本地 j CLI 版本与更新检查。仍缺：本机 Claude Code CLI 版本（which_claude 已存在但未展示）、开源协议、项目地址、中性更新状态色。
 
   - slug: environment-configuration-surface
     description: 环境配置页——提供真实 shell 真相展示、fallback 规则、推荐 shell，以及 Node/Git/Bun/Git Bash/WSL/PowerShell 的状态与失败原因
@@ -398,7 +406,7 @@ items:
     status: in-progress
     feature: 2026-05-14-environment-configuration-surface
     minimal_loop: false
-    notes: 当前阶段先落真实 `环境配置` 页面与跨平台 shell 契约，展示 current/recommended/fallback/失败原因与重检入口；不在本轮实现 shell 选择持久化、profile 写入或执行链路切换。需要明确区分 j-gui 本体、Claude Code CLI、npm 安装链路与 Shell tool 能力；Node 仅按安装方式/扩展工具链相关信息展示，不再作为统一硬前提。
+    notes: 当前阶段先落真实 `环境配置` 页面与跨平台 shell 契约，展示 current/recommended/fallback/失败原因与重检入口；不在本轮实现 shell 选择持久化、profile 写入或执行链路切换。需要明确区分 j-gui 本体、Claude Code CLI、npm 安装链路与 Shell tool 能力；Node 仅按安装方式/扩展工具链相关信息展示，不再作为统一硬前提。后续真正把 Agent/Hooks/外部命令执行链路收口到同一 shell 模型，转入 `shell-execution-model-integration`。
 
   - slug: appearance-theme-customization
     description: 外观主题自定义——在保留预设主题基础上开放受控的颜色、字体、对比度与界面密度项，并提供预览、复制/导入与重置
@@ -431,7 +439,15 @@ items:
     status: planned
     feature: null
     minimal_loop: false
-    notes: 先补 CLI backend 编排层，再决定更深的 JAgent parity；明确不 1:1 复制 Electron AgentOrchestrator，也不把 workspace/skills/MCP 自管平台整体搬回当前 runtime。
+    notes: 先补 CLI backend 编排层，再决定更深的 JAgent parity；明确不 1:1 复制 Electron AgentOrchestrator，也不把 workspace/skills/MCP 自管平台整体搬回当前 runtime。现有 `2026-05-13-explore-proma-backend-refactor-candidates` 只是候选吸收清单，不是“已经吸收完成”的证明；后续仍需继续核对还有哪些值得迁的后端能力。
+
+  - slug: shell-execution-model-integration
+    description: Shell 执行模型集成——把 Agent、Hooks 与外部命令执行链路统一到新的 shell 模型、兼容矩阵与回退语义上
+    depends_on: [environment-configuration-surface, agent-backend-switch-ux-hardening, agent-hooks-config-integration]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 承接 `.trae/todo` 中“Shell 的集成问题”：环境页先给出 truth，后续再把执行链路接到同一模型，明确 Windows / PowerShell / Git Bash / WSL 与双后端 Agent 的兼容边界、Hook 调用方式和失败回退，不把“能展示 shell”误写成“已经按该 shell 执行”。
 
   - slug: frontend-domain-reorganization
     description: 前端领域化重组——按 shell/chat/agent/settings/bootstrap 等领域收拢 src，持续拆 main.tsx、LeftSidebar、AgentSettings 等 mega-surface

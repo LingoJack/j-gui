@@ -24,7 +24,9 @@ mod agent_engine_runtime;
 #[cfg(test)]
 /// 测试中复用的时间线投影辅助函数。
 pub(crate) use agent_engine_runtime::timeline_items_from_event;
-use agent_engine_runtime::{forward_cli_event, persist_sdk_session_id, which_claude};
+/// 供 system 命令模块复用的 Claude CLI 定位函数。
+pub(crate) use agent_engine_runtime::which_claude;
+use agent_engine_runtime::{forward_cli_event, persist_sdk_session_id};
 #[path = "agent_engine_cli.rs"]
 mod agent_engine_cli;
 #[cfg(test)]

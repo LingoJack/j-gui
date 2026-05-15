@@ -2,11 +2,20 @@ use crate::agent_engine::AgentEvent;
 use crate::agent_session::{self, AgentTimelineItem, InterruptSnapshot, ToolCallSnapshot};
 use tauri::ipc::Channel;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// 在当前系统中定位可执行的 Claude CLI。
 pub(crate) fn which_claude() -> Result<String, String> {
     for name in &["claude", "claude-code", "claude-cli"] {
         let finder = if cfg!(windows) { "where" } else { "which" };
-        if let Ok(output) = std::process::Command::new(finder).arg(name).output() {
+        let mut cmd = std::process::Command::new(finder);
+        cmd.arg(name);
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        if let Ok(output) = cmd.output() {
             if output.status.success() {
                 let path = String::from_utf8_lossy(&output.stdout)
                     .lines()
@@ -20,10 +29,11 @@ pub(crate) fn which_claude() -> Result<String, String> {
             }
         }
         if cfg!(windows) {
-            if let Ok(output) = std::process::Command::new("cmd")
-                .args(["/c", "where", name])
-                .output()
-            {
+            let mut cmd = std::process::Command::new("cmd");
+            cmd.args(["/c", "where", name]);
+            #[cfg(target_os = "windows")]
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            if let Ok(output) = cmd.output() {
                 if output.status.success() {
                     let path = String::from_utf8_lossy(&output.stdout)
                         .lines()

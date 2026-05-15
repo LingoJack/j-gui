@@ -3,7 +3,7 @@ doc_type: roadmap
 slug: j-gui-v1
 status: active
 created: 2026-05-10
-last_reviewed: 2026-05-14
+last_reviewed: 2026-05-15
 tags: [tauri, desktop, j-cli, chat, agent, proma, closure]
 related_requirements:
   - j-gui-ai-interaction
@@ -52,7 +52,9 @@ related_architecture:
 - Agent 对话框里的后端切换语义、Skills / MCP / Hooks 的全局/工作区治理可见性，以及 System Prompt 的真实运行时语义
 - Agent 配置内的 Hooks 收口：按 backend mode 与工作区边界暴露支持矩阵，把独立 Hooks 配置并入 Agent 配置，并在 runtime 支持时按类型添加
 - 关于/更新与环境配置页面的运行时真相：`j-gui` / `j-cli` / 本地 `j` CLI / 本机 Claude Code CLI 版本、Node/Git/Bun、Git Bash/WSL/PowerShell、推荐 shell、失败原因、fallback 与重检入口
+- Shell 真相之后的真实执行链路：让 Agent / Hooks / 外部命令围绕同一 shell 模型工作，并把兼容矩阵与 fallback 语义做成可验证约束
 - 外观主题自定义：在保留预设主题基础上，补可控的颜色/字体/对比度/密度项、实时预览与重置，而不是只停留在浅/深/系统/特殊风格
+- 思考模式与关键表面细节：reasoning/thinking 的展开折叠、显隐规则、强调色、分隔间距，以及 Chat / Agent 新会话头部、空态/tips、标题区操作一致性
 - `src/` 按领域收拢的重组设计与落地，而不是继续放任 `LeftSidebar` / `main.tsx` / Settings mega-surface 横向变胖
 - Proma parity / 后端吸收项从 explore 结论推进到可执行主线：哪些能力值得迁、先迁哪层、哪些边界不能回退
 - 为后续移动端做边界澄清：先保持桌面主线闭环，再决定共享 core、原生移动 UI 与 repo 目录演进
@@ -329,7 +331,7 @@ type ProductFrictionFinding = {
    - 把 Agent 输入区里的 `Claude SDK / JAgent` 明确收口为“直接切 Agent 后端模式”的交互，不再和模型供应商设置混成一件事
    - 同步补齐切换中的状态反馈、失败回滚、禁用态和当前模式说明，避免“按钮像 Provider，实际是 backend mode”的语义误导
 20. `agent-governance-surface-hardening`
-   - 着重增强 Skills / MCP / Hooks 外部工具治理面：全局/工作区来源可见性、导入与启停反馈、跨来源识别、Proma/Codex 风格的发现与管理体验
+   - 着重增强 Skills / MCP / Hooks / workspace-project 入口治理面：全局/工作区来源可见性、导入与启停反馈、跨来源识别、Proma/Codex 风格的发现与管理体验
    - 保持 `GovernanceKernel` + `j-cli` 数据边界，不把 Proma 的自管工作区平台整体照搬回来
 21. `agent-hooks-config-integration`
    - 把当前独立 Hooks 配置收口进 Agent 配置：按 backend mode 区分支持矩阵、按工作区边界切换来源，并把“已安装哪些 Hook / 还能添加哪些 Hook 类型”做成可理解的治理面
@@ -344,30 +346,36 @@ type ProductFrictionFinding = {
    - 单独提供真实 `环境配置` 页面：展示当前 shell、推荐 shell、fallback 顺序、平台明细与失败原因，并让 Node/Git/Bun/Git Bash/WSL/PowerShell 的状态可直接查看
    - 本阶段保持只读真相展示与重检入口，不在页面里伪造“已生效 shell 选择”，也不在本项内接 profile 写入或执行链路切换
    - Node 只按“安装方式/扩展工具链相关能力”展示，不再作为统一硬前提；需要明确区分 `j-gui` 本体、Claude Code CLI、npm 安装链路和 Shell tool 能力
-25. `appearance-theme-customization`
+25. `thinking-mode-hardening`
+   - 收口 reasoning/thinking 内容的展开折叠、流式显隐、强调色、分割线与块间距，让 Chat / Agent 的“思考内容”表面行为一致可解释
+   - 这项只处理表面语义与交互一致性，不替代底层模型或 Agent runtime 的思考生成逻辑
+26. `appearance-theme-customization`
    - 在保留浅/深/系统/预设主题的前提下，开放受控的外观 token：强调色、背景/前景、UI/代码字体、对比度、侧栏透明度、字号与类似 Codex 的实时预览/复制/导入/重置
    - 仍受组件可读性、主题 token 和现有设计系统边界约束，不做任意 CSS 注入，也不把对比度/可读性风险交给用户自己兜底
-26. `dogfooding-blocker-burn-down`
+27. `dogfooding-blocker-burn-down`
    - 优先清零真实使用中迫使用户退回外部终端或手工补救的高频阻塞
 
 ### Phase F：P2 自我开发闭环与超越 Proma
 
-27. `proma-backend-capability-absorption`
+28. `proma-backend-capability-absorption`
    - 把现有 Proma 后端复盘落成 `j-gui` 的可执行吸收主线：事件语义补齐、CLI backend 恢复状态机、SDK transcript 防膨胀、环境探测与磁盘治理
    - 明确哪些能力只做 parity，哪些能力要先在 CLI backend 收口后再决定是否共享给 `JAgent`
-28. `frontend-domain-reorganization`
+29. `shell-execution-model-integration`
+   - 把环境配置页里的 shell truth 继续接到 Agent / Hooks / 外部命令的真实执行链路，统一兼容矩阵、fallback 语义和失败暴露
+   - 不把“页面能展示 current/recommended shell”误写成“运行时已经按该 shell 执行”；这一步才负责收口真实执行模型
+30. `frontend-domain-reorganization`
    - 按 `shell / chat / agent / settings / bootstrap` 等领域收拢 `src/`，持续拆掉技术分桶与 mega-component，减少 `main.tsx` / `LeftSidebar` / `AgentSettings` 一类横切肥大入口
    - 明确这是“根桌面应用按领域组织”的演进，不是现在先做多 crate 硬拆；未来移动端立项后再演进到 `apps/desktop` + `apps/mobile-*`
-29. `agent-engine-jagent`
+31. `agent-engine-jagent`
    - 先把现有 `j-agent` 分支与当前 CLI 主路径的契约差异、缺口和 go/no-go 条件盘清
    - 这项不再默认等于“立即切主后端”，而是先产出是否值得推进、推进到哪一步的明确结论
-30. `agent-backend-parity-hardening`
+32. `agent-backend-parity-hardening`
    - 如果继续保留双后端，必须把 backend mode、可观测性、错误暴露和回退边界做成可维护状态
    - 避免出现“设置里可以切，实际没有等价能力或失败后看不出来”的伪多后端
-31. `dogfooding-self-development-loop`
+33. `dogfooding-self-development-loop`
    - 把“用自己开发自己”从口号收口成一组明确工作流：打开项目、发起 Chat/Agent、改文件、搜索回溯、恢复历史、继续工作、归档复盘
    - 每条链路都要有成功标准，不能只凭主观体感说“差不多能用了”
-32. `remote-access-integration`
+34. `remote-access-integration`
    - 复用 `j-cli` 已有的远程能力，把现成的 Web/LAN 远程访问链路接进 `j-gui`，而不是在 GUI 侧重新发明一套远程协议
    - 这项的重点是集成边界、桌面壳内入口、运行时状态与现有 Chat/Agent 工作台的一致性，不是重新设计远程栈
 
@@ -380,7 +388,7 @@ type ProductFrictionFinding = {
 
 ### Phase G：远期
 
-33. `mobile-remote-experience`
+35. `mobile-remote-experience`
    - 远期才讨论把现有远程访问进一步产品化为更完整的移动端体验，而不是把“手机浏览器能连”直接表述成“移动端产品已成立”
    - 移动端当前优先级定义为“桌面端控制器”：先远程连接桌面端 GUI / Agent 工作台，再讨论更完整的移动交互产品化
    - 如果未来真的扩到 `iOS / Android / HarmonyOS` 原生客户端，优先方向是“共享 Rust core + 各平台原生 UI（SwiftUI / Compose / ArkUI）+ 绑定层”，而不是让当前桌面前端直接跨端硬复用
@@ -394,8 +402,8 @@ type ProductFrictionFinding = {
 | `P0` | `stream-protocol-unify`、`agent-history-replay-closure`、`agent-runtime-stability-recovery` | 先把协议真相和 Agent 长期工作台收口 |
 | `P1` | `governance-bidirectional-sync`、`toolsettings-runtime-closure`、`search-content-closure`、`runtime-observability-gates` | 解决最容易暴露伪闭环的入口 |
 | `P1` | `proma-parity-evidence-pass`、`tdd-coverage` | 用证据和门禁收口，而不是再靠主观“done” |
-| `P0/P1` | `product-friction-audit`、`core-workflow-ux-hardening`、`settings-experience-hardening`、`agent-workbench-polish`、`visual-layout-polish`、`shortcut-system-hardening`、`sidebar-performance-hardening`、`desktop-shell-platform-polish`、`agent-backend-switch-ux-hardening`、`agent-governance-surface-hardening`、`agent-hooks-config-integration`、`system-prompt-runtime-hardening`、`about-update-surface-refresh`、`environment-configuration-surface`、`appearance-theme-customization`、`dogfooding-blocker-burn-down` | 先把真实桌面使用体验从“能跑但拙劣”推进到可日常稳定使用，并把 Agent/Settings/运行时环境面的高频误导收口成可信交互 |
-| `P2` | `proma-backend-capability-absorption`、`frontend-domain-reorganization`、`agent-engine-jagent`、`agent-backend-parity-hardening`、`dogfooding-self-development-loop`、`remote-access-integration` | 在体验主链路稳定后，再推进后端能力吸收、桌面前端重组、自开发链路和现成远程能力集成 |
+| `P0/P1` | `product-friction-audit`、`core-workflow-ux-hardening`、`settings-experience-hardening`、`agent-workbench-polish`、`visual-layout-polish`、`thinking-mode-hardening`、`shortcut-system-hardening`、`sidebar-performance-hardening`、`desktop-shell-platform-polish`、`agent-backend-switch-ux-hardening`、`agent-governance-surface-hardening`、`agent-hooks-config-integration`、`system-prompt-runtime-hardening`、`about-update-surface-refresh`、`environment-configuration-surface`、`appearance-theme-customization`、`dogfooding-blocker-burn-down` | 先把真实桌面使用体验从“能跑但拙劣”推进到可日常稳定使用，并把 Agent/Settings/运行时环境面的高频误导收口成可信交互 |
+| `P2` | `proma-backend-capability-absorption`、`shell-execution-model-integration`、`frontend-domain-reorganization`、`agent-engine-jagent`、`agent-backend-parity-hardening`、`dogfooding-self-development-loop`、`remote-access-integration` | 在体验主链路稳定后，再推进后端能力吸收、shell 执行模型集成、桌面前端重组、自开发链路和现成远程能力集成 |
 | `P4` | `mobile-remote-experience` | 远期保留，不影响当前 v1 闭环判断 |
 
 ## 8. 观察项
@@ -414,16 +422,19 @@ type ProductFrictionFinding = {
 - `dogfooding-blocker-burn-down` 提前到体验硬化阶段，优先处理真实使用中迫使用户退回终端或手工补救的阻塞
 - Agent 输入区里的 `Claude SDK / JAgent` 当前本质是 `agentBackendMode` 切换，但用户侧语义仍容易误读成“模型供应商设置”；因此它应作为独立的 backend-switch UX 问题处理，而不是继续埋在模型设置文案里
 - 当前 `AgentSettings` 虽已有 `scanGlobalSkills()`、`listSkills()`、`listMcpServers()` 等入口，但全局/工作区来源提示、Proma/Codex 式 discoverability、错误反馈和 Hooks 管理仍偏弱，不应再按“全局 Skills/MCP/Hooks 已完整可见”表述
+- `workspace-crud` 目前只应视为基础数据面能力，不应把它等同于“Codex 风格的工作区/项目文件夹入口体验已完成”；后续 discoverability、当前项目提示、切换反馈仍归 `agent-governance-surface-hardening`
 - 当前 Hooks 仍以独立治理页为主，只覆盖“列出/启停持久型 Hooks + disabled_hooks 持久化”这类基线；“并入 Agent 配置、按 backend mode 区分支持矩阵、按工作区切换、按类型添加 Hook”仍是未完成项
 - 当前 `PromptSettings` 的 builtin prompt 仍是只读，增强选项只有 `appendDateTimeAndUserName` 开关与静态文案；“默认提示词可编辑/恢复默认/中文默认值/后端真实消费”都还没闭环
 - 当前 `AboutSettings` 仍只有版本、内嵌 j-cli、本地 CLI 和一次更新检查；但当前 Agent 后端实际还依赖本机可执行的 Claude Code CLI，这个版本真相尚未暴露
 - Rust 侧已经有 Node/Git/Bun、Git Bash/WSL、recommended shell、失败原因这类运行时探测基础；更合适的方向是把 `关于/更新` 与 `环境配置` 分页：前者负责产品/版本/更新，后者负责运行时与 Shell 真相
+- `environment-configuration-surface` 当前只负责 truth 展示，不应把它误判为 shell 执行模型已经闭环；真正让 Agent/Hooks/外部命令跟随同一 shell 语义，另立 `shell-execution-model-integration`
 - 当前口径不应继续把 Node 写成统一硬前提：对 `j-gui` 当前 Claude Code Agent 模式，真正必需的是本机可运行的 Claude Code CLI；Node 只在 npm 安装 Claude Code 或某些扩展工具链时需要
 - Windows Shell 口径也应更新：PowerShell 是 Claude Code 官方支持路径之一，Git Bash / WSL 更适合作为推荐/增强项与可选 fallback，而不是唯一受支持路径
 - 关于页当前“已是最新”用成功绿过强，更适合改成类似 Proma 的中性状态色，避免把静态状态文案渲染成操作成功提示
 - 当前个性化 requirement 仍写着“主题只有暗/亮两套，不提供自定义配色”；roadmap 现已把“受控主题自定义”单列成后续能力，但 requirement / acceptance 口径需等该项正式启动时再单独更新
+- `.trae/todo` 中提到的 reasoning/thinking 表面问题目前没有被现有 `core-workflow-ux-hardening` 吃完；展开折叠、持久化记忆强调色、流式期显隐与间距已单列为 `thinking-mode-hardening`
 - `src/` 当前仍偏技术分桶，且 `LeftSidebar`、`main.tsx`、`AgentSettings` 等 mega-surface 还在持续承压；“领域化重组设计与落地”应视为明确未完成项，而不是隐含在侧栏性能修复里
-- `proma-backend-refactor-candidates` explore 已给出明确的可迁能力与禁搬边界；在这批 Rust 编排能力落地前，不应把更深的 `jagent` parity 误判为已具备现实前提
+- `proma-backend-refactor-candidates` explore 已给出明确的可迁能力与禁搬边界；它是吸收候选清单，不是“Proma 能力已完成吸收”的完成证明。在这批 Rust 编排能力落地前，不应把更深的 `jagent` parity 误判为已具备现实前提
 - `agent-engine-jagent` 的前置判断不是“仓库里已经有 `AgentBackend::JAgent` 分支”，而是“当前分支是否已达到可替代或可长期并存的真实契约完整度”；仅有分支或设置项不算完成前提
 - `dogfooding-self-development-loop` 必须以真实日常工作流矩阵为准，而不是以单条 happy path 演示为准；如果产品摩擦阶段仍有 P0/P1 阻塞，就不应提前声称自开发闭环稳定
 - `j-cli` 已有远程访问基础能力：`src/command/chat/remote/`、嵌入式 `remote.html`、二维码启动与局域网 Web 连接已存在；`j-gui` 的近阶段任务应是复用与集成，而不是重新发明远程协议
@@ -435,10 +446,10 @@ type ProductFrictionFinding = {
 
 ### 9.1 总体数字
 
-- roadmap 总条目：`58`
-- 已完成：`40 / 58`（`69.0%`）
-- 进行中：`0 / 58`
-- 已规划未开始：`18 / 58`
+- roadmap 总条目：`60`
+- 已完成：`39 / 60`（`65.0%`）
+- 进行中：`2 / 60`
+- 已规划未开始：`19 / 60`
 - 最小闭环项（`minimal_loop: true`）：`5 / 5` 已完成
 
 ### 9.2 分阶段进度
@@ -449,8 +460,8 @@ type ProductFrictionFinding = {
 | B P0 能力闭环 | 3 | 3 | 0 | 0 | P0 主链路已收口，后续不再把 Agent 长期工作台列为 v1 的未完成阻塞 |
 | C P1 体验与治理闭环 | 5 | 5 | 0 | 0 | Phase C 已整体收尾，治理真相与此前已完成项都已翻正 |
 | D P1 质量与证据收口 | 3 | 3 | 0 | 0 | Phase D 已完成；质量门禁、Proma 证据骨架与 TDD 收口基线都已翻正 |
-| E P0/P1 产品体验硬化 | 16 | 5 | 0 | 11 | `product-friction-audit`、`core-workflow-ux-hardening`、`shortcut-system-hardening`、`sidebar-performance-hardening` 与 `desktop-shell-platform-polish` 已完成；后续继续按台账推进 Agent 后端切换、Hooks 集成、外部工具治理、提示词运行时、关于/更新页、环境配置页、自定义外观、设置区、Agent 工作台与视觉布局 |
-| F P2 自我开发闭环 | 6 | 0 | 0 | 6 | 先做 Proma 后端能力吸收与 `src/` 领域化重组，再评估 `jagent` 深化、双后端收口、自开发和远程接入 |
+| E P0/P1 产品体验硬化 | 17 | 4 | 2 | 11 | `product-friction-audit`、`core-workflow-ux-hardening`、`shortcut-system-hardening` 与 `desktop-shell-platform-polish` 已完成；`sidebar-performance-hardening` 搁置（核心优化方案待深入调研，先完成其他条目）；`environment-configuration-surface` 接近完成（~95%，缺 reinit_runtime 后端命令）。本轮把 `.trae/todo` 中尚未正式入图的 thinking 表面问题补成 `thinking-mode-hardening`；2026-05-15 代码验证确认 6 个 planned 条目已有部分实现基线。 |
+| F P2 自我开发闭环 | 7 | 0 | 0 | 7 | 先做 Proma 后端能力吸收、shell 执行模型集成与 `src/` 领域化重组，再评估 `jagent` 深化、双后端收口、自开发和远程接入 |
 | G 远期 | 1 | 0 | 0 | 1 | 不进入当前 v1 完成度判断 |
 
 ### 9.3 当前解锁关系
@@ -481,16 +492,15 @@ type ProductFrictionFinding = {
   - 快捷键相关 Tauri ACL 与键位回归测试
   后续直接下游继续是：
   - `desktop-shell-platform-polish`
-- `sidebar-performance-hardening` 已完成；它进一步翻正了：
-  - LeftSidebar 重新展开时的大列表挂载节奏
-  - 快速展开后再收起时的迟到挂载取消
-  - Agent 折叠启动后首次展开的上区分栏高度初始化
-  后续直接下游继续是：
-  - `desktop-shell-platform-polish`
+- `sidebar-performance-hardening` 已搁置——2026-05-15 代码验证发现核心延迟挂载实现不在代码中，经用户确认尝试过多种方案但难以在不丢失动画细节的前提下优化，需更深入调研。当前不影响其他下游条目的推进。
 - `agent-governance-surface-hardening`、`system-prompt-runtime-hardening`、`about-update-surface-refresh` 与 `environment-configuration-surface` 收口后，设置区的后续硬化应继续汇入：
   - `settings-experience-hardening`
 - `agent-backend-switch-ux-hardening` 与 `agent-governance-surface-hardening` 收口后，再继续推进：
   - `agent-hooks-config-integration`
+- `agent-workbench-polish` 与 `visual-layout-polish` 收口后，再继续推进：
+  - `thinking-mode-hardening`
+- `environment-configuration-surface`、`agent-backend-switch-ux-hardening` 与 `agent-hooks-config-integration` 收口后，再继续推进：
+  - `shell-execution-model-integration`
 - `settings-experience-hardening` 与 `visual-layout-polish` 收口后，再继续推进：
   - `appearance-theme-customization`
 - `sidebar-performance-hardening`、`desktop-shell-platform-polish` 与设置/治理关键面收口后，再继续推进：
@@ -541,10 +551,7 @@ type ProductFrictionFinding = {
   - `Ctrl/Cmd+Shift+P` 已接通全局显示主窗口，不再落到浏览器/系统默认打印
   - `Ctrl/Cmd + + / - / 0` 已接通真实 webview 缩放
   - Tauri ACL 与 capability 回归测试已显式补齐，不再依赖默认权限误判
-- [x] `sidebar-performance-hardening`
-  - LeftSidebar 改为在 width transition 结束后再挂载 SessionListItems，并保留超时兜底
-  - 快速展开后再收起不会出现迟到挂载
-  - Agent 折叠启动后首次展开时，上区分栏高度会正确初始化
+- [ ] `sidebar-performance-hardening`（搁置——代码验证发现核心优化不在代码中，需深入调研，先推进其他条目）
 - [x] `desktop-shell-platform-polish`
   - Tauri bundle 图标已切到 J logo 生成产物，不再沿用默认图标
   - Windows 主窗口改为在 Rust setup 阶段直接关闭原生 decorations，并接入自定义最小化/最大化/关闭按钮
@@ -552,8 +559,9 @@ type ProductFrictionFinding = {
 
 ### 10.2 当前正在推进
 
-- 无
-- Phase E 已完成事实输入阶段、第一批核心工作流硬化，以及 `shortcut-system-hardening` / `sidebar-performance-hardening` / `desktop-shell-platform-polish`；下一步进入 Agent 后端切换、Hooks 集成、设置区、环境配置、自定义外观与工作台硬化
+- `environment-configuration-surface` — 接近完成（~95%），缺 `reinit_runtime` 后端命令注册
+- `sidebar-performance-hardening` — 搁置，核心优化方案待深入调研
+- Phase E 当前：4 done + 2 in-progress + 11 planned；其中 6 个 planned 条目已有部分实现基线
 
 ### 10.3 下一步明确要做
 
@@ -567,19 +575,23 @@ type ProductFrictionFinding = {
    - 分别收口全局/工作区 Skills / MCP / Hooks 治理面，以及系统提示词默认值/恢复默认/增强选项的运行时真相
 5. 推进 `agent-hooks-config-integration`
    - 把独立 Hooks 配置并入 Agent 配置，按 backend mode 和工作区边界暴露支持矩阵，并在支持时按类型添加 Hook
-6. 按当前收口后的界面与领域边界，推进 `frontend-domain-reorganization`
-   - 把 `src/` 从技术分桶收拢到桌面主应用的领域组织
-7. 按台账推进 `settings-experience-hardening` 和 `agent-workbench-polish`
+6. 按台账推进 `settings-experience-hardening` 和 `agent-workbench-polish`
    - 分别收设置区可理解性与 Agent 工作台可操作性
-8. 按台账推进 `visual-layout-polish`
+7. 按台账推进 `visual-layout-polish`
    - 只处理已证实的布局/视觉/溢出/焦点问题，不做全局换肤
+8. 推进 `thinking-mode-hardening`
+   - 收口 reasoning/thinking 的显隐、展开、强调色与间距规则，避免 Chat/Agent 表面语义继续分裂
 9. 推进 `appearance-theme-customization`
    - 在预设主题基础上补受控的颜色/字体/对比度/密度项、实时预览与重置
 10. 提前推进 `dogfooding-blocker-burn-down`
    - 清掉真实使用中迫使用户退回外部终端或手工补救的阻塞
-11. 在上述桌面主链路稳定后，再推进 `proma-backend-capability-absorption`
+11. 推进 `shell-execution-model-integration`
+   - 让 Agent / Hooks / 外部命令真正依赖同一 shell 模型，而不是停留在 truth 展示层
+12. 在上述桌面主链路稳定后，再推进 `proma-backend-capability-absorption`
    - 先把 CLI backend 的恢复状态机、事件语义、存储防线、环境探测和磁盘治理补成真实 Rust 能力
-12. 最后再回到 `agent-engine-jagent`、`agent-backend-parity-hardening`、`dogfooding-self-development-loop` 和 `remote-access-integration`
+13. 再推进 `frontend-domain-reorganization`
+   - 按已收口的执行边界与设置面重组 `src/`，避免一边改语义一边维持 mega-surface
+14. 最后再回到 `agent-engine-jagent`、`agent-backend-parity-hardening`、`dogfooding-self-development-loop` 和 `remote-access-integration`
 
 ### 10.4 Phase B 最后收尾 Checklist
 
@@ -629,16 +641,18 @@ Phase C 当前判断：
 4. `agent-governance-surface-hardening`
 5. `system-prompt-runtime-hardening`
 6. `agent-hooks-config-integration`
-7. `frontend-domain-reorganization`
-8. `settings-experience-hardening` + `agent-workbench-polish`
-9. `visual-layout-polish`
+7. `settings-experience-hardening` + `agent-workbench-polish`
+8. `visual-layout-polish`
+9. `thinking-mode-hardening`
 10. `appearance-theme-customization`
 11. `dogfooding-blocker-burn-down`
-12. `proma-backend-capability-absorption`
-13. `agent-engine-jagent`
-14. `agent-backend-parity-hardening`
-15. `dogfooding-self-development-loop`
-16. `remote-access-integration`
+12. `shell-execution-model-integration`
+13. `frontend-domain-reorganization`
+14. `proma-backend-capability-absorption`
+15. `agent-engine-jagent`
+16. `agent-backend-parity-hardening`
+17. `dogfooding-self-development-loop`
+18. `remote-access-integration`
 
 ## 11. 变更日志
 
@@ -666,4 +680,6 @@ Phase C 当前判断：
 - `2026-05-13`：完成 `desktop-shell-platform-polish`：Tauri bundle 图标已切到 J logo 生成产物；Windows 主窗口在 Rust setup 阶段直接关闭原生 decorations，并接入自定义最小化/最大化/关闭按钮；macOS 保持 `decorations=true + titleBarStyle=Overlay + trafficLightPosition` 的代码级配置。同时吸收双子代理审查里的两个真实 P1：补上非 Tauri 环境保护，避免浏览器/测试壳误调 `getCurrentWindow()`；补上迟到 `onResized` 监听清理与最大化状态同步防回写竞争。图标“不是 J logo”的 finding 经源图核对为误报，未吸收。
 - `2026-05-13`：按本轮新需求继续细化 Phase E：新增 `agent-hooks-config-integration`，明确 Hooks 需要并入 Agent 配置、按 backend mode 区分支持矩阵、按工作区切换并在 runtime 支持时按类型添加；新增 `appearance-theme-customization`，明确外观自定义应走受控 token、实时预览、复制/导入/重置路线，而不是任意换肤。同时把相关观察项、推荐顺序与总体进度数字同步到当前真相。
 - `2026-05-14`：补齐仓库级 GitHub Actions 默认 CI，并扩到 Release 资产分发：`.github/workflows/desktop-ci.yml` 现在由 Ubuntu 执行 `bash scripts/check_lint.sh`，Linux / macOS Intel / macOS Apple Silicon / Windows 负责 Tauri bundle 构建；Linux 工件显式拆成 `deb / rpm / AppImage / snapshot tar.gz`，Windows 额外补一条 `portable zip`，tag 推送会自动把跨平台工件挂到 GitHub Release。同时让 D11 在 PR 场景校验 `refs/pull/<num>/head` 的真实提交文案而不是 GitHub 合成 merge commit。该能力为 `dogfooding-self-development-loop` 提供基础自动化，但不单独代表该 roadmap 主线已完成。
-- `2026-05-14`：`environment-configuration-surface` 收口到分阶段真相：跨平台 shell 契约与环境 atoms 已先落地，当前继续把它接入真实 `环境配置` 设置页，展示 current/recommended/fallback、平台明细、失败原因与重检入口；“显式选择 shell / profile 写入 / 执行链路切换”不属于这一阶段。
+- `2026-05-14`：`environment-configuration-surface` 收口到分阶段真相：跨平台 shell 契约与环境 atoms 已先落地，当前继续把它接入真实 `环境配置` 设置页，展示 current/recommended/fallback、平台明细、失败原因与重检入口；”显式选择 shell / profile 写入 / 执行链路切换”不属于这一阶段。
+- `2026-05-15`：代码验证更新：并行验证 in-progress 条目（environment-configuration-surface ~95% 完成，缺 reinit_runtime）、Phase E 已完成条目（shortcut/desktop-shell/core-workflow 全部 verified）和 planned 条目隐性实现。发现 `sidebar-performance-hardening` 核心延迟挂载实现不在代码中，经用户确认尝试过多种方案但难以在不丢失动画细节的前提下优化，改为搁置待深入调研；同时更新 6 个 planned 条目 notes 反映已有部分实现基线。总体进度：39 done / 58 (67.2%)，2 in-progress，17 planned。
+- `2026-05-15`：吸收 `.trae/todo` 里的外部规划输入并与 `j-gui-v1` 去重对齐：确认快捷键、移动端、Hooks 集成、主题自定义、环境配置、Proma 吸收等方向已在现有主线中；把尚未正式入图的两类问题补成独立条目——`thinking-mode-hardening`（reasoning/thinking 表面一致性）与 `shell-execution-model-integration`（Agent/Hooks/外部命令统一 shell 执行模型）。同时把工作区/项目文件夹 discoverability、模型配置命名收口、侧栏/三栏动画约束、空态/tips 文案等明确挂到现有条目的 notes/观察项中。总体进度随之更新为 39 done / 60，2 in-progress，19 planned。
