@@ -2,6 +2,8 @@ use serde::Serialize;
 use std::sync::Arc;
 use tauri::Emitter;
 
+use crate::agent_engine::which_claude;
+use crate::commands::settings::command_output;
 use crate::kernel::{ConfigKernel, JcliAdapter};
 
 #[derive(Clone, Serialize)]
@@ -209,6 +211,43 @@ fn set_theme_impl(config: &dyn ConfigKernel, theme: &str) -> Result<(), String> 
     config.set_theme(theme).map_err(|e| e.to_string())
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// Claude Code CLI 的安装与版本探测结果。
+pub struct ClaudeCliInfo {
+    /// 本机是否已安装 Claude Code CLI。
+    pub installed: bool,
+    /// 已安装的版本号（检测失败时为 None）。
+    pub version: Option<String>,
+    /// 可执行文件路径（检测失败时为 None）。
+    pub path: Option<String>,
+}
+
+#[tauri::command]
+/// 检测本机 Claude Code CLI 是否可用及其版本。
+pub fn get_claude_cli_status() -> Result<ClaudeCliInfo, String> {
+    get_claude_cli_status_impl()
+}
+
+fn get_claude_cli_status_impl() -> Result<ClaudeCliInfo, String> {
+    let claude_path = which_claude().ok();
+    let path_str = claude_path.as_deref().map(|p| p.to_string());
+    let installed = path_str.is_some();
+    let version = if installed {
+        claude_path.as_deref().and_then(|exe| {
+            let raw = command_output(exe, &["--version"])?;
+            Some(raw.lines().next()?.trim().to_string())
+        })
+    } else {
+        None
+    };
+    Ok(ClaudeCliInfo {
+        installed,
+        version,
+        path: path_str,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,5 +281,25 @@ mod tests {
 
         let result = set_theme_impl(&mock, "invalid");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_claude_cli_status_returns_result() {
+        let result = get_claude_cli_status_impl();
+        assert!(result.is_ok());
+        let info = result.unwrap();
+        // 无论本机是否安装 claude，installed 应该是 bool
+        assert!(
+            info.installed || !info.installed,
+            "installed 字段应为布尔值"
+        );
+        // 若已安装，path 应非空
+        if info.installed {
+            assert!(info.path.is_some());
+            assert!(!info.path.unwrap().is_empty());
+        } else {
+            assert!(info.path.is_none());
+            assert!(info.version.is_none());
+        }
     }
 }

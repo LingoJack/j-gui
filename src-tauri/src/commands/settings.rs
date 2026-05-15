@@ -533,6 +533,8 @@ pub struct StorageStats {
     pub checked_at: u64,
 }
 
+/// 供其他命令模块复用的命令输出与版本解析辅助函数。
+pub(crate) use settings_environment::command_output;
 #[cfg(test)]
 /// 测试中复用的版本解析辅助函数。
 pub(crate) use settings_environment::{parse_version, version_gte};
@@ -541,6 +543,12 @@ pub(crate) use settings_environment::{parse_version, version_gte};
 #[tauri::command]
 pub fn check_environment() -> Result<EnvCheckResult, String> {
     environment_commands::check_environment()
+}
+
+/// 重新执行运行时环境检测，返回最新的 RuntimeStatus。
+#[tauri::command]
+pub fn reinit_runtime() -> Result<RuntimeStatus, String> {
+    environment_commands::reinit_runtime()
 }
 
 /// 返回运行时详情，包含 Windows 下的 Git Bash / WSL 探测结果。

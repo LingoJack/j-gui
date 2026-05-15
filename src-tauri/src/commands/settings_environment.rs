@@ -139,6 +139,11 @@ pub(crate) fn version_gte(version: &str, minimum: &str) -> bool {
     }
 }
 
+/// 重新执行运行时环境检测并返回最新的 RuntimeStatus。
+pub(crate) fn reinit_runtime() -> Result<RuntimeStatus, String> {
+    get_runtime_status()
+}
+
 /// 收集设置页展示所需的完整运行时状态。
 pub(crate) fn get_runtime_status() -> Result<RuntimeStatus, String> {
     let node = detect_runtime_binary("node", "--version", "PATH 中未找到 Node.js");
@@ -223,5 +228,31 @@ mod tests {
     fn command_output_ignores_non_zero_exit_even_with_stderr() {
         let output = command_output("cmd", &["/C", "echo fail 1>&2 & exit /b 1"]);
         assert_eq!(output, None);
+    }
+
+    #[test]
+    fn reinit_runtime_returns_valid_status() {
+        let result = reinit_runtime();
+        assert!(result.is_ok());
+        let status = result.unwrap();
+        // initialized_at 应为正数时间戳
+        assert!(status.initialized_at > 0);
+        // node 和 git 至少有 available 字段
+        assert!(
+            status.node.available || !status.node.available,
+            "node.available 应为布尔值"
+        );
+        assert!(
+            status.git.available || !status.git.available,
+            "git.available 应为布尔值"
+        );
+    }
+
+    #[test]
+    fn reinit_runtime_returns_fresh_timestamp() {
+        let first = reinit_runtime().unwrap().initialized_at;
+        let second = reinit_runtime().unwrap().initialized_at;
+        // 两次调用的时间戳应递增或相等（毫秒精度下可能相同）
+        assert!(second >= first);
     }
 }

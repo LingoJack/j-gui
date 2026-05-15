@@ -243,6 +243,18 @@ export interface AppUpdateInfo {
   updateAvailable: boolean
 }
 
+export interface ClaudeCliInfo {
+  installed: boolean
+  version: string | null
+  path: string | null
+}
+
+export const getClaudeCliStatus = () => tryInvoke<ClaudeCliInfo>('get_claude_cli_status', undefined, {
+  installed: false,
+  version: null,
+  path: null,
+})
+
 export interface ConnectionTestResult {
   success: boolean
   message: string
