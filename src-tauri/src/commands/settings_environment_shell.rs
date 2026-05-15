@@ -1,6 +1,8 @@
 use super::{command_output, find_in_path, get_tool_version};
+#[cfg(not(windows))]
+use crate::commands::settings::PosixShellStatus;
 use crate::commands::settings::{
-    PosixShellStatus, ShellCandidateStatus, ShellEnvironmentStatus, WindowsShellStatus, WslStatus,
+    ShellCandidateStatus, ShellEnvironmentStatus, WindowsShellStatus, WslStatus,
 };
 #[cfg(windows)]
 use std::path::{Path, PathBuf};
@@ -418,6 +420,7 @@ fn detect_current_windows_shell(windows: &WindowsShellStatus) -> Option<ShellCan
     }
 }
 
+#[cfg(not(windows))]
 fn detect_posix_candidate(family: &str) -> ShellCandidateStatus {
     detect_shell_binary(family, family, "--version", "path-scan")
 }
@@ -483,6 +486,7 @@ fn detect_posix_shell_from_path(shell_path: String, source: &str) -> Option<Shel
     }))
 }
 
+#[cfg(not(windows))]
 fn detect_current_posix_shell() -> Option<ShellCandidateStatus> {
     let shell_path = match std::env::var("SHELL") {
         Ok(path) => path,
@@ -497,12 +501,14 @@ fn detect_current_posix_shell() -> Option<ShellCandidateStatus> {
     detect_posix_shell_from_path(shell_path, "env")
 }
 
+#[cfg(not(windows))]
 fn has_available_shell(candidates: &[ShellCandidateStatus], family: &str) -> bool {
     candidates
         .iter()
         .any(|item| item.family == family && item.available)
 }
 
+#[cfg(not(windows))]
 fn detect_posix_shell_status() -> PosixShellStatus {
     let current = detect_current_posix_shell();
     let candidates = ["bash", "zsh", "fish", "sh"]
@@ -552,40 +558,42 @@ fn default_fallback_order() -> Vec<String> {
 }
 
 /// 探测当前平台可用的 shell 环境与推荐顺序。
+#[cfg(windows)]
 pub(crate) fn detect_shell_environment() -> ShellEnvironmentStatus {
-    let platform = if cfg!(windows) {
-        "win32"
-    } else if cfg!(target_os = "macos") {
+    let platform = "win32";
+    let fallback_order = default_fallback_order();
+    let windows = detect_windows_shell_status();
+    let current = detect_current_windows_shell(&windows);
+    let recommended = windows.recommended.clone();
+    ShellEnvironmentStatus {
+        platform: platform.to_string(),
+        current,
+        recommended,
+        fallback_order,
+        windows: Some(windows),
+        posix: None,
+    }
+}
+
+/// 探测当前平台可用的 shell 环境与推荐顺序。
+#[cfg(not(windows))]
+pub(crate) fn detect_shell_environment() -> ShellEnvironmentStatus {
+    let platform = if cfg!(target_os = "macos") {
         "darwin"
     } else {
         "linux"
     };
     let fallback_order = default_fallback_order();
-
-    if cfg!(windows) {
-        let windows = detect_windows_shell_status();
-        let current = detect_current_windows_shell(&windows);
-        let recommended = windows.recommended.clone();
-        ShellEnvironmentStatus {
-            platform: platform.to_string(),
-            current,
-            recommended,
-            fallback_order,
-            windows: Some(windows),
-            posix: None,
-        }
-    } else {
-        let posix = detect_posix_shell_status();
-        let current = posix.current.clone();
-        let recommended = posix.recommended.clone();
-        ShellEnvironmentStatus {
-            platform: platform.to_string(),
-            current,
-            recommended,
-            fallback_order,
-            windows: None,
-            posix: Some(posix),
-        }
+    let posix = detect_posix_shell_status();
+    let current = posix.current.clone();
+    let recommended = posix.recommended.clone();
+    ShellEnvironmentStatus {
+        platform: platform.to_string(),
+        current,
+        recommended,
+        fallback_order,
+        windows: None,
+        posix: Some(posix),
     }
 }
 
@@ -684,6 +692,7 @@ mod tests {
     }
 
     #[cfg(not(windows))]
+    #[allow(unsafe_code)]
     #[test]
     fn detect_current_posix_shell_marks_missing_env_with_error() {
         let original_shell = std::env::var_os("SHELL");
