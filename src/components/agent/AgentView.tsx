@@ -178,7 +178,7 @@ export function AgentView({
     ipc.getClaudeCliStatus()
       .then((info) => setClaudeCliStatus({ ...info, loading: false }))
       .catch(() => setClaudeCliStatus({ installed: false, version: null, path: null, loading: false }));
-  }, []);
+  }, [setClaudeCliStatus]);
 
   // 已有会话首次打开时，从全局默认值初始化 per-session map
   React.useEffect(() => {

@@ -15,11 +15,15 @@ use commands::agent::AgentState;
 use std::sync::{Arc, Mutex};
 use tauri::menu::{MenuBuilder, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{LogicalPosition, LogicalSize};
 use tauri::{Manager, Runtime, WindowEvent};
 use tauri_plugin_window_state::Builder as WindowStateBuilder;
 
 const TRAY_SHOW_ID: &str = "tray-show-main-window";
 const TRAY_QUIT_ID: &str = "tray-quit-app";
+const MAIN_WINDOW_SAFE_MIN_WIDTH: f64 = 800.0;
+const MAIN_WINDOW_SAFE_MIN_HEIGHT: f64 = 500.0;
+const WINDOW_HIDDEN_POSITION: f64 = -32000.0;
 
 fn show_main_window<R: Runtime>(app: &tauri::AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
@@ -27,6 +31,38 @@ fn show_main_window<R: Runtime>(app: &tauri::AppHandle<R>) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+fn should_reset_main_window_state(width: f64, height: f64, x: f64, y: f64) -> bool {
+    width < MAIN_WINDOW_SAFE_MIN_WIDTH
+        || height < MAIN_WINDOW_SAFE_MIN_HEIGHT
+        || x <= WINDOW_HIDDEN_POSITION
+        || y <= WINDOW_HIDDEN_POSITION
+}
+
+fn normalize_main_window_state<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+
+    let width = f64::from(size.width);
+    let height = f64::from(size.height);
+    let x = f64::from(position.x);
+    let y = f64::from(position.y);
+
+    if !should_reset_main_window_state(width, height, x, y) {
+        return;
+    }
+
+    let _ = window.set_size(tauri::Size::Logical(LogicalSize::new(
+        MAIN_WINDOW_SAFE_MIN_WIDTH.max(width),
+        MAIN_WINDOW_SAFE_MIN_HEIGHT.max(height),
+    )));
+    let _ = window.set_position(tauri::Position::Logical(LogicalPosition::new(120.0, 120.0)));
+    let _ = window.show();
 }
 
 macro_rules! register_invoke_handler {
@@ -235,6 +271,7 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             {
                 if let Some(window) = app.get_webview_window("main") {
+                    normalize_main_window_state(&window);
                     let _ = window.set_decorations(false);
                 }
             }
@@ -254,5 +291,27 @@ pub fn run() {
 
     if let Err(err) = app.run(tauri::generate_context!()) {
         panic!("error while running tauri application: {err}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_reset_main_window_state;
+
+    #[test]
+    fn malformed_window_state_requires_reset() {
+        assert!(should_reset_main_window_state(
+            252.0, 23.0, -32000.0, -32000.0
+        ));
+    }
+
+    #[test]
+    fn healthy_window_state_is_preserved() {
+        assert!(!should_reset_main_window_state(1200.0, 800.0, 100.0, 100.0));
+    }
+
+    #[test]
+    fn undecorated_window_state_is_not_reset_by_itself() {
+        assert!(!should_reset_main_window_state(1200.0, 800.0, 100.0, 100.0));
     }
 }

@@ -56,7 +56,6 @@ import {
   agentSessionsAtom,
   currentAgentSessionIdAtom,
   agentPendingPromptAtom,
-  agentStreamingAtom,
   agentRunningSessionIdsAtom,
 } from "@/atoms/agent-atoms";
 import { settingsOpenAtom } from "@/atoms/settings-tab";
@@ -115,7 +114,6 @@ export function AgentSettings(): React.ReactElement {
   );
   const agentChannelId = useAtomValue(agentChannelIdAtom);
   const [agentBackendMode, setAgentBackendMode] = useAtom(agentBackendModeAtom);
-  const agentStreaming = useAtomValue(agentStreamingAtom)
   const runningSessionIds = useAtomValue(agentRunningSessionIdsAtom)
   const hasRunningSessions = runningSessionIds.size > 0
   const [claudeCliInfo, setClaudeCliInfo] = useAtom(claudeCliStatusAtom)
@@ -126,7 +124,7 @@ export function AgentSettings(): React.ReactElement {
     }).catch(() => {
       setClaudeCliInfo({ installed: false, version: null, path: null, loading: false })
     })
-  }, [])
+  }, [setClaudeCliInfo])
   const setAgentSessions = useSetAtom(agentSessionsAtom);
   const setCurrentSessionId = useSetAtom(currentAgentSessionIdAtom);
   const setPendingPrompt = useSetAtom(agentPendingPromptAtom);

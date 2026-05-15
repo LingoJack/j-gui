@@ -5,7 +5,6 @@
  */
 
 import { atom } from 'jotai'
-import type { PrimitiveAtom } from 'jotai'
 import type {
   EnvironmentCheckResult,
   RuntimeStatus,

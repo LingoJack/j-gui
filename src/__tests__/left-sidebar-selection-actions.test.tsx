@@ -2,6 +2,8 @@ import * as React from 'react'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { LeftSidebar } from '@/components/app-shell/LeftSidebar'
 import { appModeAtom } from '@/atoms/app-mode'
@@ -146,6 +148,20 @@ describe('LeftSidebar selection actions', () => {
     )
 
     await waitFor(() => expect(screen.getByTestId('session-list-items')).toBeInTheDocument())
+  })
+
+  it('keeps drag surfaces off the animated sidebar shell and on dedicated blank areas', () => {
+    const { container } = render(
+      <Provider store={createStore()}>
+        <TooltipProvider>
+          <LeftSidebar />
+        </TooltipProvider>
+      </Provider>,
+    )
+
+    const expandedContent = container.querySelector('[data-sidebar-expanded-content="true"]')
+    expect(expandedContent).not.toHaveClass('titlebar-drag-region')
+    expect(container.querySelectorAll('[data-sidebar-drag-surface="true"]').length).toBeGreaterThan(0)
   })
 
   it('animates the sidebar slot width while clipping the expanded content', () => {

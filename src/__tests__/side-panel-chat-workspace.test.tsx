@@ -153,7 +153,7 @@ describe('SidePanel chat workspace', () => {
     expect(store.get(currentAgentWorkspaceIdAtom)).toBe('agent-ws')
   })
 
-  it('keeps workspace content mounted while the panel slides out of interaction', async () => {
+  it('unmounts workspace content when the panel is closed and remounts it when reopened', async () => {
     vi.useFakeTimers()
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0)
@@ -189,12 +189,8 @@ describe('SidePanel chat workspace', () => {
     await act(async () => {
       store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', false]]))
     })
-    expect(screen.getByTestId('file-drop-zone')).toBeInTheDocument()
-    const hiddenContent = screen.getByTestId('file-drop-zone').closest('[aria-hidden="true"]')
-    expect(hiddenContent).not.toBeNull()
-    expect(hiddenContent).toHaveAttribute('inert')
-    expect(hiddenContent?.parentElement).toHaveClass('translate-x-full')
-    expect(hiddenContent?.parentElement).toHaveClass('pointer-events-none')
+    expect(screen.queryByTestId('file-drop-zone')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('file-browser')).not.toBeInTheDocument()
 
     await act(async () => {
       store.set(agentSidePanelOpenMapAtom, new Map([['chat-1', true]]))
