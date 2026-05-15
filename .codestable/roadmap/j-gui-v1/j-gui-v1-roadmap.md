@@ -3,7 +3,7 @@ doc_type: roadmap
 slug: j-gui-v1
 status: active
 created: 2026-05-10
-last_reviewed: 2026-05-14
+last_reviewed: 2026-05-15
 tags: [tauri, desktop, j-cli, chat, agent, proma, closure]
 related_requirements:
   - j-gui-ai-interaction
@@ -436,9 +436,9 @@ type ProductFrictionFinding = {
 ### 9.1 总体数字
 
 - roadmap 总条目：`58`
-- 已完成：`40 / 58`（`69.0%`）
-- 进行中：`0 / 58`
-- 已规划未开始：`18 / 58`
+- 已完成：`39 / 58`（`67.2%`）
+- 进行中：`2 / 58`
+- 已规划未开始：`17 / 58`
 - 最小闭环项（`minimal_loop: true`）：`5 / 5` 已完成
 
 ### 9.2 分阶段进度
@@ -449,7 +449,7 @@ type ProductFrictionFinding = {
 | B P0 能力闭环 | 3 | 3 | 0 | 0 | P0 主链路已收口，后续不再把 Agent 长期工作台列为 v1 的未完成阻塞 |
 | C P1 体验与治理闭环 | 5 | 5 | 0 | 0 | Phase C 已整体收尾，治理真相与此前已完成项都已翻正 |
 | D P1 质量与证据收口 | 3 | 3 | 0 | 0 | Phase D 已完成；质量门禁、Proma 证据骨架与 TDD 收口基线都已翻正 |
-| E P0/P1 产品体验硬化 | 16 | 5 | 0 | 11 | `product-friction-audit`、`core-workflow-ux-hardening`、`shortcut-system-hardening`、`sidebar-performance-hardening` 与 `desktop-shell-platform-polish` 已完成；后续继续按台账推进 Agent 后端切换、Hooks 集成、外部工具治理、提示词运行时、关于/更新页、环境配置页、自定义外观、设置区、Agent 工作台与视觉布局 |
+| E P0/P1 产品体验硬化 | 16 | 4 | 2 | 10 | `product-friction-audit`、`core-workflow-ux-hardening`、`shortcut-system-hardening` 与 `desktop-shell-platform-polish` 已完成；`sidebar-performance-hardening` 搁置（核心优化方案待深入调研，先完成其他条目）；`environment-configuration-surface` 接近完成（~95%，缺 reinit_runtime 后端命令）。2026-05-15 代码验证确认 6 个 planned 条目已有部分实现基线。 |
 | F P2 自我开发闭环 | 6 | 0 | 0 | 6 | 先做 Proma 后端能力吸收与 `src/` 领域化重组，再评估 `jagent` 深化、双后端收口、自开发和远程接入 |
 | G 远期 | 1 | 0 | 0 | 1 | 不进入当前 v1 完成度判断 |
 
@@ -481,12 +481,7 @@ type ProductFrictionFinding = {
   - 快捷键相关 Tauri ACL 与键位回归测试
   后续直接下游继续是：
   - `desktop-shell-platform-polish`
-- `sidebar-performance-hardening` 已完成；它进一步翻正了：
-  - LeftSidebar 重新展开时的大列表挂载节奏
-  - 快速展开后再收起时的迟到挂载取消
-  - Agent 折叠启动后首次展开的上区分栏高度初始化
-  后续直接下游继续是：
-  - `desktop-shell-platform-polish`
+- `sidebar-performance-hardening` 已搁置——2026-05-15 代码验证发现核心延迟挂载实现不在代码中，经用户确认尝试过多种方案但难以在不丢失动画细节的前提下优化，需更深入调研。当前不影响其他下游条目的推进。
 - `agent-governance-surface-hardening`、`system-prompt-runtime-hardening`、`about-update-surface-refresh` 与 `environment-configuration-surface` 收口后，设置区的后续硬化应继续汇入：
   - `settings-experience-hardening`
 - `agent-backend-switch-ux-hardening` 与 `agent-governance-surface-hardening` 收口后，再继续推进：
@@ -541,10 +536,7 @@ type ProductFrictionFinding = {
   - `Ctrl/Cmd+Shift+P` 已接通全局显示主窗口，不再落到浏览器/系统默认打印
   - `Ctrl/Cmd + + / - / 0` 已接通真实 webview 缩放
   - Tauri ACL 与 capability 回归测试已显式补齐，不再依赖默认权限误判
-- [x] `sidebar-performance-hardening`
-  - LeftSidebar 改为在 width transition 结束后再挂载 SessionListItems，并保留超时兜底
-  - 快速展开后再收起不会出现迟到挂载
-  - Agent 折叠启动后首次展开时，上区分栏高度会正确初始化
+- [ ] `sidebar-performance-hardening`（搁置——代码验证发现核心优化不在代码中，需深入调研，先推进其他条目）
 - [x] `desktop-shell-platform-polish`
   - Tauri bundle 图标已切到 J logo 生成产物，不再沿用默认图标
   - Windows 主窗口改为在 Rust setup 阶段直接关闭原生 decorations，并接入自定义最小化/最大化/关闭按钮
@@ -552,8 +544,9 @@ type ProductFrictionFinding = {
 
 ### 10.2 当前正在推进
 
-- 无
-- Phase E 已完成事实输入阶段、第一批核心工作流硬化，以及 `shortcut-system-hardening` / `sidebar-performance-hardening` / `desktop-shell-platform-polish`；下一步进入 Agent 后端切换、Hooks 集成、设置区、环境配置、自定义外观与工作台硬化
+- `environment-configuration-surface` — 接近完成（~95%），缺 `reinit_runtime` 后端命令注册
+- `sidebar-performance-hardening` — 搁置，核心优化方案待深入调研
+- Phase E 当前：4 done + 2 in-progress + 10 planned；6 个 planned 条目已有部分实现基线
 
 ### 10.3 下一步明确要做
 
@@ -666,4 +659,5 @@ Phase C 当前判断：
 - `2026-05-13`：完成 `desktop-shell-platform-polish`：Tauri bundle 图标已切到 J logo 生成产物；Windows 主窗口在 Rust setup 阶段直接关闭原生 decorations，并接入自定义最小化/最大化/关闭按钮；macOS 保持 `decorations=true + titleBarStyle=Overlay + trafficLightPosition` 的代码级配置。同时吸收双子代理审查里的两个真实 P1：补上非 Tauri 环境保护，避免浏览器/测试壳误调 `getCurrentWindow()`；补上迟到 `onResized` 监听清理与最大化状态同步防回写竞争。图标“不是 J logo”的 finding 经源图核对为误报，未吸收。
 - `2026-05-13`：按本轮新需求继续细化 Phase E：新增 `agent-hooks-config-integration`，明确 Hooks 需要并入 Agent 配置、按 backend mode 区分支持矩阵、按工作区切换并在 runtime 支持时按类型添加；新增 `appearance-theme-customization`，明确外观自定义应走受控 token、实时预览、复制/导入/重置路线，而不是任意换肤。同时把相关观察项、推荐顺序与总体进度数字同步到当前真相。
 - `2026-05-14`：补齐仓库级 GitHub Actions 默认 CI，并扩到 Release 资产分发：`.github/workflows/desktop-ci.yml` 现在由 Ubuntu 执行 `bash scripts/check_lint.sh`，Linux / macOS Intel / macOS Apple Silicon / Windows 负责 Tauri bundle 构建；Linux 工件显式拆成 `deb / rpm / AppImage / snapshot tar.gz`，Windows 额外补一条 `portable zip`，tag 推送会自动把跨平台工件挂到 GitHub Release。同时让 D11 在 PR 场景校验 `refs/pull/<num>/head` 的真实提交文案而不是 GitHub 合成 merge commit。该能力为 `dogfooding-self-development-loop` 提供基础自动化，但不单独代表该 roadmap 主线已完成。
-- `2026-05-14`：`environment-configuration-surface` 收口到分阶段真相：跨平台 shell 契约与环境 atoms 已先落地，当前继续把它接入真实 `环境配置` 设置页，展示 current/recommended/fallback、平台明细、失败原因与重检入口；“显式选择 shell / profile 写入 / 执行链路切换”不属于这一阶段。
+- `2026-05-14`：`environment-configuration-surface` 收口到分阶段真相：跨平台 shell 契约与环境 atoms 已先落地，当前继续把它接入真实 `环境配置` 设置页，展示 current/recommended/fallback、平台明细、失败原因与重检入口；”显式选择 shell / profile 写入 / 执行链路切换”不属于这一阶段。
+- `2026-05-15`：代码验证更新：并行验证 in-progress 条目（environment-configuration-surface ~95% 完成，缺 reinit_runtime）、Phase E 已完成条目（shortcut/desktop-shell/core-workflow 全部 verified）和 planned 条目隐性实现。发现 `sidebar-performance-hardening` 核心延迟挂载实现不在代码中，经用户确认尝试过多种方案但难以在不丢失动画细节的前提下优化，改为搁置待深入调研；同时更新 6 个 planned 条目 notes 反映已有部分实现基线。总体进度：39 done / 58 (67.2%)，2 in-progress，17 planned。
