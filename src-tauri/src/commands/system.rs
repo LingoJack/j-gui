@@ -2,6 +2,11 @@ use serde::Serialize;
 use std::sync::Arc;
 use tauri::Emitter;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 use crate::agent_engine::which_claude;
 use crate::commands::settings::command_output;
 use crate::kernel::{ConfigKernel, JcliAdapter};
@@ -87,7 +92,11 @@ fn strip_ansi(s: &str) -> String {
 /// 探测本机安装的 j CLI 版本。
 /// 通过执行 `j version`，解析表格输出中的 `kernel` 行。
 fn detect_local_j_cli() -> (Option<String>, bool) {
-    let output = std::process::Command::new("j").arg("version").output();
+    let mut cmd = std::process::Command::new("j");
+    cmd.arg("version");
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.output();
     match output {
         Ok(out) if out.status.success() => {
             let stdout = String::from_utf8_lossy(&out.stdout);

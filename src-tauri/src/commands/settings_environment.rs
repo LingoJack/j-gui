@@ -3,6 +3,11 @@ use crate::commands::settings::{
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[path = "settings_environment_shell.rs"]
 mod settings_environment_shell;
 
@@ -48,10 +53,11 @@ pub(crate) fn find_in_path(tool: &str) -> Option<String> {
 
 /// 执行命令并提取 stdout/stderr 中可用的文本输出。
 pub(crate) fn command_output(program: &str, args: &[&str]) -> Option<String> {
-    let output = std::process::Command::new(program)
-        .args(args)
-        .output()
-        .ok()?;
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.output().ok()?;
     if !output.status.success() {
         return None;
     }

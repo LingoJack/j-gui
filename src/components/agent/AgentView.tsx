@@ -172,14 +172,13 @@ export function AgentView({
     persistedSessionBackendMode ??
     agentBackendMode;
 
-  // Claude CLI 可用性（全局缓存，避免重复 shell 探测）
+  // Claude CLI 可用性（全局缓存，按需检测）
   const [claudeCliStatus, setClaudeCliStatus] = useAtom(claudeCliStatusAtom);
   React.useEffect(() => {
-    if (!claudeCliStatus.loading) return;
     ipc.getClaudeCliStatus()
       .then((info) => setClaudeCliStatus({ ...info, loading: false }))
       .catch(() => setClaudeCliStatus({ installed: false, version: null, path: null, loading: false }));
-  }, [claudeCliStatus.loading, setClaudeCliStatus]);
+  }, []);
 
   // 已有会话首次打开时，从全局默认值初始化 per-session map
   React.useEffect(() => {

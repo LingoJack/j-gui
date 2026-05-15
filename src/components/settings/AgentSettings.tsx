@@ -119,15 +119,14 @@ export function AgentSettings(): React.ReactElement {
   const runningSessionIds = useAtomValue(agentRunningSessionIdsAtom)
   const hasRunningSessions = runningSessionIds.size > 0
   const [claudeCliInfo, setClaudeCliInfo] = useAtom(claudeCliStatusAtom)
-  // 首次挂载时如果还没加载就触发检测
+  // 用户进入 Agent 设置时按需触发 Claude CLI 可用性检测
   React.useEffect(() => {
-    if (!claudeCliInfo.loading) return
     ipc.getClaudeCliStatus().then((result) => {
       setClaudeCliInfo({ ...result, loading: false })
     }).catch(() => {
       setClaudeCliInfo({ installed: false, version: null, path: null, loading: false })
     })
-  }, [claudeCliInfo.loading, setClaudeCliInfo])
+  }, [])
   const setAgentSessions = useSetAtom(agentSessionsAtom);
   const setCurrentSessionId = useSetAtom(currentAgentSessionIdAtom);
   const setPendingPrompt = useSetAtom(agentPendingPromptAtom);
