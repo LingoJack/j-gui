@@ -90,6 +90,7 @@ import {
 } from "@/atoms/agent-atoms";
 import { settingsOpenAtom } from "@/atoms/settings-tab";
 import { channelsAtom } from "@/atoms/chat-atoms";
+import { claudeCliStatusAtom } from "@/atoms/environment";
 import { useOpenSession } from "@/hooks/useOpenSession";
 import { AgentSessionProvider } from "@/contexts/session-context";
 import { sendWithCmdEnterAtom } from "@/atoms/shortcut-atoms";
@@ -171,13 +172,14 @@ export function AgentView({
     persistedSessionBackendMode ??
     agentBackendMode;
 
-  // Claude CLI 可用性检测（用于 badge warning）
-  const [claudeCliInstalled, setClaudeCliInstalled] = React.useState<boolean | null>(null);
+  // Claude CLI 可用性（全局缓存，避免重复 shell 探测）
+  const [claudeCliStatus, setClaudeCliStatus] = useAtom(claudeCliStatusAtom);
   React.useEffect(() => {
+    if (!claudeCliStatus.loading) return;
     ipc.getClaudeCliStatus()
-      .then((info) => setClaudeCliInstalled(info.installed))
-      .catch(() => setClaudeCliInstalled(null));
-  }, []);
+      .then((info) => setClaudeCliStatus({ ...info, loading: false }))
+      .catch(() => setClaudeCliStatus({ installed: false, version: null, path: null, loading: false }));
+  }, [claudeCliStatus.loading, setClaudeCliStatus]);
 
   // 已有会话首次打开时，从全局默认值初始化 per-session map
   React.useEffect(() => {
@@ -761,13 +763,13 @@ export function AgentView({
                           type="button"
                           className={cn(
                             "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors",
-                            effectiveSessionBackendMode === "claude-sdk" && claudeCliInstalled === false
+                            effectiveSessionBackendMode === "claude-sdk" && !claudeCliStatus.loading && !claudeCliStatus.installed
                               ? "border-amber-500/40 text-amber-600 hover:text-amber-700"
                               : "border-border text-muted-foreground hover:text-foreground",
                           )}
                           onClick={() => setSettingsOpen(true)}
                         >
-                          {effectiveSessionBackendMode === "claude-sdk" && claudeCliInstalled === false && (
+                          {effectiveSessionBackendMode === "claude-sdk" && !claudeCliStatus.loading && !claudeCliStatus.installed && (
                             <AlertTriangle className="size-3" />
                           )}
                           {effectiveSessionBackendMode === "claude-sdk"
@@ -776,7 +778,7 @@ export function AgentView({
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-xs text-xs">
-                        {effectiveSessionBackendMode === "claude-sdk" && claudeCliInstalled === false ? (
+                        {effectiveSessionBackendMode === "claude-sdk" && !claudeCliStatus.loading && !claudeCliStatus.installed ? (
                           <p>当前选择 Claude SDK 模式，但未检测到本机 Claude Code CLI。Agent 将无法启动。</p>
                         ) : (
                           <p>

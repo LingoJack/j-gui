@@ -5,6 +5,7 @@
  */
 
 import { atom } from 'jotai'
+import type { PrimitiveAtom } from 'jotai'
 import type {
   EnvironmentCheckResult,
   RuntimeStatus,
@@ -97,3 +98,18 @@ export const isNodeJsOkAtom = atom((get) => {
  * 全局环境检测 Dialog 开关（错误卡片的「打开环境检测」按钮会置 true）
  */
 export const environmentCheckDialogOpenAtom = atom(false)
+
+/**
+ * Claude Code CLI 可用性状态（全局缓存，避免多处重复 shell 探测）
+ */
+export const claudeCliStatusAtom = atom<{
+  installed: boolean
+  version: string | null
+  path: string | null
+  loading: boolean
+}>({
+  installed: false,
+  version: null,
+  path: null,
+  loading: true,
+})

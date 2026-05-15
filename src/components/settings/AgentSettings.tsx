@@ -57,9 +57,11 @@ import {
   currentAgentSessionIdAtom,
   agentPendingPromptAtom,
   agentStreamingAtom,
+  agentRunningSessionIdsAtom,
 } from "@/atoms/agent-atoms";
 import { settingsOpenAtom } from "@/atoms/settings-tab";
 import { appModeAtom } from "@/atoms/app-mode";
+import { claudeCliStatusAtom } from "@/atoms/environment";
 import type {
   McpServerEntry,
   SkillMeta,
@@ -114,10 +116,18 @@ export function AgentSettings(): React.ReactElement {
   const agentChannelId = useAtomValue(agentChannelIdAtom);
   const [agentBackendMode, setAgentBackendMode] = useAtom(agentBackendModeAtom);
   const agentStreaming = useAtomValue(agentStreamingAtom)
-  const [claudeCliInfo, setClaudeCliInfo] = React.useState<ipc.ClaudeCliInfo | null>(null)
+  const runningSessionIds = useAtomValue(agentRunningSessionIdsAtom)
+  const hasRunningSessions = runningSessionIds.size > 0
+  const [claudeCliInfo, setClaudeCliInfo] = useAtom(claudeCliStatusAtom)
+  // 首次挂载时如果还没加载就触发检测
   React.useEffect(() => {
-    ipc.getClaudeCliStatus().then(setClaudeCliInfo).catch(() => {})
-  }, [])
+    if (!claudeCliInfo.loading) return
+    ipc.getClaudeCliStatus().then((result) => {
+      setClaudeCliInfo({ ...result, loading: false })
+    }).catch(() => {
+      setClaudeCliInfo({ installed: false, version: null, path: null, loading: false })
+    })
+  }, [claudeCliInfo.loading, setClaudeCliInfo])
   const setAgentSessions = useSetAtom(agentSessionsAtom);
   const setCurrentSessionId = useSetAtom(currentAgentSessionIdAtom);
   const setPendingPrompt = useSetAtom(agentPendingPromptAtom);
@@ -354,8 +364,8 @@ export function AgentSettings(): React.ReactElement {
     mode: AgentBackendMode,
   ): Promise<void> => {
     if (mode === agentBackendMode) return;
-    // 运行中会话警告
-    if (agentStreaming) {
+    // 运行中会话警告——检查所有运行中的 Agent 会话而非仅当前会话
+    if (hasRunningSessions) {
       const confirmed = window.confirm(
         "当前有 Agent 会话正在运行，切换后端模式将影响后续新会话。\n是否继续？",
       );
@@ -738,7 +748,7 @@ ${skillList}
                     ? "Claude Code CLI / SDK 会话模式"
                     : "j-cli Agent loop 模式"}
                 </div>
-                {agentBackendMode === "claude-sdk" && claudeCliInfo && !claudeCliInfo.installed && (
+                {agentBackendMode === "claude-sdk" && !claudeCliInfo.loading && !claudeCliInfo.installed && (
                   <div className="mt-1 flex items-center gap-1 text-xs text-amber-600">
                     <AlertTriangle className="size-3" />
                     未检测到 Claude Code CLI
