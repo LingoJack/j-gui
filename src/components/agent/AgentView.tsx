@@ -25,6 +25,7 @@ import {
   X,
   Map as MapIcon,
   Sparkles,
+  AlertTriangle,
 } from "lucide-react";
 import { AgentMessages } from "./AgentMessages";
 import { AgentHeader } from "./AgentHeader";
@@ -169,6 +170,14 @@ export function AgentView({
     sessionBackendModeMap.get(sessionId) ??
     persistedSessionBackendMode ??
     agentBackendMode;
+
+  // Claude CLI 可用性检测（用于 badge warning）
+  const [claudeCliInstalled, setClaudeCliInstalled] = React.useState<boolean | null>(null);
+  React.useEffect(() => {
+    ipc.getClaudeCliStatus()
+      .then((info) => setClaudeCliInstalled(info.installed))
+      .catch(() => setClaudeCliInstalled(null));
+  }, []);
 
   // 已有会话首次打开时，从全局默认值初始化 per-session map
   React.useEffect(() => {
@@ -750,20 +759,32 @@ export function AgentView({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          className="inline-flex h-8 items-center rounded-full border border-border px-3 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                          className={cn(
+                            "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors",
+                            effectiveSessionBackendMode === "claude-sdk" && claudeCliInstalled === false
+                              ? "border-amber-500/40 text-amber-600 hover:text-amber-700"
+                              : "border-border text-muted-foreground hover:text-foreground",
+                          )}
                           onClick={() => setSettingsOpen(true)}
                         >
+                          {effectiveSessionBackendMode === "claude-sdk" && claudeCliInstalled === false && (
+                            <AlertTriangle className="size-3" />
+                          )}
                           {effectiveSessionBackendMode === "claude-sdk"
                             ? "Claude SDK"
                             : "j-cli Agent"}
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-xs text-xs">
-                        <p>
-                          {effectiveSessionBackendMode === "claude-sdk"
-                            ? "当前会话最近一次实际启动走 Claude Code 原生 session；仅在具备对应会话元数据时支持 resume / fork-session。"
-                            : "当前会话最近一次实际启动走 j-cli agent loop；每轮按当前 transcript 重启。"}
-                        </p>
+                        {effectiveSessionBackendMode === "claude-sdk" && claudeCliInstalled === false ? (
+                          <p>当前选择 Claude SDK 模式，但未检测到本机 Claude Code CLI。Agent 将无法启动。</p>
+                        ) : (
+                          <p>
+                            {effectiveSessionBackendMode === "claude-sdk"
+                              ? "当前会话最近一次实际启动走 Claude Code 原生 session；仅在具备对应会话元数据时支持 resume / fork-session。"
+                              : "当前会话最近一次实际启动走 j-cli agent loop；每轮按当前 transcript 重启。"}
+                          </p>
+                        )}
                       </TooltipContent>
                     </Tooltip>
                     <PermissionModeSelector sessionId={sessionId} />
