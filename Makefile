@@ -53,21 +53,40 @@ current_dir: ## 显示当前目录信息
 	@echo "分支: $(GIT_BRANCH)"
 	@echo "======================================"
 
-push: current_dir fmt ## 提交并推送代码（AI 生成 commit message）
-	@echo "推送代码到远程仓库..."
-	@git add .
-	@staged_files=$$(git diff --cached --name-only 2>/dev/null); \
-	if [ -z "$$staged_files" ]; then \
-		echo "没有检测到变更，直接 push 已有 commits..."; \
+push: current_dir fmt ## AI 生成 commit message 并推送
+	@echo "AI 生成变更说明..."
+	@diff_stat="$$(git diff --stat 2>/dev/null)"; \
+	if [ -z "$$diff_stat" ]; then \
+		diff_stat="$$(git diff --cached --stat 2>/dev/null)"; \
+	fi; \
+	if [ -z "$$diff_stat" ]; then \
+		echo "没有检测到本地变更，直接 push 已有 commits..."; \
 		git push origin $(GIT_BRANCH); \
 		echo "已 push"; \
 		exit 0; \
 	fi; \
-	echo "使用 AI 生成 commit message..."; \
-	commit_msg=$$(j-cli commit --prompt-file prompts/commit-message.md 2>/dev/null || echo "更新: $$(date +'%Y-%m-%d %H:%M:%S')"); \
-	git commit -m "$$commit_msg"; \
-	git push origin $(GIT_BRANCH); \
-	echo "已推送"
+	prompt_file=$$(mktemp); \
+	stat_file=$$(mktemp); \
+	diff_file=$$(mktemp); \
+	trap 'rm -f "$$prompt_file" "$$stat_file" "$$diff_file"' EXIT; \
+	printf '%s\n' "$$diff_stat" > "$$stat_file"; \
+	(git diff 2>/dev/null || git diff --cached 2>/dev/null) | head -200 > "$$diff_file"; \
+	awk -v stat_file="$$stat_file" -v diff_file="$$diff_file" '\
+		/\{\{diff_stat\}\}/ { while ((getline l < stat_file) > 0) print l; close(stat_file); next } \
+		/\{\{diff\}\}/      { while ((getline l < diff_file) > 0) print l; close(diff_file); next } \
+		{ print }' prompts/commit-message.md > "$$prompt_file"; \
+	ai_out=$$(mktemp); \
+	j ai --bypass --no-render -- "$$(cat "$$prompt_file")" > "$$ai_out" 2>/dev/null; \
+	echo ""; \
+	echo "AI 原始输出:"; \
+	echo "----------------------------------------"; \
+	cat "$$ai_out"; \
+	echo "----------------------------------------"; \
+	msg=$$(perl -0777 -pe 's/<\s*\/\s*result\s*>/<\/result>/g' "$$ai_out" | awk '/<result>/{in_r=1;gsub(/.*<result>/,"")}/<\/result>/{gsub(/<\/result>.*/,"");in_r=0;print;next}in_r{print}'); \
+	rm -f "$$ai_out"; \
+	if [ -z "$$msg" ]; then msg="更新: $$(date +'%Y-%m-%d %H:%M:%S')"; fi; \
+	git add . && git commit -m "$$msg" && git push origin $(GIT_BRANCH); \
+	echo "已推送: $$msg"
 
 push-non-ai: current_dir fmt ## 提交并推送代码（手动 commit message）
 	@echo "推送代码到远程仓库..."
@@ -76,17 +95,38 @@ push-non-ai: current_dir fmt ## 提交并推送代码（手动 commit message）
 	&& git push origin $(GIT_BRANCH)
 	@echo "代码已推送"
 
-commit: current_dir fmt ## 自动提交（AI 生成 commit message）
-	@echo "自动生成 commit message..."
-	@git add .; \
-	staged_files=$$(git diff --cached --name-only 2>/dev/null); \
-	if [ -z "$$staged_files" ]; then \
+commit: current_dir fmt ## AI 生成 commit message 并提交（不推送）
+	@echo "AI 生成变更说明..."
+	@diff_stat="$$(git diff --stat 2>/dev/null)"; \
+	if [ -z "$$diff_stat" ]; then \
+		diff_stat="$$(git diff --cached --stat 2>/dev/null)"; \
+	fi; \
+	if [ -z "$$diff_stat" ]; then \
 		echo "没有检测到变更，无需提交"; \
 		exit 0; \
 	fi; \
-	commit_msg=$$(j-cli commit --prompt-file prompts/commit-message.md 2>/dev/null || echo "更新: $$(date +'%Y-%m-%d %H:%M:%S')"); \
-	git commit -m "$$commit_msg"; \
-	echo "已提交: $$commit_msg"
+	prompt_file=$$(mktemp); \
+	stat_file=$$(mktemp); \
+	diff_file=$$(mktemp); \
+	trap 'rm -f "$$prompt_file" "$$stat_file" "$$diff_file"' EXIT; \
+	printf '%s\n' "$$diff_stat" > "$$stat_file"; \
+	(git diff 2>/dev/null || git diff --cached 2>/dev/null) | head -200 > "$$diff_file"; \
+	awk -v stat_file="$$stat_file" -v diff_file="$$diff_file" '\
+		/\{\{diff_stat\}\}/ { while ((getline l < stat_file) > 0) print l; close(stat_file); next } \
+		/\{\{diff\}\}/      { while ((getline l < diff_file) > 0) print l; close(diff_file); next } \
+		{ print }' prompts/commit-message.md > "$$prompt_file"; \
+	ai_out=$$(mktemp); \
+	j ai --bypass --no-render -- "$$(cat "$$prompt_file")" > "$$ai_out" 2>/dev/null; \
+	echo ""; \
+	echo "AI 原始输出:"; \
+	echo "----------------------------------------"; \
+	cat "$$ai_out"; \
+	echo "----------------------------------------"; \
+	msg=$$(perl -0777 -pe 's/<\s*\/\s*result\s*>/<\/result>/g' "$$ai_out" | awk '/<result>/{in_r=1;gsub(/.*<result>/,"")}/<\/result>/{gsub(/<\/result>.*/,"");in_r=0;print;next}in_r{print}'); \
+	rm -f "$$ai_out"; \
+	if [ -z "$$msg" ]; then msg="更新: $$(date +'%Y-%m-%d %H:%M:%S')"; fi; \
+	git add . && git commit -m "$$msg"; \
+	echo "已提交: $$msg"
 
 pull: current_dir ## 拉取最新代码
 	@echo "拉取最新代码..."
