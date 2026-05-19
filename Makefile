@@ -53,7 +53,7 @@ current_dir: ## 显示当前目录信息
 	@echo "分支: $(GIT_BRANCH)"
 	@echo "======================================"
 
-push: current_dir fmt ## 提交并推送代码
+push: current_dir fmt ## 提交并推送代码（AI 生成 commit message）
 	@echo "推送代码到远程仓库..."
 	@git add .
 	@staged_files=$$(git diff --cached --name-only 2>/dev/null); \
@@ -63,7 +63,9 @@ push: current_dir fmt ## 提交并推送代码
 		echo "已 push"; \
 		exit 0; \
 	fi; \
-	git commit -m "更新: $$(date +'%Y-%m-%d %H:%M:%S')"; \
+	echo "使用 AI 生成 commit message..."; \
+	commit_msg=$$(j-cli commit --prompt-file prompts/commit-message.md 2>/dev/null || echo "更新: $$(date +'%Y-%m-%d %H:%M:%S')"); \
+	git commit -m "$$commit_msg"; \
 	git push origin $(GIT_BRANCH); \
 	echo "已推送"
 
@@ -74,7 +76,7 @@ push-non-ai: current_dir fmt ## 提交并推送代码（手动 commit message）
 	&& git push origin $(GIT_BRANCH)
 	@echo "代码已推送"
 
-commit: current_dir fmt ## 自动提交（基于变更生成 message）
+commit: current_dir fmt ## 自动提交（AI 生成 commit message）
 	@echo "自动生成 commit message..."
 	@git add .; \
 	staged_files=$$(git diff --cached --name-only 2>/dev/null); \
@@ -82,15 +84,9 @@ commit: current_dir fmt ## 自动提交（基于变更生成 message）
 		echo "没有检测到变更，无需提交"; \
 		exit 0; \
 	fi; \
-	file_count=$$(echo "$$staged_files" | wc -l | tr -d ' '); \
-	if [ "$$file_count" -eq 1 ]; then \
-		msg="update: $$(echo "$$staged_files" | head -1)"; \
-	else \
-		first=$$(echo "$$staged_files" | head -1); \
-		msg="update: $$first and $$((file_count - 1)) other file(s)"; \
-	fi; \
-	git commit -m "$$msg"; \
-	echo "已提交: $$msg"
+	commit_msg=$$(j-cli commit --prompt-file prompts/commit-message.md 2>/dev/null || echo "更新: $$(date +'%Y-%m-%d %H:%M:%S')"); \
+	git commit -m "$$commit_msg"; \
+	echo "已提交: $$commit_msg"
 
 pull: current_dir ## 拉取最新代码
 	@echo "拉取最新代码..."
