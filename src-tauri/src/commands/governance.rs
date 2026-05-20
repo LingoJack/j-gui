@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -6,7 +6,11 @@ use std::sync::Arc;
 use crate::kernel::{GovernanceKernel, JcliAdapter};
 #[path = "governance_mcp.rs"]
 mod governance_mcp;
+#[path = "governance_types.rs"]
+mod governance_types;
 use governance_mcp as mcp_commands;
+/// 治理命令使用的导出类型。
+pub use governance_types::*;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -78,19 +82,6 @@ fn list_hooks_impl(kernel: &dyn GovernanceKernel) -> Result<Vec<HookInfo>, Strin
 
 // ===== MCP 配置 =====
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-/// MCP 服务配置项。
-pub struct McpServerConfig {
-    pub name: String,
-    pub transport: String, // 可选值："stdio" | "sse"
-    pub command: Option<String>,
-    pub args: Option<Vec<String>>,
-    pub url: Option<String>,
-    pub env: Option<std::collections::HashMap<String, String>>,
-    pub disabled: bool,
-}
-
 #[tauri::command]
 /// 列出全局 MCP 服务配置。
 pub fn list_mcp_servers(
@@ -139,15 +130,6 @@ pub fn save_mcp_servers(
 }
 
 // ===== 聊天工具 =====
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-/// 聊天工具列表项。
-pub struct ToolInfo {
-    pub name: String,
-    pub description: String,
-    pub enabled: bool,
-}
 
 #[tauri::command]
 /// 列出全部聊天工具及其开关状态。
@@ -342,40 +324,6 @@ pub fn copy_skill_to_workspace(
 
 // ===== 治理命令（#28） =====
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-/// 工作区级 MCP 配置结构。
-pub struct McpWorkspaceConfig {
-    pub servers: Vec<McpServerConfig>,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-/// 工作区能力视图中的 Skill 项。
-pub struct WorkspaceCapabilitySkill {
-    pub slug: String,
-    pub name: String,
-    pub description: String,
-    pub enabled: bool,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-/// 工作区能力视图中的 MCP 服务项。
-pub struct WorkspaceCapabilityServer {
-    pub name: String,
-    pub enabled: bool,
-    pub r#type: String,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-/// 工作区聚合能力视图。
-pub struct WorkspaceCapabilities {
-    pub mcp_servers: Vec<WorkspaceCapabilityServer>,
-    pub skills: Vec<WorkspaceCapabilitySkill>,
-}
-
 #[tauri::command]
 /// 切换指定 Hook 的启用状态。
 pub fn toggle_hook(
@@ -509,14 +457,6 @@ pub fn import_skill_from_workspace(
         .governance()
         .import_skill_from_workspace(&source_slug, &target_slug, &skill_slug)
         .map_err(|e| e.to_string())
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-/// MCP 连接测试结果。
-pub struct ConnectionTestResult {
-    pub success: bool,
-    pub message: String,
 }
 
 #[tauri::command]
