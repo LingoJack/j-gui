@@ -9,13 +9,13 @@
 ### 编译与构建
 
 - 前端包管理用 **bun**（非 npm/yarn/pnpm）
-- 默认合规检查入口是 `bash scripts/check_lint.sh`；完成任务、交付子代理结果、或收尾前都先跑它
-- 前端测试必须用 `bun run test`（即 vitest run）——`bun test` 不走 vitest 配置，组件测试因缺 jsdom 会失败
-- GitHub Actions 默认工作流是 `.github/workflows/desktop-ci.yml`：Ubuntu 跑 `bash scripts/check_lint.sh`；Linux 上传 `deb/rpm/AppImage/snapshot tar.gz`，Windows 上传安装包 + portable zip，macOS 上传各架构 bundle；tag 推送会自动挂 GitHub Release 资产
+- 默认合规检查入口是 `make check-lint`；完成任务、交付子代理结果、或收尾前都先跑它
+- 前端测试通过 `make test` 执行（底层仍然是 `bun run test`）——`bun test` 不走 vitest 配置，组件测试因缺 jsdom 会失败
+- GitHub Actions 默认工作流是 `.github/workflows/desktop-ci.yml`：Ubuntu 跑 `make check-lint`；Linux 上传 `deb/rpm/AppImage/snapshot tar.gz`，Windows 上传安装包 + portable zip，macOS 上传各架构 bundle；tag 推送会自动挂 GitHub Release 资产
 
 ### 运行与本地起服务
 
-- 启动开发环境：`bun run tauri dev`（不是 `cargo tauri dev`——cargo-tauri CLI 未安装，用 bun 自带的 `@tauri-apps/cli`）
+- 启动开发环境：`make dev`（Windows 需在 Git Bash 中运行；Makefile 内部仍调用 bun 自带的 `@tauri-apps/cli`）
 
 ### 路径与目录约定
 

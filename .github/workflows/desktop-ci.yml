@@ -69,7 +69,7 @@ jobs:
       - name: Run default gate
         env:
           CHECK_COMMIT_REF: ${{ github.event_name == 'pull_request' && 'refs/remotes/origin/pr-head' || 'HEAD' }}
-        run: bash scripts/check_lint.sh
+        run: make check-lint
 
   build-desktop:
     name: Build (${{ matrix.label }})

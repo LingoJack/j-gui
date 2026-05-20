@@ -22,5 +22,5 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     fi
 done
 
-echo "[j-gui pre-push] 运行默认门禁: bash scripts/check_lint.sh"
-bash "$PROJECT_ROOT/scripts/check_lint.sh"
+echo "[j-gui pre-push] 运行默认门禁: make check-lint"
+make -C "$PROJECT_ROOT" check-lint

@@ -14,7 +14,7 @@ CARGO_MANIFEST := src-tauri/Cargo.toml
 # ============================================
 .PHONY: help \
         current_dir push push-non-ai commit pull status \
-        dev build build-frontend build-rust \
+        dev dev-frontend build build-frontend build-rust \
         test test-frontend test-rust test-all \
         fmt fmt-rust fmt-frontend \
         lint lint-fix check clippy check-lint \
@@ -27,7 +27,7 @@ CARGO_MANIFEST := src-tauri/Cargo.toml
 # 帮助信息
 # ============================================
 help: ## 显示此帮助信息
-	@echo "j-gui Makefile 帮助"
+	@echo "j-gui 官方入口: make <target>"
 	@echo "============================================"
 	@echo "版本: $(VERSION) | Rust: $(RUST_VERSION) | 分支: $(GIT_BRANCH)"
 	@echo "============================================"
@@ -36,10 +36,14 @@ help: ## 显示此帮助信息
 	@echo ""
 	@echo "常用命令:"
 	@echo "  make dev          # 启动开发环境"
+	@echo "  make dev-frontend # 启动前端开发环境"
 	@echo "  make build        # 构建生产版本"
 	@echo "  make check-lint   # 运行完整合规性检查"
 	@echo "  make test         # 运行全部测试"
 	@echo "  make setup        # 首次安装依赖 + Git Hooks"
+
+check-shell:
+	@command -v bash >/dev/null 2>&1 || { echo "请在 Git Bash / bash 中运行 make"; exit 1; }
 
 # ============================================
 # 目录和 Git 操作
@@ -139,11 +143,11 @@ status: current_dir ## 查看 Git 状态
 # ============================================
 # 初始化与依赖
 # ============================================
-setup: ## 首次安装依赖 + 设置 Git Hooks
+setup: check-shell ## 首次安装依赖 + 设置 Git Hooks
 	@echo "安装前端依赖..."
 	@bun install
 	@echo "设置 Git Hooks..."
-	@bun run setup:git-hooks
+	@git config core.hooksPath .githooks
 	@echo "安装完成。运行 'make dev' 启动开发环境"
 
 deps: ## 安装前端依赖
@@ -161,19 +165,23 @@ update-deps: ## 更新依赖
 # ============================================
 # 开发与构建
 # ============================================
-dev: ## 启动 Tauri 开发环境（前端 + Rust 热重载）
+dev: check-shell ## 启动 Tauri 开发环境（前端 + Rust 热重载）
 	@echo "启动 Tauri 开发环境..."
 	@bun run tauri dev
 
-build: build-frontend build-rust ## 构建生产版本（前端 + Rust）
+dev-frontend: check-shell ## 启动前端开发环境
+	@echo "启动前端开发环境..."
+	@bun run dev
+
+build: check-shell build-frontend build-rust ## 构建生产版本（前端 + Rust）
 	@echo "生产版本构建完成"
 
-build-frontend: ## 构建前端
+build-frontend: check-shell ## 构建前端
 	@echo "构建前端..."
 	@bun run build
 	@echo "前端构建完成"
 
-build-rust: ## 构建 Rust 后端（release）
+build-rust: check-shell ## 构建 Rust 后端（release）
 	@echo "构建 Rust 后端 (release)..."
 	@cargo build --manifest-path $(CARGO_MANIFEST) --release
 	@echo "Rust 后端构建完成"
@@ -181,20 +189,20 @@ build-rust: ## 构建 Rust 后端（release）
 # ============================================
 # 测试
 # ============================================
-test: test-frontend test-rust ## 运行全部测试
+test: check-shell test-frontend test-rust ## 运行全部测试
 	@echo "全部测试完成"
 
-test-frontend: ## 运行前端测试
+test-frontend: check-shell ## 运行前端测试
 	@echo "运行前端测试..."
 	@bun run test
 	@echo "前端测试完成"
 
-test-rust: ## 运行 Rust 测试
+test-rust: check-shell ## 运行 Rust 测试
 	@echo "运行 Rust 测试..."
 	@cargo test --manifest-path $(CARGO_MANIFEST)
 	@echo "Rust 测试完成"
 
-test-all: ## 运行所有测试（含 Rust 全特性）
+test-all: check-shell ## 运行所有测试（含 Rust 全特性）
 	@echo "运行全部测试（含全特性）..."
 	@bun run test
 	@cargo test --manifest-path $(CARGO_MANIFEST) --all-features
@@ -203,10 +211,10 @@ test-all: ## 运行所有测试（含 Rust 全特性）
 # ============================================
 # 代码质量
 # ============================================
-fmt: fmt-rust fmt-frontend ## 格式化全部代码
+fmt: check-shell fmt-rust fmt-frontend ## 格式化全部代码
 	@echo "代码格式化完成"
 
-fmt-rust: ## 格式化 Rust 代码
+fmt-rust: check-shell ## 格式化 Rust 代码
 	@echo "格式化 Rust 代码..."
 	@cargo fmt --manifest-path $(CARGO_MANIFEST)
 	@echo "Rust 代码格式化完成"
@@ -214,22 +222,22 @@ fmt-rust: ## 格式化 Rust 代码
 fmt-frontend: ## 格式化前端代码（暂无自动格式化，预留）
 	@echo "前端代码格式化（暂无自动格式化工具，跳过）"
 
-lint: ## 运行 clippy 检查
+lint: check-shell ## 运行 clippy 检查
 	@echo "运行 clippy 检查..."
 	@cargo clippy --manifest-path $(CARGO_MANIFEST) -- -D warnings
 	@echo "clippy 检查完成"
 
-lint-fix: ## 运行合规性检查并自动修复
+lint-fix: check-shell ## 运行合规性检查并自动修复
 	@bash scripts/check_lint.sh --fix
 
-check: ## 检查 Rust 代码（不构建）
+check: check-shell ## 检查 Rust 代码（不构建）
 	@echo "检查 Rust 代码..."
 	@cargo check --manifest-path $(CARGO_MANIFEST)
 	@echo "代码检查完成"
 
 clippy: lint ## clippy 别名
 
-check-lint: ## 运行完整合规性检查脚本
+check-lint: check-shell ## 运行完整合规性检查脚本
 	@bash scripts/check_lint.sh
 
 pre-commit: fmt lint test ## 提交前检查

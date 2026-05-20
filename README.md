@@ -6,6 +6,7 @@ j-gui 是 [j-cli](https://github.com/wuqie-xuanzhao/jcli) 的 Tauri 桌面 GUI�
 
 ### 环境要求
 
+- [GNU Make](https://www.gnu.org/software/make/) 4.3+
 - [Bun](https://bun.sh/) 1.2+
 - [Rust](https://www.rust-lang.org/) 1.93+
 - [Git](https://git-scm.com/) 2.0+
@@ -14,23 +15,26 @@ j-gui 是 [j-cli](https://github.com/wuqie-xuanzhao/jcli) 的 Tauri 桌面 GUI�
 ### 开发
 
 ```bash
-# 安装依赖
-bun install
+# 安装依赖并初始化 hooks
+make setup
 
 # 启动开发环境 (Vite + Tauri)
-bun run tauri dev
+make dev
 
 # 仅前端
-bun run dev
+make dev-frontend
 
-# Rust 检查
-cargo check --manifest-path src-tauri/Cargo.toml
+# 默认门禁
+make check-lint
+
+# 测试
+make test
 ```
 
 ### 构建
 
 ```bash
-bun run tauri build
+make build
 ```
 
 ## 技术栈
@@ -40,7 +44,7 @@ bun run tauri build
 | 桌面壳  | Tauri v2 (Rust)                                                      |
 | 前端    | React 19 + TypeScript + Vite + Tailwind v4 + Jotai + shadcn/ui       |
 | AI 后端 | j-cli (Rust crate path dependency)                                   |
-| 包管理  | bun                                                                  |
+| 包管理  | bun (由 Makefile 统一调度)                                           |
 | IPC     | Tauri Commands + Channels (流式) + Events (全局通知)                 |
 
 ## 架构概述

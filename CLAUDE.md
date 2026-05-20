@@ -31,7 +31,7 @@ CodeStable 工作流技能：`/cs-feat`（新功能）`/cs-issue`（修 bug）`/
   - 改 Rust 运行时状态机、会话恢复、快捷键、窗口生命周期、托盘、持久化
   - 改 Chat / Agent 跨前后端联动状态，或可能破坏状态隔离
   - 改 roadmap 中已标注的高风险域或默认门禁关键锚点
-- 未命中上述条件的小任务，可不审查，但仍要跑 `bash scripts/check_lint.sh`
+- 未命中上述条件的小任务，可不审查，但仍要跑 `make check-lint`
 
 ### Roadmap 闭环检查（强制）
 
@@ -91,10 +91,10 @@ src-tauri/              Rust 后端（commands/ + kernel/ + agent_engine.rs）
 
 ## 关键约束
 
-- **启动开发环境**：`bun run tauri dev`（非 `cargo tauri dev` — CLI 未安装，用 bun 自带的 `@tauri-apps/cli`）
-- **默认验收入口**：`bash scripts/check_lint.sh`。它是本仓库默认的合规检查入口，统一执行 `cargo fmt --check`、`cargo clippy -- -D warnings`、workspace 全量 TypeScript 检查、`bun run test`、`cargo test`，并补充 Rust 结构性约束扫描
-- **推送前门禁**：默认通过仓库内 `.githooks/pre-push` 自动执行 `bash scripts/check_lint.sh`；首次进入仓库先跑一次 `bun run setup:git-hooks`
-- **测试（TDD 强制）**：实现前先写测试；任何新功能/修复必须有对应测试覆盖。前端测试必须走 `bun run test`（`bun test` 不走 vitest 配置，组件测试因缺 jsdom 会失败）
+- **启动开发环境**：`make dev`（Windows 需在 Git Bash 中运行；Makefile 内部仍调用 bun 自带的 `@tauri-apps/cli`）
+- **默认验收入口**：`make check-lint`。它是本仓库默认的合规检查入口，统一执行 `cargo fmt --check`、`cargo clippy -- -D warnings`、workspace 全量 TypeScript 检查、`bun run test`、`cargo test`，并补充 Rust 结构性约束扫描
+- **推送前门禁**：默认通过仓库内 `.githooks/pre-push` 自动执行 `make check-lint`；首次进入仓库先跑一次 `make setup`
+- **测试（TDD 强制）**：实现前先写测试；任何新功能/修复必须有对应测试覆盖。前端测试由 `make test` 触发，底层仍执行 `bun run test`（`bun test` 不走 vitest 配置，组件测试因缺 jsdom 会失败）
 - **j-cli 依赖**：当前以 crates.io 版本依赖为准（见 `src-tauri/Cargo.toml`），不再默认使用本地源码路径依赖
 - **j-cli 数据目录**：`~/.jdata/`（由 `j_cli::constants` 定义）
 - **Agent 配置路径**：`~/.jdata/agent/data/agent_config.json`
@@ -170,7 +170,7 @@ src-tauri/              Rust 后端（commands/ + kernel/ + agent_engine.rs）
   - `scope` 和 `description` 默认使用中文；`scope` 写受影响模块，`description` 写明确动宾短语
   - 除约定保留的 `type` 外，subject 其余部分默认全部中文，不写英文短句式标题
   - `description` 控制在单行短句内，不写句号，不写“更新代码”“修复问题”“调整一下”这类空泛文案
-  - 本地提交前执行一次 `bun run setup:git-hooks`，启用仓库内 `commit-msg` 校验
+  - 本地提交前执行一次 `make setup`，启用仓库内 `commit-msg` 校验
   - 文档或 CodeStable 产物优先用 `docs(...)`；涉及 `.codestable/` 的提交可用 `docs(codestable): ...`
   - 多主题改动在条件允许时必须按主题拆分 commit；不要把 `fix`、`build/ci`、`docs(codestable)`、纯样式整理混在同一个提交里
   - 推荐粒度：功能/修复用 `feat` / `fix`，门禁和 hooks 用 `build` / `ci`，Roadmap/CodeStable 回写用 `docs(codestable)`，纯结构重组用 `refactor`
@@ -185,7 +185,7 @@ src-tauri/              Rust 后端（commands/ + kernel/ + agent_engine.rs）
 
 ### 任务完成验证（强制）
 
-**每个子代理任务/手动改动完成后，必须先跑 `bash scripts/check_lint.sh`，不通过不算完成：**
+**每个子代理任务/手动改动完成后，必须先跑 `make check-lint`，不通过不算完成：**
 
 | 结果类型 | 处理规则 |
 |---------|----------|
